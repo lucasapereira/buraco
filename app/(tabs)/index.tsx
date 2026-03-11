@@ -1,98 +1,216 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useGameStore } from '../../store/gameStore';
+import { BotDifficulty } from '../../game/engine';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+const { width: SW } = Dimensions.get('window');
+
+const DIFFICULTIES: { key: BotDifficulty; label: string; emoji: string; desc: string; color: string }[] = [
+  {
+    key: 'easy',
+    label: 'Fácil',
+    emoji: '🟢',
+    desc: 'Joga sequências óbvias, nunca pega o lixo',
+    color: '#2E7D32',
+  },
+  {
+    key: 'medium',
+    label: 'Médio',
+    emoji: '🟡',
+    desc: 'Estratégico, pega lixo quando vale a pena',
+    color: '#F57F17',
+  },
+  {
+    key: 'hard',
+    label: 'Difícil',
+    emoji: '🔴',
+    desc: 'Memoriza descartes e joga defensivamente',
+    color: '#B71C1C',
+  },
+];
+
+const TARGETS = [1500, 3000, 5000];
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const router = useRouter();
+  const startNewGame = useGameStore(s => s.startNewGame);
+  const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
+  const [targetScore, setTargetScore] = useState(3000);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const handleStart = () => {
+    startNewGame(targetScore, difficulty);
+    router.replace('/(tabs)/explore' as any);
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Título */}
+      <View style={styles.titleBox}>
+        <Text style={styles.title}>♠ BURACO ♠</Text>
+        <Text style={styles.subtitle}>STBL — Contra Robôs</Text>
+      </View>
+
+      {/* Seletor de Dificuldade */}
+      <Text style={styles.sectionTitle}>Nível de Dificuldade</Text>
+      <View style={styles.diffRow}>
+        {DIFFICULTIES.map(d => (
+          <TouchableOpacity
+            key={d.key}
+            style={[
+              styles.diffBtn,
+              { borderColor: d.color },
+              difficulty === d.key && { backgroundColor: d.color },
+            ]}
+            onPress={() => setDifficulty(d.key)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.diffEmoji}>{d.emoji}</Text>
+            <Text style={[styles.diffLabel, difficulty === d.key && { color: '#fff', fontWeight: '900' }]}>
+              {d.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={styles.diffDesc}>
+        {DIFFICULTIES.find(d => d.key === difficulty)?.desc}
+      </Text>
+
+      {/* Seletor de Meta */}
+      <Text style={styles.sectionTitle}>Meta de Pontos</Text>
+      <View style={styles.targetRow}>
+        {TARGETS.map(t => (
+          <TouchableOpacity
+            key={t}
+            style={[styles.targetBtn, targetScore === t && styles.targetBtnActive]}
+            onPress={() => setTargetScore(t)}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.targetText, targetScore === t && styles.targetTextActive]}>
+              {t.toLocaleString()}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Botão Jogar */}
+      <TouchableOpacity style={styles.playBtn} onPress={handleStart} activeOpacity={0.85}>
+        <Text style={styles.playText}>🃏 JOGAR</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    backgroundColor: '#1B5E20',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
-  stepContainer: {
-    gap: 8,
+  titleBox: {
+    alignItems: 'center',
+    marginBottom: 36,
+  },
+  title: {
+    fontSize: 42,
+    fontWeight: '900',
+    color: '#FFD600',
+    letterSpacing: 4,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    letterSpacing: 2,
+    marginTop: 4,
+  },
+  sectionTitle: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  diffRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  diffBtn: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 2,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  diffEmoji: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  diffLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  diffDesc: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 11,
+    textAlign: 'center',
+    marginBottom: 28,
+    paddingHorizontal: 8,
+  },
+  targetRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginBottom: 36,
+  },
+  targetBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  targetBtnActive: {
+    backgroundColor: '#FFD600',
+    borderColor: '#FFD600',
+  },
+  targetText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  targetTextActive: {
+    color: '#1B5E20',
+    fontWeight: '900',
+  },
+  playBtn: {
+    backgroundColor: '#FFD600',
+    paddingVertical: 16,
+    paddingHorizontal: 60,
+    borderRadius: 30,
+    shadowColor: '#FFD600',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  playText: {
+    color: '#1B5E20',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
 });
