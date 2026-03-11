@@ -227,7 +227,7 @@ export default function GameScreen() {
               const compactFirst = normalCards[0] ?? gameCards[0];
               const compactLast = normalCards[normalCards.length - 1] ?? gameCards[gameCards.length - 1];
               const middleCount = gameCards.length - 2;
-              const compact = gameCards.length >= 7;
+              const compact = gameCards.length >= 6;
               return (
                 <TouchableOpacity
                   key={`my-${idx}`}
@@ -237,7 +237,8 @@ export default function GameScreen() {
                     canAdd && styles.gameCardHighlight,
                   ]}
                   onPress={() => handleAddToGame(idx)}
-                  activeOpacity={0.7}
+                  activeOpacity={0.6}
+                  hitSlop={{ top: 20, bottom: 20, left: 15, right: 15 }}
                 >
                   {compact ? (
                     // Modo compacto: extremos normais + badge curinga no meio
@@ -256,7 +257,7 @@ export default function GameScreen() {
                     <>
                       <View style={styles.gameCards}>
                         {gameCards.map((c, ci) => (
-                          <View key={c.id} style={ci > 0 ? { marginLeft: -22 } : undefined}>
+                          <View key={c.id} style={ci > 0 ? { marginLeft: -28 } : undefined}>
                             <Card card={c} small />
                           </View>
                         ))}
@@ -283,7 +284,7 @@ export default function GameScreen() {
               const compactFirst = normalCards[0] ?? gameCards[0];
               const compactLast = normalCards[normalCards.length - 1] ?? gameCards[gameCards.length - 1];
               const middleCount = gameCards.length - 2;
-              const compact = gameCards.length >= 7;
+              const compact = gameCards.length >= 6;
               return (
                 <View
                   key={`op-${idx}`}
@@ -307,7 +308,7 @@ export default function GameScreen() {
                     <>
                       <View style={styles.gameCards}>
                         {gameCards.map((c, ci) => (
-                          <View key={c.id} style={ci > 0 ? { marginLeft: -22 } : undefined}>
+                          <View key={c.id} style={ci > 0 ? { marginLeft: -28 } : undefined}>
                             <Card card={c} small />
                           </View>
                         ))}
@@ -534,19 +535,20 @@ const styles = StyleSheet.create({
   gamesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 5,
+    gap: 10,
     marginBottom: 4,
+    justifyContent: 'space-between',
   },
   gameCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 5,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     // ~50% width minus gap, 2 per row
-    minWidth: '47%',
-    maxWidth: '49%',
+    minWidth: '46%',
+    maxWidth: '48%',
     flex: 0,
     justifyContent: 'space-between',
   },

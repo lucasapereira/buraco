@@ -107,13 +107,32 @@ function chooseBestDiscard(hand: Card[], discardedHistory: string[], difficulty:
 
 /** Avalia se vale a pena pegar o lixo (respeitando a regra obrigatória) */
 function shouldTakePile(
-  pile: Card[], hand: Card[], difficulty: BotDifficulty
+  pile: Card[], hand: Card[], difficulty: BotDifficulty, teamGames: Card[][] = []
 ): boolean {
   if (pile.length === 0) return false;
   if (difficulty === 'easy') return false; // Fácil nunca pega lixo
 
   // REGRA: só pode pegar se consegue montar jogo com o topo
   if (!canTakePile(hand, pile)) return false;
+
+  const topCard = pile[pile.length - 1];
+
+  // Regra Avançada: Não pega o lixo se isso nos obrigar a criar um NOVO jogo
+  // de um naipe que a nossa equipe JÁ TEM na mesa. Criar dois jogos do mesmo naipe
+  // "mata" a canastra.
+  if (teamGames && teamGames.length > 0) {
+    const hasGameSameSuit = teamGames.some(g => {
+      const normalCards = g.filter(c => !c.isJoker);
+      if (normalCards.length === 0) return false;
+      return normalCards[0].suit === topCard.suit;
+    });
+    
+    // Se já temos o naipe na mesa, preferimos NÃO pegar o lixo.
+    // (A dificuldade 'easy' já retornou false no início da função).
+    if (hasGameSameSuit) {
+      return false;
+    }
+  }
 
   // Conta quantas cartas do lixo são úteis para a mão
   const usefulCount = pile.filter(pileCard => {
@@ -172,7 +191,8 @@ export function useBotAI() {
     // ── FASE DRAW ──
     if (s.turnPhase === 'draw') {
       const pile = s.pile;
-      const takePile = shouldTakePile(pile, bot.hand, difficulty);
+      const teamGames = s.teams[bot.teamId].games;
+      const takePile = shouldTakePile(pile, bot.hand, difficulty, teamGames);
 
       if (takePile) {
         useGameStore.getState().drawFromPile(botId);
@@ -203,10 +223,13 @@ export function useBotAI() {
       doBotPlayWithPileTop(botId, s.mustPlayPileTopId);
     }
 
+    // Tenta adicionar a jogos existentes PRIMEIRO (para não matar canastras)
+    doBotAddToGames(botId);
+
     // Tenta baixar jogos adicionais
     doBotPlaySequences(botId, difficulty);
 
-    // Tenta adicionar a jogos existentes
+    // Como as sequências podem ter liberado cartas, tenta adicionar novamente
     doBotAddToGames(botId);
 
     // Descarta (só funciona se mustPlayPileTopId foi limpo)
@@ -250,36 +273,55 @@ export function useBotAI() {
   }
 
   function doBotPlaySequences(botId: PlayerId, difficulty: BotDifficulty) {
-    const s = useGameStore.getState();
-    const bot = s.players.find(p => p.id === botId);
-    if (!bot) return;
+    let playedSomething = true;
+    let iterations = 0;
 
-    const sequences = findBestSequences(bot.hand);
+    // Loop until we can't play any more sequences.
+    // Fácil/Médio play exactly 1 sequence max. Hard plays as many as it can.
+    while (playedSomething && iterations < 5) {
+      playedSomething = false;
+      iterations++;
 
-    for (const seq of sequences) {
-      // Verifica se a jogada não vai deixar o bot travado
-      const remaining = bot.hand.filter(c => !seq.some(s => s.id === c.id));
-      const freshS = useGameStore.getState();
-      const wouldStrand = remaining.length === 0 &&
-        bot.hasGottenDead &&
-        !freshS.teams[bot.teamId].games.some(g => g.length >= 7 && !g.some(c => c.isJoker));
+      const s = useGameStore.getState();
+      const bot = s.players.find(p => p.id === botId);
+      if (!bot || bot.hand.length === 0) return;
 
-      if (wouldStrand && difficulty !== 'hard') continue; // Fácil/Médio evita
+      const sequences = findBestSequences(bot.hand);
 
-      const success = useGameStore.getState().playCards(botId, seq.map(c => c.id));
-      if (!success) continue;
-
-      // Difícil tenta baixar mais após cada jogo
-      if (difficulty === 'hard') {
-        const updated = useGameStore.getState().players.find(p => p.id === botId);
-        if (updated && updated.hand.length > 0) {
-          const more = findBestSequences(updated.hand);
-          for (const m of more) {
-            useGameStore.getState().playCards(botId, m.map(c => c.id));
+      for (const seq of sequences) {
+        // Evita criar um NOVO jogo de um naipe que já temos na mesa.
+        const normalCards = seq.filter(c => !c.isJoker);
+        if (normalCards.length > 0 && (difficulty === 'hard' || difficulty === 'medium')) {
+          const suit = normalCards[0].suit;
+          const teamGames = s.teams[bot.teamId].games;
+          const hasGameSameSuit = teamGames.some(g => {
+            const gNormal = g.filter(c => !c.isJoker);
+            return gNormal.length > 0 && gNormal[0].suit === suit;
+          });
+          
+          if (hasGameSameSuit && seq.length < 6) {
+            continue; // Retém as cartas, não "mata" a canastra!
           }
         }
+
+        // Verifica se a jogada não vai deixar o bot travado
+        const remaining = bot.hand.filter(c => !seq.some(s => s.id === c.id));
+        const wouldStrand = remaining.length === 0 &&
+          bot.hasGottenDead &&
+          !s.teams[bot.teamId].games.some(g => g.length >= 7 && !g.some(c => c.isJoker));
+
+        if (wouldStrand && difficulty !== 'hard') continue; // Fácil/Médio evita
+
+        const success = useGameStore.getState().playCards(botId, seq.map(c => c.id));
+        if (success) {
+          playedSomething = true;
+          break; // Recomeça o loop com a mão atualizada (só entra se for hard ou re-add)
+        }
       }
-      break; // Joga apenas 1 sequência por turno no fácil/médio
+
+      if (difficulty !== 'hard') {
+        break; // Stop after first cycle for easy/medium
+      }
     }
   }
 
