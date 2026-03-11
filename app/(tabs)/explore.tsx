@@ -112,6 +112,10 @@ export default function GameScreen() {
 
   const handlePlayCards = () => {
     if (!isMyTurn || turnPhase !== 'play') return;
+    if (mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
+      Alert.alert('⚠️ Regra do Lixo', 'Sua primeira jogada DEVE ser com a carta comprada do topo do lixo para formar um NOVO jogo de pelo menos 3 cartas.');
+      return;
+    }
     if (selectedCards.length < 3) {
       Alert.alert('Mínimo 3 cartas', 'Selecione no mínimo 3 cartas para baixar um jogo STBL.');
       return;
@@ -126,6 +130,10 @@ export default function GameScreen() {
 
   const handleAddToGame = (gameIndex: number) => {
     if (!isMyTurn || turnPhase !== 'play') return;
+    if (mustPlayPileTopId) {
+      Alert.alert('⚠️ Regra do Lixo', 'Você deve PRIMEIRO baixar um NOVO jogo usando a carta do topo do lixo antes de adicionar cartas a jogos existentes.');
+      return;
+    }
     if (selectedCards.length === 0) {
       Alert.alert('Selecione cartas', 'Selecione as cartas da sua mão que deseja adicionar a este jogo.');
       return;
