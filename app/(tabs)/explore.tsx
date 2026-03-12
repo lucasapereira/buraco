@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, View, Text, TouchableOpacity, ScrollView,
   SafeAreaView, Alert, Modal, Dimensions, Platform, StatusBar,
@@ -12,6 +12,7 @@ import { calculateLiveScore, calculateCardPoints } from '../../game/engine';
 import { useRouter } from 'expo-router';
 import { EventBanner, EventLog } from '../../components/EventBanner';
 import { cardLabel as getCardLabel } from '../../game/deck';
+import { useGameSounds } from '../../hooks/useGameSounds';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -27,6 +28,35 @@ export default function GameScreen() {
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [showMenu, setShowMenu] = useState(false);
   const router = useRouter();
+  const { playSound } = useGameSounds();
+
+  // === EFEITOS SONOROS ===
+  const prevDeadsLength = useRef(2);
+  useEffect(() => {
+    if (deads.length < prevDeadsLength.current) {
+      playSound('morto');
+    }
+    prevDeadsLength.current = deads.length;
+  }, [deads.length, playSound]);
+
+  const prevCanastaCount = useRef(0);
+  useEffect(() => {
+    let count = 0;
+    teams['team-1'].games.forEach(g => { if (checkCanasta(g) !== 'none') count++; });
+    teams['team-2'].games.forEach(g => { if (checkCanasta(g) !== 'none') count++; });
+    if (count > prevCanastaCount.current && count > 0) {
+      playSound('canastra');
+    }
+    prevCanastaCount.current = count;
+  }, [teams, playSound]);
+
+  const prevRoundWinner = useRef<string | null>(null);
+  useEffect(() => {
+    if (winnerTeamId && winnerTeamId !== prevRoundWinner.current) {
+      playSound('bater');
+    }
+    prevRoundWinner.current = winnerTeamId;
+  }, [winnerTeamId, playSound]);
 
   useBotAI();
 
@@ -240,34 +270,36 @@ export default function GameScreen() {
                   activeOpacity={0.6}
                   hitSlop={{ top: 20, bottom: 20, left: 15, right: 15 }}
                 >
-                  {compact ? (
-                    // Modo compacto: extremos normais + badge curinga no meio
-                    <>
-                      <Card card={compactFirst} small />
-                      <View style={styles.gameCardMid}>
-                        <Text style={styles.gameCardMidText}>+{middleCount}</Text>
-                        {hasJoker && <Text style={styles.jokerBadge}>★</Text>}
-                        {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
-                        {canAdd && <Text style={styles.addTag}>➕</Text>}
-                      </View>
-                      <Card card={compactLast} small />
-                    </>
-                  ) : (
-                    // Modo completo: todas as cartas
-                    <>
-                      <View style={styles.gameCards}>
-                        {gameCards.map((c, ci) => (
-                          <View key={c.id} style={ci > 0 ? { marginLeft: -28 } : undefined}>
-                            <Card card={c} small />
-                          </View>
-                        ))}
-                      </View>
-                      <View style={styles.gameCardMid}>
-                        {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
-                        {canAdd && <Text style={styles.addTag}>➕</Text>}
-                      </View>
-                    </>
-                  )}
+                  <View pointerEvents="none" style={styles.gameCardInner}>
+                    {compact ? (
+                      // Modo compacto: extremos normais + badge curinga no meio
+                      <>
+                        <Card card={compactFirst} small />
+                        <View style={styles.gameCardMid}>
+                          <Text style={styles.gameCardMidText}>+{middleCount}</Text>
+                          {hasJoker && <Text style={styles.jokerBadge}>★</Text>}
+                          {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
+                          {canAdd && <Text style={styles.addTag}>➕</Text>}
+                        </View>
+                        <Card card={compactLast} small />
+                      </>
+                    ) : (
+                      // Modo completo: todas as cartas
+                      <>
+                        <View style={styles.gameCards}>
+                          {gameCards.map((c, ci) => (
+                            <View key={c.id} style={ci > 0 ? { marginLeft: -28 } : undefined}>
+                              <Card card={c} small />
+                            </View>
+                          ))}
+                        </View>
+                        <View style={styles.gameCardMid}>
+                          {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
+                          {canAdd && <Text style={styles.addTag}>➕</Text>}
+                        </View>
+                      </>
+                    )}
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -535,7 +567,8 @@ const styles = StyleSheet.create({
   gamesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    rowGap: 4,
+    columnGap: 10,
     marginBottom: 4,
     justifyContent: 'space-between',
   },
@@ -550,6 +583,12 @@ const styles = StyleSheet.create({
     minWidth: '46%',
     maxWidth: '48%',
     flex: 0,
+    justifyContent: 'space-between',
+  },
+  gameCardInner: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
   gameCardHighlight: {
