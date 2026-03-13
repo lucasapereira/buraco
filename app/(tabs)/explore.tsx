@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, View, Text, TouchableOpacity, ScrollView,
-  SafeAreaView, Alert, Modal, Dimensions, Platform, StatusBar,
+  SafeAreaView, Alert, Modal, Dimensions, Platform, StatusBar, LayoutAnimation
 } from 'react-native';
 import { useGameStore } from '../../store/gameStore';
 import { Hand } from '../../components/Hand';
@@ -22,7 +22,7 @@ export default function GameScreen() {
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
     drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
     startNewRound, startNewGame,
-    gameLog, lastDrawnCardId, mustPlayPileTopId,
+    gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode, botDifficulty
   } = useGameStore();
 
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
@@ -58,6 +58,14 @@ export default function GameScreen() {
     prevRoundWinner.current = winnerTeamId;
   }, [winnerTeamId, playSound]);
 
+  const prevTurnPlayer = useRef<string | null>(null);
+  useEffect(() => {
+    if (currentTurnPlayerId === 'user' && currentTurnPlayerId !== prevTurnPlayer.current) {
+      playSound('turno');
+    }
+    prevTurnPlayer.current = currentTurnPlayerId;
+  }, [currentTurnPlayerId, playSound]);
+
   useBotAI();
 
   const user = players.find(p => p.id === 'user');
@@ -90,6 +98,7 @@ export default function GameScreen() {
       Alert.alert('Já comprou', 'Você já comprou neste turno. Baixe jogos ou selecione 1 carta e descarte.');
       return;
     }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     drawFromDeck('user');
   };
 
@@ -107,8 +116,8 @@ export default function GameScreen() {
       Alert.alert('Lixo vazio', 'O lixo está vazio.');
       return;
     }
-    // Verifica regra: precisa ter jogo com o topo do lixo
-    if (!canTakePile(user.hand, pile)) {
+    // Verifica regra: precisa ter jogo com o topo do lixo (exceto Araujo Pereira)
+    if (gameMode !== 'araujo_pereira' && !canTakePile(user.hand, pile)) {
       const topCard = pile[pile.length - 1];
       Alert.alert(
         '❌ Não pode pegar o lixo',
@@ -116,6 +125,7 @@ export default function GameScreen() {
       );
       return;
     }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     drawFromPile('user');
   };
 
@@ -136,6 +146,7 @@ export default function GameScreen() {
       Alert.alert('Selecione 1 carta', 'Para descartar, selecione exatamente 1 carta.');
       return;
     }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     discard('user', selectedCards[0]);
     setSelectedCards([]);
   };
@@ -152,6 +163,7 @@ export default function GameScreen() {
     }
     const success = playCards('user', selectedCards);
     if (success) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
     } else {
       Alert.alert('Sequência inválida', 'As cartas selecionadas não formam uma sequência válida no STBL.\n\nLembre: mesmo naipe, valores consecutivos, máximo 1 curinga (2).');
@@ -170,6 +182,7 @@ export default function GameScreen() {
     }
     const success = addToExistingGame('user', selectedCards, gameIndex);
     if (success) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
     } else {
       Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
@@ -437,7 +450,7 @@ export default function GameScreen() {
                   'Tem certeza? O progresso atual será perdido.',
                   [
                     { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Reiniciar', style: 'destructive', onPress: () => { startNewGame(); setSelectedCards([]); } },
+                    { text: 'Reiniciar', style: 'destructive', onPress: () => { startNewGame(targetScore, botDifficulty, gameMode); setSelectedCards([]); } },
                   ]
                 );
               }}
@@ -507,7 +520,7 @@ export default function GameScreen() {
             <Text style={styles.modalTarget}>Meta: {targetScore} pontos</Text>
 
             {winnerTeamId ? (
-              <TouchableOpacity style={styles.modalBtn} onPress={() => { startNewGame(); router.replace('/(tabs)' as any); }}>
+              <TouchableOpacity style={styles.modalBtn} onPress={() => { startNewGame(targetScore, botDifficulty, gameMode); router.replace('/(tabs)' as any); }}>
                 <Text style={styles.modalBtnText}>Novo Jogo</Text>
               </TouchableOpacity>
             ) : (

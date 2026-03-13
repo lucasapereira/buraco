@@ -5,6 +5,7 @@ export type PlayerId = 'user' | 'bot-1' | 'bot-2' | 'bot-3';
 export type TeamId = 'team-1' | 'team-2';
 export type TurnPhase = 'draw' | 'play' | 'discard';
 export type BotDifficulty = 'easy' | 'medium' | 'hard';
+export type GameMode = 'classic' | 'araujo_pereira';
 
 export interface Player {
   id: PlayerId;
@@ -44,6 +45,7 @@ export interface GameState {
   matchScores: Record<TeamId, number>;
   gameLog: GameEvent[];
   lastDrawnCardId: string | null;
+  gameMode: GameMode;
   botDifficulty: BotDifficulty;
   discardedCardHistory: string[];
   mustPlayPileTopId: string | null; // ID da carta do topo do lixo que deve ser baixada
@@ -57,7 +59,7 @@ export function getNextPlayer(currentId: PlayerId): PlayerId {
   return TURN_ORDER[(idx + 1) % 4];
 }
 
-export function createInitialGameState(targetScore: number = 3000, botDifficulty: BotDifficulty = 'medium'): GameState {
+export function createInitialGameState(targetScore: number = 3000, botDifficulty: BotDifficulty = 'medium', gameMode: GameMode = 'classic'): GameState {
   const allCards = shuffle(generateDeck());
 
   // Separar os 2 mortos (11 cartas cada)
@@ -96,6 +98,7 @@ export function createInitialGameState(targetScore: number = 3000, botDifficulty
     matchScores: { 'team-1': 0, 'team-2': 0 },
     gameLog: [],
     lastDrawnCardId: null,
+    gameMode,
     botDifficulty,
     discardedCardHistory: [],
     mustPlayPileTopId: null,

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
-import { BotDifficulty } from '../../game/engine';
+import { BotDifficulty, GameMode } from '../../game/engine';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -37,9 +37,10 @@ export default function HomeScreen() {
   const startNewGame = useGameStore(s => s.startNewGame);
   const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
   const [targetScore, setTargetScore] = useState(3000);
+  const [gameMode, setGameMode] = useState<GameMode>('classic');
 
   const handleStart = () => {
-    startNewGame(targetScore, difficulty);
+    startNewGame(targetScore, difficulty, gameMode);
     router.replace('/(tabs)/explore' as any);
   };
 
@@ -50,6 +51,28 @@ export default function HomeScreen() {
         <Text style={styles.title}>♠ BURACO ♠</Text>
         <Text style={styles.subtitle}>STBL — Contra Robôs</Text>
       </View>
+
+      {/* Seletor de Modo de Jogo */}
+      <Text style={styles.sectionTitle}>Modo de Jogo</Text>
+      <View style={styles.modeRow}>
+        <TouchableOpacity
+          style={[styles.modeBtn, gameMode === 'classic' && styles.modeBtnActive]}
+          onPress={() => setGameMode('classic')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.modeText, gameMode === 'classic' && styles.modeTextActive]}>Clássico</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeBtn, gameMode === 'araujo_pereira' && styles.modeBtnActive]}
+          onPress={() => setGameMode('araujo_pereira')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.modeText, gameMode === 'araujo_pereira' && styles.modeTextActive]}>Araujo Pereira</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.diffDesc}>
+        {gameMode === 'classic' ? 'Regras originais: sem trincas, bater limpo.' : 'Regras da família: trincas liberadas, lixo livre, bate sujo.'}
+      </Text>
 
       {/* Seletor de Dificuldade */}
       <Text style={styles.sectionTitle}>Nível de Dificuldade</Text>
@@ -137,6 +160,34 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginBottom: 10,
     marginTop: 4,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginBottom: 8,
+  },
+  modeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  modeBtnActive: {
+    backgroundColor: '#FFD600',
+    borderColor: '#FFD600',
+  },
+  modeText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modeTextActive: {
+    color: '#1B5E20',
+    fontWeight: '900',
   },
   diffRow: {
     flexDirection: 'row',

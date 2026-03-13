@@ -1,4 +1,5 @@
 import { Card } from './deck';
+import { GameMode } from './engine';
 
 export type CanastaType = 'clean' | 'dirty' | 'none';
 
@@ -65,8 +66,9 @@ export function sortGameCards(cards: Card[]): Card[] {
  *   (no entanto, na mesma sequência normalmente não se repetem valores — exceto se uma delas é curinga)
  * - Na prática, como cada sequência pede valores CONSECUTIVOS e sem repetição,
  *   duas cartas de mesmo valor no mesmo jogo só são válidas se uma delas for o curinga utilizado como "2"
+ * - No modo "araujo_pereira", trincas (3+ cartas do mesmo valor, naipes diferentes ou iguais) são permitidas.
  */
-export function validateSequence(cardsToPlay: Card[]): boolean {
+export function validateSequence(cardsToPlay: Card[], gameMode: GameMode = 'classic'): boolean {
   if (cardsToPlay.length < 3) return false;
 
   const jokers = cardsToPlay.filter(c => c.isJoker);
@@ -76,9 +78,16 @@ export function validateSequence(cardsToPlay: Card[]): boolean {
   if (jokers.length > 1) return false;
   if (normalCards.length === 0) return false;
 
-  // Todas as cartas normais devem ser do mesmo naipe
   const mainSuit = normalCards[0].suit;
-  if (normalCards.some(c => c.suit !== mainSuit)) return false;
+  const isSameSuit = normalCards.every(c => c.suit === mainSuit);
+  const isTrinca = normalCards.every(c => c.value === normalCards[0].value);
+
+  if (gameMode === 'araujo_pereira' && isTrinca) {
+    return true; // Trinca válida
+  }
+
+  // Todas as cartas normais devem ser do mesmo naipe para sequência normal
+  if (!isSameSuit) return false;
 
   // Ordenar valores das cartas normais
   const sorted = sortByValue(normalCards);
@@ -121,9 +130,9 @@ export function checkCanasta(cards: Card[]): CanastaType {
  * Verifica se uma lista de cartas pode ser adicionada a um jogo existente.
  * Mais permissiva: valida a combinação completa como uma sequência.
  */
-export function canAddToGame(existingGame: Card[], newCards: Card[]): boolean {
+export function canAddToGame(existingGame: Card[], newCards: Card[], gameMode: GameMode = 'classic'): boolean {
   const combined = [...existingGame, ...newCards];
-  return validateSequence(combined);
+  return validateSequence(combined, gameMode);
 }
 
 /**
@@ -131,8 +140,10 @@ export function canAddToGame(existingGame: Card[], newCards: Card[]): boolean {
  * Regra: a carta do TOPO do lixo (última da array) deve obrigatoriamente
  * fazer parte de um jogo novo formado com cartas da mão do jogador.
  */
-export function canTakePile(hand: Card[], pile: Card[]): boolean {
+export function canTakePile(hand: Card[], pile: Card[], gameMode: GameMode = 'classic'): boolean {
   if (pile.length === 0) return false;
+  if (gameMode === 'araujo_pereira') return true; // Always can take in this mode
+
   const topCard = pile[pile.length - 1];
 
   // Tenta combinar a carta do topo com 2+ cartas da mão

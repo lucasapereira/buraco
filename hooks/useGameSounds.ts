@@ -5,18 +5,21 @@ export function useGameSounds() {
   const [mortoSound, setMortoSound] = useState<Audio.Sound | null>(null);
   const [canastraSound, setCanastraSound] = useState<Audio.Sound | null>(null);
   const [baterSound, setBaterSound] = useState<Audio.Sound | null>(null);
+  const [turnoSound, setTurnoSound] = useState<Audio.Sound | null>(null);
 
   // Use refs to prevent spamming sounds too frequently
   const lastPlayRefs = useRef({
     morto: 0,
     canastra: 0,
     bater: 0,
+    turno: 0,
   });
 
   useEffect(() => {
     let _morto: Audio.Sound | null = null;
     let _canastra: Audio.Sound | null = null;
     let _bater: Audio.Sound | null = null;
+    let _turno: Audio.Sound | null = null;
 
     async function loadSounds() {
       try {
@@ -41,6 +44,12 @@ export function useGameSounds() {
         );
         _bater = bSound;
         setBaterSound(bSound);
+
+        const { sound: tSound } = await Audio.Sound.createAsync(
+          require('../assets/sounds/turno.mp3')
+        );
+        _turno = tSound;
+        setTurnoSound(tSound);
       } catch (e) {
         console.warn('Erro ao carregar os sons:', e);
       }
@@ -52,10 +61,11 @@ export function useGameSounds() {
       _morto?.unloadAsync();
       _canastra?.unloadAsync();
       _bater?.unloadAsync();
+      _turno?.unloadAsync();
     };
   }, []);
 
-  const playSound = async (type: 'morto' | 'canastra' | 'bater') => {
+  const playSound = async (type: 'morto' | 'canastra' | 'bater' | 'turno') => {
     const now = Date.now();
     // Debounce de 1 segundo para evitar tocar igual metralhadora
     if (now - lastPlayRefs.current[type] < 1000) return;
@@ -66,6 +76,7 @@ export function useGameSounds() {
       if (type === 'morto') await mortoSound?.replayAsync();
       if (type === 'canastra') await canastraSound?.replayAsync();
       if (type === 'bater') await baterSound?.replayAsync();
+      if (type === 'turno') await turnoSound?.replayAsync();
     } catch (e) {
       console.warn(`Erro ao tocar som ${type}:`, e);
     }
