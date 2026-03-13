@@ -264,13 +264,7 @@ export default function GameScreen() {
                 const combined = [...gameCards, ...selCards];
                 return combined.length >= 3 && validateSequence(combined);
               })();
-              const normalCards = gameCards.filter(c => !c.isJoker);
-              const hasJoker = gameCards.some(c => c.isJoker);
-              // No compacto: extremos das cartas NORMAIS (sem curinga)
-              const compactFirst = normalCards[0] ?? gameCards[0];
-              const compactLast = normalCards[normalCards.length - 1] ?? gameCards[gameCards.length - 1];
-              const middleCount = gameCards.length - 2;
-              const compact = gameCards.length >= 6;
+              const cardMargin = gameCards.length > 9 ? -36 : gameCards.length > 6 ? -32 : -28;
               return (
                 <TouchableOpacity
                   key={`my-${idx}`}
@@ -284,34 +278,17 @@ export default function GameScreen() {
                   hitSlop={{ top: 20, bottom: 20, left: 15, right: 15 }}
                 >
                   <View pointerEvents="none" style={styles.gameCardInner}>
-                    {compact ? (
-                      // Modo compacto: extremos normais + badge curinga no meio
-                      <>
-                        <Card card={compactFirst} small />
-                        <View style={styles.gameCardMid}>
-                          <Text style={styles.gameCardMidText}>+{middleCount}</Text>
-                          {hasJoker && <Text style={styles.jokerBadge}>★</Text>}
-                          {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
-                          {canAdd && <Text style={styles.addTag}>➕</Text>}
+                    <View style={styles.gameCards}>
+                      {gameCards.map((c, ci) => (
+                        <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
+                          <Card card={c} small />
                         </View>
-                        <Card card={compactLast} small />
-                      </>
-                    ) : (
-                      // Modo completo: todas as cartas
-                      <>
-                        <View style={styles.gameCards}>
-                          {gameCards.map((c, ci) => (
-                            <View key={c.id} style={ci > 0 ? { marginLeft: -28 } : undefined}>
-                              <Card card={c} small />
-                            </View>
-                          ))}
-                        </View>
-                        <View style={styles.gameCardMid}>
-                          {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
-                          {canAdd && <Text style={styles.addTag}>➕</Text>}
-                        </View>
-                      </>
-                    )}
+                      ))}
+                    </View>
+                    <View style={styles.gameCardMid}>
+                      {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
+                      {canAdd && <Text style={styles.addTag}>➕</Text>}
+                    </View>
                   </View>
                 </TouchableOpacity>
               );
@@ -324,12 +301,7 @@ export default function GameScreen() {
           <View style={styles.gamesGrid}>
             {opTeamGames.map((gameCards, idx) => {
               const canasta = checkCanasta(gameCards);
-              const normalCards = gameCards.filter(c => !c.isJoker);
-              const hasJoker = gameCards.some(c => c.isJoker);
-              const compactFirst = normalCards[0] ?? gameCards[0];
-              const compactLast = normalCards[normalCards.length - 1] ?? gameCards[gameCards.length - 1];
-              const middleCount = gameCards.length - 2;
-              const compact = gameCards.length >= 6;
+              const cardMargin = gameCards.length > 9 ? -36 : gameCards.length > 6 ? -32 : -28;
               return (
                 <View
                   key={`op-${idx}`}
@@ -339,32 +311,20 @@ export default function GameScreen() {
                     canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
                   ]}
                 >
-                  {compact ? (
-                    <>
-                      <Card card={compactFirst} small />
-                      <View style={styles.gameCardMid}>
-                        <Text style={styles.gameCardMidText}>+{middleCount}</Text>
-                        {hasJoker && <Text style={styles.jokerBadge}>★</Text>}
-                        {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
-                      </View>
-                      <Card card={compactLast} small />
-                    </>
-                  ) : (
-                    <>
-                      <View style={styles.gameCards}>
-                        {gameCards.map((c, ci) => (
-                          <View key={c.id} style={ci > 0 ? { marginLeft: -28 } : undefined}>
-                            <Card card={c} small />
-                          </View>
-                        ))}
-                      </View>
-                      {canasta !== 'none' && (
-                        <View style={styles.gameCardMid}>
-                          <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>
+                  <View style={styles.gameCardInner}>
+                    <View style={styles.gameCards}>
+                      {gameCards.map((c, ci) => (
+                        <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
+                          <Card card={c} small />
                         </View>
-                      )}
-                    </>
-                  )}
+                      ))}
+                    </View>
+                    {canasta !== 'none' && (
+                      <View style={styles.gameCardMid}>
+                        <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
               );
             })}

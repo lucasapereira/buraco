@@ -174,6 +174,10 @@ function shouldTakePile(
     // Se o lixo tem um curinga, pega com certeza.
     if (pile.some(c => c.isJoker)) return true;
 
+    // Se o lixo for grande, é muita vantagem ter mais cartas para fazer trincas e jogos.
+    if (pile.length >= 3) return true;
+    if (pile.length >= 2 && difficulty === 'hard') return true;
+
     // Se o lixo tem alguma carta que encaixa em jogos na mesa, pega.
     for (const pCard of pile) {
        for (const game of teamGames) {
@@ -196,7 +200,7 @@ function shouldTakePile(
        if (adjacent.length >= 2) return true; // heurística simples
     }
 
-    // Se nenhuma carta for claramente útil, deixa passar para comprar do monte (bolo)
+    // Se nenhuma carta for claramente útil e o lixo for pequeno, deixa passar
     return false;
   }
 
@@ -391,15 +395,20 @@ export function useBotAI() {
         // Evita criar um NOVO jogo de um naipe que já temos na mesa.
         const normalCards = seq.filter(c => !c.isJoker);
         if (normalCards.length > 0 && (difficulty === 'hard' || difficulty === 'medium')) {
-          const suit = normalCards[0].suit;
-          const teamGames = s.teams[bot.teamId].games;
-          const hasGameSameSuit = teamGames.some(g => {
-            const gNormal = g.filter(c => !c.isJoker);
-            return gNormal.length > 0 && gNormal[0].suit === suit;
-          });
+          const isTrinca = normalCards.every(c => c.value === normalCards[0].value);
           
-          if (hasGameSameSuit && seq.length < 6) {
-            continue; // Retém as cartas, não "mata" a canastra!
+          if (!isTrinca) {
+            const suit = normalCards[0].suit;
+            const teamGames = s.teams[bot.teamId].games;
+            const hasGameSameSuit = teamGames.some(g => {
+              const gNormal = g.filter(c => !c.isJoker);
+              const gIsTrinca = gNormal.length > 0 && gNormal.every(c => c.value === gNormal[0].value);
+              return !gIsTrinca && gNormal.length > 0 && gNormal[0].suit === suit;
+            });
+            
+            if (hasGameSameSuit && seq.length < 6) {
+              continue; // Retém as cartas, não "mata" a canastra!
+            }
           }
         }
 
@@ -407,7 +416,7 @@ export function useBotAI() {
         const remaining = bot.hand.filter(c => !seq.some(s => s.id === c.id));
         const wouldStrand = remaining.length === 0 &&
           bot.hasGottenDead &&
-          !s.teams[bot.teamId].games.some(g => g.length >= 7 && !g.some(c => c.isJoker));
+          !s.teams[bot.teamId].games.some(g => g.length >= 7 && (s.gameMode === 'araujo_pereira' || !g.some(c => c.isJoker)));
 
         if (wouldStrand && difficulty !== 'hard') continue; // Fácil/Médio evita
 
@@ -420,7 +429,8 @@ export function useBotAI() {
         }
       }
 
-      if (difficulty !== 'hard') {
+      // Para o modo hard e araujo_pereira (medium), joga tudo que pode
+      if (difficulty === 'easy' || (difficulty === 'medium' && s.gameMode !== 'araujo_pereira')) {
         break; // Stop after first cycle for easy/medium
       }
     }
@@ -430,6 +440,7 @@ export function useBotAI() {
     const s = useGameStore.getState();
     const bot = s.players.find(p => p.id === botId);
     if (!bot) return;
+    const difficulty = s.botDifficulty;
 
     const teamGames = s.teams[bot.teamId].games;
     for (let gi = 0; gi < teamGames.length; gi++) {
@@ -437,10 +448,16 @@ export function useBotAI() {
       if (!freshBot) return;
 
       for (const card of [...freshBot.hand]) {
-        if (card.isJoker) continue;
         const freshState = useGameStore.getState();
         const game = freshState.teams[bot.teamId].games[gi];
         if (!game) break;
+        
+        if (card.isJoker) {
+          if (game.some(c => c.isJoker)) continue; // Já tem curinga
+          if (difficulty === 'easy') continue; // Fácil não usa curinga pra estender
+          if (difficulty === 'hard' && game.length < 4) continue; // Hard guarda curinga pra hora que tá perto
+        }
+
         const combined = [...game, card];
         if (validateSequence(combined, freshState.gameMode)) {
           animate();
