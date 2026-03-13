@@ -174,10 +174,6 @@ function shouldTakePile(
     // Se o lixo tem um curinga, pega com certeza.
     if (pile.some(c => c.isJoker)) return true;
 
-    // Se o lixo for grande, é muita vantagem ter mais cartas para fazer trincas e jogos.
-    if (pile.length >= 3) return true;
-    if (pile.length >= 2 && difficulty === 'hard') return true;
-
     // Se o lixo tem alguma carta que encaixa em jogos na mesa, pega.
     for (const pCard of pile) {
        for (const game of teamGames) {
@@ -406,7 +402,11 @@ export function useBotAI() {
               return !gIsTrinca && gNormal.length > 0 && gNormal[0].suit === suit;
             });
             
-            if (hasGameSameSuit && seq.length < 6) {
+            // Se for pra bater ou ir pro morto (0 ou 1 carta restando), ignora a regra de não matar a canastra
+            const remainingCards = bot.hand.length - seq.length;
+            const goingToBaterOrDead = remainingCards <= 1;
+
+            if (hasGameSameSuit && seq.length < 6 && !goingToBaterOrDead) {
               continue; // Retém as cartas, não "mata" a canastra!
             }
           }
