@@ -244,6 +244,30 @@ export default function GameScreen() {
         </View>
       </View>
 
+      {/* STATUS BAR DOS JOGADORES */}
+      <View style={styles.statusBar}>
+        {players.map(p => {
+          let shortName = p.name;
+          if (p.id === 'bot-1') shortName = 'Adv 1';
+          if (p.id === 'bot-2') shortName = 'Parc';
+          if (p.id === 'bot-3') shortName = 'Adv 2';
+          if (p.id === 'user') shortName = 'Você';
+
+          return (
+            <View key={p.id} style={[styles.statusItem, p.id === 'user' && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
+              <Text style={styles.statusName}>{shortName}</Text>
+              <Text style={styles.statusCards}>
+                {p.hand.length} 🎴 {teams[p.teamId].hasGottenDead ? '💀' : ''}
+              </Text>
+            </View>
+          );
+        })}
+        <View style={[styles.statusItem, { backgroundColor: 'rgba(255,214,0,0.1)' }]}>
+          <Text style={styles.statusName}>Mortos</Text>
+          <Text style={[styles.statusCards, { color: '#FFD600' }]}>{deads.length} 📦</Text>
+        </View>
+      </View>
+
       {/* BANNER DE EVENTO — no fluxo normal, não absolute */}
       <EventBanner events={gameLog} />
 
@@ -512,6 +536,36 @@ const styles = StyleSheet.create({
   targetText: { color: 'rgba(255,255,255,0.5)', fontSize: 10, marginTop: 2 },
   restartBtn: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
   restartText: { fontSize: 16 },
+
+  // STATUS BAR
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  statusItem: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minWidth: 46,
+  },
+  statusName: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 9,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  statusCards: {
+    color: '#B9F6CA',
+    fontSize: 11,
+    fontWeight: '800',
+  },
 
   // MÃO
   handTopBar: {

@@ -19,6 +19,7 @@ export interface TeamState {
   id: TeamId;
   games: Card[][]; // Jogos baixados na mesa (sequências)
   score: number;
+  hasGottenDead: boolean;
 }
 
 export interface GameEvent {
@@ -77,8 +78,8 @@ export function createInitialGameState(targetScore: number = 3000, botDifficulty
   ];
 
   const teams: Record<TeamId, TeamState> = {
-    'team-1': { id: 'team-1', games: [], score: 0 },
-    'team-2': { id: 'team-2', games: [], score: 0 },
+    'team-1': { id: 'team-1', games: [], score: 0, hasGottenDead: false },
+    'team-2': { id: 'team-2', games: [], score: 0, hasGottenDead: false },
   };
 
   // Virar a primeira carta do monte para o lixo (regra padrão do Buraco)

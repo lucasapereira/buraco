@@ -415,7 +415,7 @@ export function useBotAI() {
         // Verifica se a jogada não vai deixar o bot travado
         const remaining = bot.hand.filter(c => !seq.some(s => s.id === c.id));
         const wouldStrand = remaining.length === 0 &&
-          bot.hasGottenDead &&
+          s.teams[bot.teamId].hasGottenDead &&
           !s.teams[bot.teamId].games.some(g => g.length >= 7 && (s.gameMode === 'araujo_pereira' || !g.some(c => c.isJoker)));
 
         if (wouldStrand && difficulty !== 'hard') continue; // Fácil/Médio evita

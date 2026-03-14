@@ -42,14 +42,14 @@ function getPlayerName(players: GameState['players'], id: PlayerId): string {
 
 function checkAndHandleDead(
   hand: Card[],
-  player: { hasGottenDead: boolean },
+  teamHasGottenDead: boolean,
   deads: Card[][]
 ): { newHand: Card[]; gotDead: boolean; newDeads: Card[][] } {
   let newHand = [...hand];
   let gotDead = false;
   const newDeads = [...deads];
 
-  if (newHand.length === 0 && !player.hasGottenDead && newDeads.length > 0) {
+  if (newHand.length === 0 && !teamHasGottenDead && newDeads.length > 0) {
     newHand = newDeads.pop()!;
     gotDead = true;
   }
@@ -59,8 +59,8 @@ function checkAndHandleDead(
 
 function checkRoundEnd(state: GameState): Partial<GameState> | null {
   for (const player of state.players) {
-    if (player.hand.length === 0 && player.hasGottenDead) {
-      const team = state.teams[player.teamId];
+    const team = state.teams[player.teamId];
+    if (player.hand.length === 0 && team.hasGottenDead) {
       
       const canGoOut = team.games.some(g => {
         if (g.length < 7) return false;
@@ -112,11 +112,11 @@ function teamHasCleanCanasta(state: GameState, teamId: TeamId, extraGame?: Card[
 }
 
 function wouldStrandPlayer(
-  handAfterPlay: Card[], player: { hasGottenDead: boolean },
+  handAfterPlay: Card[], teamHasGottenDead: boolean,
   state: GameState, teamId: TeamId, extraGame?: Card[]
 ): boolean {
   if (handAfterPlay.length > 0) return false;
-  if (!player.hasGottenDead && state.deads.length > 0) return false;
+  if (!teamHasGottenDead && state.deads.length > 0) return false;
   return !teamHasCleanCanasta(state, teamId, extraGame);
 }
 
@@ -309,6 +309,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
     set((s) => {
       const playerIndex = s.players.findIndex(p => p.id === playerId);
+      const teamId = s.players[playerIndex].teamId;
+      const tState = s.teams[teamId];
       const hand = s.players[playerIndex].hand;
       const cardIndex = hand.findIndex(c => c.id === cardId);
       if (cardIndex === -1) return s;
@@ -319,7 +321,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
       const updatedPlayers = [...s.players];
       const { newHand: finalHand, gotDead, newDeads } = checkAndHandleDead(
-        newHand, s.players[playerIndex], s.deads
+        newHand, tState.hasGottenDead, s.deads
       );
 
       updatedPlayers[playerIndex] = {
@@ -352,6 +354,13 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         lastDrawnCardId: null,
         gameLog: log,
         discardedCardHistory: [...s.discardedCardHistory, discardedCard.id],
+        teams: {
+          ...s.teams,
+          [teamId]: {
+            ...tState,
+            hasGottenDead: tState.hasGottenDead || gotDead,
+          },
+        },
       };
 
       const newState = { ...s, ...baseUpdate };
@@ -381,7 +390,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (!validateSequence(selectedCards, state.gameMode)) return false;
 
     const remaining = player.hand.filter(c => !cardIds.includes(c.id));
-    if (wouldStrandPlayer(remaining, player, state, player.teamId, selectedCards)) {
+    if (wouldStrandPlayer(remaining, state.teams[player.teamId].hasGottenDead, state, player.teamId, selectedCards)) {
       return false;
     }
 
@@ -397,7 +406,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       const updatedPlayers = [...s.players];
 
       const { newHand, gotDead, newDeads } = checkAndHandleDead(
-        rem, currentPlayer, s.deads
+        rem, tState.hasGottenDead, s.deads
       );
 
       updatedPlayers[playerIndex] = {
@@ -431,6 +440,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           [teamId]: {
             ...tState,
             games: [...tState.games, orderedCards],
+            hasGottenDead: tState.hasGottenDead || gotDead,
           },
         },
       };
@@ -470,7 +480,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (!validateSequence(combinedCards, state.gameMode)) return false;
 
     const remaining = player.hand.filter(c => !cardIds.includes(c.id));
-    if (wouldStrandPlayer(remaining, player, state, teamId, combinedCards)) {
+    if (wouldStrandPlayer(remaining, state.teams[teamId].hasGottenDead, state, teamId, combinedCards)) {
       return false;
     }
 
@@ -485,7 +495,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       const updatedPlayers = [...s.players];
 
       const { newHand, gotDead, newDeads } = checkAndHandleDead(
-        rem, currentPlayer, s.deads
+        rem, tState.hasGottenDead, s.deads
       );
 
       updatedPlayers[playerIndex] = {
@@ -520,6 +530,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           [teamId]: {
             ...tState,
             games: newGames,
+            hasGottenDead: tState.hasGottenDead || gotDead,
           },
         },
       };
