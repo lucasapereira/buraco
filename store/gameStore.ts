@@ -1,10 +1,16 @@
 import { create } from 'zustand';
-import {
-  GameState, GameEvent, createInitialGameState, PlayerId, TeamId,
-  getNextPlayer, calculateRoundScore, BotDifficulty, GameMode
-} from '../game/engine';
 import { Card, cardLabel } from '../game/deck';
-import { validateSequence, sortCardsBySuitAndValue, checkCanasta, sortGameCards, canTakePile } from '../game/rules';
+import {
+  BotDifficulty,
+  GameEvent,
+  GameMode,
+  GameState,
+  PlayerId, TeamId,
+  calculateRoundScore,
+  createInitialGameState,
+  getNextPlayer
+} from '../game/engine';
+import { canTakePile, sortCardsBySuitAndValue, sortGameCards, validateSequence } from '../game/rules';
 
 type TurnPhase = 'draw' | 'play' | 'discard';
 
@@ -14,8 +20,8 @@ interface GameActions {
   drawFromDeck: (playerId: PlayerId) => void;
   drawFromPile: (playerId: PlayerId) => boolean; // false = não pode pegar (regra)
   discard: (playerId: PlayerId, cardId: string) => void;
-  playCards: (playerId: PlayerId, cardIds: string[]) => { success: boolean; error?: string };
-  addToExistingGame: (playerId: PlayerId, cardIds: string[], gameIndex: number) => { success: boolean; error?: string };
+  playCards: (playerId: PlayerId, cardIds: string[]) => boolean;
+  addToExistingGame: (playerId: PlayerId, cardIds: string[], gameIndex: number) => boolean;
 }
 
 let eventCounter = 0;
@@ -105,10 +111,11 @@ function checkRoundEnd(state: GameState, playerId: PlayerId): Partial<GameState>
 function teamHasCleanCanasta(state: GameState, teamId: TeamId, extraGame?: Card[]): boolean {
   const allGames = [...state.teams[teamId].games];
   if (extraGame) allGames.push(extraGame);
-  
+
   return allGames.some(g => {
-    const type = checkCanasta(g);
-    return type !== 'none' && (state.gameMode === 'araujo_pereira' || type === 'clean');
+    if (g.length < 7) return false;
+    if (state.gameMode === 'araujo_pereira') return true; // Any canasta is enough
+    return g.filter(c => c.isJoker).length === 0;
   });
 }
 
@@ -116,15 +123,13 @@ function wouldStrandPlayer(
   handAfterPlay: Card[], teamHasGottenDead: boolean,
   state: GameState, teamId: TeamId, extraGame?: Card[]
 ): boolean {
-  const hasClean = teamHasCleanCanasta(state, teamId, extraGame);
-  const { isBatidaSafe } = require('../game/rules');
-  
-  return !isBatidaSafe(
-    handAfterPlay.length,
-    teamHasGottenDead,
-    state.deads.length > 0,
-    hasClean
-  );
+  // Considera que o jogador sempre terá que descartar uma carta ao final.
+  // Se após jogar e descartar, ele ficaria com 0 cartas, verifica se ele pode "bater" ou pegar o morto.
+  const finalCountAfterDiscard = handAfterPlay.length === 0 ? 0 : handAfterPlay.length - 1;
+
+  if (finalCountAfterDiscard > 0) return false;
+  if (!teamHasGottenDead && state.deads.length > 0) return false;
+  return !teamHasCleanCanasta(state, teamId, extraGame);
 }
 
 export const useGameStore = create<GameState & GameActions>((set, get) => ({
@@ -268,19 +273,12 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     // EXCETO no modo Araujo Pereira, onde pegar o lixo é livre
     let canTake = false;
     let mustPlayTopId: string | null = null;
-    
+
     if (state.gameMode === 'araujo_pereira') {
       canTake = true; // Free to take
     } else {
       const teamGames = state.teams[player.teamId].games;
-      const team = state.teams[player.teamId];
-      const hasClean = teamHasCleanCanasta(state, player.teamId);
-      
-      canTake = canTakePile(player.hand, state.pile, teamGames, state.gameMode, {
-        hasGottenDead: team.hasGottenDead,
-        hasDeadsAvailable: state.deads.length > 0,
-        hasCleanCanasta: hasClean
-      });
+      canTake = canTakePile(player.hand, state.pile, teamGames, state.gameMode);
       mustPlayTopId = state.pile[state.pile.length - 1].id;
     }
 
@@ -319,25 +317,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     // Verifica também se a carta ainda está na mão — se saiu, foi jogada de alguma forma
     if (state.mustPlayPileTopId !== null) {
       const player = state.players.find(p => p.id === playerId);
-      if (player) {
-        const pileTopStillInHand = player.hand.some(c => c.id === state.mustPlayPileTopId);
-        if (pileTopStillInHand) {
-          // Deadlock prevention: verify if playing the top card is even possible now
-          const teamGames = state.teams[player.teamId].games;
-          const hasClean = teamHasCleanCanasta(state, player.teamId);
-          const canActuallyPlay = canTakePile(player.hand, [{ id: state.mustPlayPileTopId } as Card], teamGames, state.gameMode, {
-            hasGottenDead: state.teams[player.teamId].hasGottenDead,
-            hasDeadsAvailable: state.deads.length > 0,
-            hasCleanCanasta: hasClean
-          });
-
-          if (canActuallyPlay) {
-             return; // Still blocked, you have a legal way to play it
-          }
-          // If NOT canActuallyPlay, even after taking the pile, it means you're stuck.
-          // We release the obligation so the player can continue.
-        }
-      }
+      const pileTopStillInHand = player?.hand.some(c => c.id === state.mustPlayPileTopId);
+      if (pileTopStillInHand) return; // Ainda na mão, bloqueia
+      // Não está mais na mão — limpa a obrigação silenciosamente
       set({ mustPlayPileTopId: null });
     }
 
@@ -427,25 +409,23 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   playCards: (playerId, cardIds) => {
     const state = get();
-    if (state.currentTurnPlayerId !== playerId) return { success: false };
-    if (state.turnPhase !== 'play') return { success: false };
+    if (state.currentTurnPlayerId !== playerId) return false;
+    if (state.turnPhase !== 'play') return false;
 
     // REGRA: Primeira jogada após comprar o lixo DEVE ser criando um novo jogo com a carta do topo
     if (state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
-      return { success: false, error: 'top_card_required' };
+      return false;
     }
 
     const player = state.players.find(p => p.id === playerId);
-    if (!player) return { success: false };
+    if (!player) return false;
 
     const selectedCards = player.hand.filter(c => cardIds.includes(c.id));
-    if (!validateSequence(selectedCards, state.gameMode)) {
-      return { success: false, error: 'invalid_sequence' };
-    }
+    if (!validateSequence(selectedCards, state.gameMode)) return false;
 
     const remaining = player.hand.filter(c => !cardIds.includes(c.id));
     if (wouldStrandPlayer(remaining, state.teams[player.teamId].hasGottenDead, state, player.teamId, selectedCards)) {
-      return { success: false, error: 'stranding_prohibited' };
+      return false;
     }
 
     const name = getPlayerName(state.players, playerId);
@@ -508,36 +488,34 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       return baseUpdate;
     });
 
-    return { success: true };
+    return true;
   },
 
   addToExistingGame: (playerId, cardIds, gameIndex) => {
     const state = get();
-    if (state.currentTurnPlayerId !== playerId) return { success: false };
-    if (state.turnPhase !== 'play') return { success: false };
+    if (state.currentTurnPlayerId !== playerId) return false;
+    if (state.turnPhase !== 'play') return false;
 
     // REGRA: Primeira jogada após comprar o lixo DEVE ser novo jogo. Não pode adicionar a jogo existente.
     if (state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
-      return { success: false, error: 'top_card_required' };
+      return false;
     }
 
     const player = state.players.find(p => p.id === playerId);
-    if (!player) return { success: false };
+    if (!player) return false;
 
     const teamId = player.teamId;
     const existingGame = state.teams[teamId].games[gameIndex];
-    if (!existingGame) return { success: false };
+    if (!existingGame) return false;
 
     const selectedCards = player.hand.filter(c => cardIds.includes(c.id));
     const combinedCards = [...existingGame, ...selectedCards];
 
-    if (!validateSequence(combinedCards, state.gameMode)) {
-      return { success: false, error: 'invalid_sequence' };
-    }
+    if (!validateSequence(combinedCards, state.gameMode)) return false;
 
     const remaining = player.hand.filter(c => !cardIds.includes(c.id));
     if (wouldStrandPlayer(remaining, state.teams[teamId].hasGottenDead, state, teamId, combinedCards)) {
-      return { success: false, error: 'stranding_prohibited' };
+      return false;
     }
 
     const name = getPlayerName(state.players, playerId);
@@ -600,6 +578,6 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       return baseUpdate;
     });
 
-    return { success: true };
+    return true;
   },
 }));

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Card as CardType } from '../game/deck';
 
 interface CardProps {
@@ -22,7 +22,7 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
         onPress={onPress}
         style={[styles.card, styles.hiddenCard, { width: w, height: h }]}
       >
-        <Text style={[styles.hiddenText, small && { fontSize: 11 }]}>🂠</Text>
+        <Text style={[styles.hiddenText, small && { fontSize: 13 }]}>🂠</Text>
       </TouchableOpacity>
     );
   }
@@ -57,17 +57,17 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
       ]}
     >
       <View style={styles.topCorner}>
-        <Text style={[styles.value, { color }, small && { fontSize: 21 }]}>{getDisplayValue()}</Text>
-        <Text style={[styles.suitSmall, { color }, small && { fontSize: 17, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.value, { color }, small && { fontSize: 20 }]}>{getDisplayValue()}</Text>
+        <Text style={[styles.suitSmall, { color }, small && { fontSize: 14, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
       <View style={styles.centerBox}>
-        <Text style={[styles.suitBig, { color }, small && { fontSize: 34 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.suitBig, { color }, small && { fontSize: 28 }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
       <View style={styles.bottomCorner}>
-        <Text style={[styles.value, { color }, small && { fontSize: 21 }]}>{getDisplayValue()}</Text>
-        <Text style={[styles.suitSmall, { color }, small && { fontSize: 17, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.value, { color }, small && { fontSize: 20 }]}>{getDisplayValue()}</Text>
+        <Text style={[styles.suitSmall, { color }, small && { fontSize: 14, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -85,7 +85,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 2,
     justifyContent: 'space-between',
-    padding: 3,
+    paddingVertical: 1, // Reduzido para aproximar o número da borda
+    paddingLeft: 1,
+    paddingRight: 5,
   },
   selectedCard: {
     transform: [{ translateY: -42 }],
@@ -110,12 +112,12 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '180deg' }],
   },
   value: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '800',
   },
   suitSmall: {
-    fontSize: 18,
-    marginTop: -2,
+    fontSize: 12,
+    marginTop: -5, // Puxa o naipe mais "para cima" (perto do número)
   },
   centerBox: {
     position: 'absolute',
@@ -124,7 +126,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   suitBig: {
-    fontSize: 42,
+    fontSize: 33,
     opacity: 0.2,
   },
 });

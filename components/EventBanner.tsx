@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import { Animated, Dimensions, StyleSheet, Text, View } from 'react-native';
 import { GameEvent } from '../game/engine';
 
 const { width: SW } = Dimensions.get('window');
@@ -51,10 +51,10 @@ export const EventBanner: React.FC<EventBannerProps> = ({ events }) => {
   const isImportant = lastEvent.type === 'got_dead' || lastEvent.type === 'round_end' || lastEvent.type === 'play_cards';
   const bgColor = lastEvent.type === 'got_dead' ? '#FF6F00'
     : lastEvent.type === 'round_end' ? '#FFD600'
-    : lastEvent.type === 'play_cards' || lastEvent.type === 'add_to_game' ? '#1565C0'
-    : lastEvent.type === 'discard' ? '#C62828'
-    : lastEvent.type === 'draw_pile' ? '#6A1B9A'
-    : '#37474F';
+      : lastEvent.type === 'play_cards' || lastEvent.type === 'add_to_game' ? '#1565C0'
+        : lastEvent.type === 'discard' ? '#C62828'
+          : lastEvent.type === 'draw_pile' ? '#6A1B9A'
+            : '#37474F';
 
   return (
     <Animated.View style={[
@@ -106,13 +106,13 @@ const styles = StyleSheet.create({
   bannerText: {
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '600',
-    fontSize: 16,
+    fontSize: 13,
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   importantText: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '900',
     color: '#fff',
   },

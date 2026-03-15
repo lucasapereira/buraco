@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { LayoutAnimation, Platform, UIManager } from 'react-native';
+import { Card } from '../game/deck';
+import { BotDifficulty, GameMode, PlayerId } from '../game/engine';
+import { canTakePile, sortCardsBySuitAndValue, validateSequence } from '../game/rules';
 import { useGameStore } from '../store/gameStore';
-import { PlayerId, BotDifficulty, GameMode } from '../game/engine';
-import { validateSequence, sortCardsBySuitAndValue, canTakePile } from '../game/rules';
-import { Card, cardLabel } from '../game/deck';
-import { LayoutAnimation, UIManager, Platform } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -86,12 +86,12 @@ function findBestSequences(hand: Card[], gameMode: GameMode = 'classic'): Card[]
   // E para mesmo tamanho, prioriza sequências ao invés de trincas, e sem curinga ao invés de com curinga
   return sequences.sort((a, b) => {
     if (a.length !== b.length) return b.length - a.length;
-    
+
     // Verificações de Trinca x Sequência
     // Uma sequência normal tem naipes iguais (ignorando curinga)
     const aNormalCards = a.filter(c => !c.isJoker);
     const bNormalCards = b.filter(c => !c.isJoker);
-    
+
     const aIsSequence = aNormalCards.every(c => c.suit === aNormalCards[0]?.suit);
     const bIsSequence = bNormalCards.every(c => c.suit === bNormalCards[0]?.suit);
     const aIsTrinca = aNormalCards.every(c => c.value === aNormalCards[0]?.value);
@@ -166,39 +166,34 @@ function chooseBestDiscard(hand: Card[], discardedHistory: string[], difficulty:
 
 /** Avalia se vale a pena pegar o lixo (respeitando a regra obrigatória) */
 function shouldTakePile(
-  pile: Card[], 
-  hand: Card[], 
-  difficulty: BotDifficulty, 
-  teamGames: Card[][] = [], 
-  gameMode: GameMode = 'classic',
-  batidaState?: { hasGottenDead: boolean; hasDeadsAvailable: boolean; hasCleanCanasta: boolean }
+  pile: Card[], hand: Card[], difficulty: BotDifficulty, teamGames: Card[][] = [], gameMode: GameMode = 'classic'
 ): boolean {
   if (pile.length === 0) return false;
-  
+
   if (gameMode === 'araujo_pereira') {
     // Se o lixo tem um curinga, pega com certeza.
     if (pile.some(c => c.isJoker)) return true;
 
     // Se o lixo tem alguma carta que encaixa em jogos na mesa, pega.
     for (const pCard of pile) {
-       for (const game of teamGames) {
-          if (validateSequence([...game, pCard], gameMode)) return true; // encaixa
-       }
+      for (const game of teamGames) {
+        if (validateSequence([...game, pCard], gameMode)) return true; // encaixa
+      }
     }
 
     // Verifica utilidade imediata para a mão
     const jokersInHand = hand.filter(h => h.isJoker).length;
     for (const pCard of pile) {
-       // Tem pelo menos duas cartas iguais na mão? (formaria trinca limpa)
-       const sameValueCount = hand.filter(h => h.value === pCard.value && !h.isJoker).length;
-       if (sameValueCount >= 2) return true;
-       // Tem uma igual e um curinga na mão? (formaria trinca suja)
-       if (sameValueCount === 1 && jokersInHand > 0) return true;
+      // Tem pelo menos duas cartas iguais na mão? (formaria trinca limpa)
+      const sameValueCount = hand.filter(h => h.value === pCard.value && !h.isJoker).length;
+      if (sameValueCount >= 2) return true;
+      // Tem uma igual e um curinga na mão? (formaria trinca suja)
+      if (sameValueCount === 1 && jokersInHand > 0) return true;
 
-       // Formaria sequência normal?
-       const sameSuit = hand.filter(h => !h.isJoker && h.suit === pCard.suit);
-       const adjacent = sameSuit.filter(h => Math.abs(h.value - pCard.value) <= 2);
-       if (adjacent.length >= 2) return true; // heurística simples
+      // Formaria sequência normal?
+      const sameSuit = hand.filter(h => !h.isJoker && h.suit === pCard.suit);
+      const adjacent = sameSuit.filter(h => Math.abs(h.value - pCard.value) <= 2);
+      if (adjacent.length >= 2) return true; // heurística simples
     }
 
     // Se nenhuma carta for claramente útil e o lixo for pequeno, deixa passar
@@ -211,13 +206,13 @@ function shouldTakePile(
   const fitsExisting = teamGames.some(g => validateSequence([...g, topCard], gameMode));
 
   // REGRA: só pode pegar se consegue montar jogo com o topo
-  if (!canTakePile(hand, pile, teamGames, gameMode, batidaState)) return false;
+  if (!canTakePile(hand, pile, teamGames, gameMode)) return false;
 
   // Regra Avançada: Normalmente não pega o lixo se isso nos obrigar a criar um NOVO jogo
   // de um naipe que a nossa equipe JÁ TEM na mesa. 
   if (teamGames && teamGames.length > 0) {
     const fitsExisting = teamGames.some(g => validateSequence([...g, topCard], gameMode));
-    
+
     // Se a carta cabe em um jogo existente, ignoramos a restrição de "já ter o naipe"
     // pois estamos apenas estendendo um jogo rumo à canastra.
     if (!fitsExisting) {
@@ -226,7 +221,7 @@ function shouldTakePile(
         if (normalCards.length === 0) return false;
         return normalCards[0].suit === topCard.suit;
       });
-      
+
       // No modo araujo_pereira somos mais agressivos, mas no classic evitamos duplicar naipes
       if (hasGameSameSuit && gameMode === 'classic') {
         return false;
@@ -243,6 +238,12 @@ function shouldTakePile(
     );
     return sameInHand.length >= 1;
   }).length;
+
+  // No modo Araujo Pereira, o bicho pega: se tiver QUALQUER carta útil ou se encaixar, leva.
+  if (gameMode === 'araujo_pereira') {
+    if (difficulty === 'hard') return true;
+    if (difficulty === 'medium') return (usefulCount >= 1 || fitsExisting);
+  }
 
   // Se encaixa em jogo existente, o bot Hard sempre pega. O Medium pega se tiver +1 útil.
   if (fitsExisting) {
@@ -286,38 +287,28 @@ export function useBotAI() {
 
     try {
       // ── FASE DRAW ──
-    if (s.turnPhase === 'draw') {
-      await delay(1500); // Tempo para o bot "pensar" na mesa
-      
-      const pile = s.pile;
-      const team = s.teams[bot.teamId];
-      const hasClean = team.games.some(g => {
-        const { checkCanasta } = require('../game/rules');
-        const type = checkCanasta(g);
-        return type !== 'none' && (s.gameMode === 'araujo_pereira' || type === 'clean');
-      });
+      if (s.turnPhase === 'draw') {
+        await delay(1500); // Tempo para o bot "pensar" na mesa
 
-      const takePile = shouldTakePile(pile, bot.hand, difficulty, team.games, s.gameMode, {
-        hasGottenDead: team.hasGottenDead,
-        hasDeadsAvailable: s.deads.length > 0,
-        hasCleanCanasta: hasClean
-      });
+        const pile = s.pile;
+        const teamGames = s.teams[bot.teamId].games;
+        const takePile = shouldTakePile(pile, bot.hand, difficulty, teamGames, s.gameMode);
 
-      animate(); // Animação de compra
-      if (takePile) {
-        useGameStore.getState().drawFromPile(botId);
-      } else {
-        useGameStore.getState().drawFromDeck(botId);
+        animate(); // Animação de compra
+        if (takePile) {
+          useGameStore.getState().drawFromPile(botId);
+        } else {
+          useGameStore.getState().drawFromDeck(botId);
+        }
+
+        await delay(800); // Pausa depois curinha para olhar a mão
+        await doBotPlayAsync(botId);
+        return;
       }
 
-      await delay(800); // Pausa depois curinha para olhar a mão
-      await doBotPlayAsync(botId);
-      return;
-    }
-
-    if (s.turnPhase === 'play') {
-      await doBotPlayAsync(botId);
-    }
+      if (s.turnPhase === 'play') {
+        await doBotPlayAsync(botId);
+      }
     } catch (e: any) {
       console.error('Bot turn failed:', e);
       // Failsafe absoluto: Emite notificação e repassa o turno forçadamente.
@@ -424,7 +415,7 @@ export function useBotAI() {
         const normalCards = seq.filter(c => !c.isJoker);
         if (normalCards.length > 0 && (difficulty === 'hard' || difficulty === 'medium')) {
           const isTrinca = normalCards.every(c => c.value === normalCards[0].value);
-          
+
           if (!isTrinca) {
             const suit = normalCards[0].suit;
             const teamGames = s.teams[bot.teamId].games;
@@ -433,7 +424,7 @@ export function useBotAI() {
               const gIsTrinca = gNormal.length > 0 && gNormal.every(c => c.value === gNormal[0].value);
               return !gIsTrinca && gNormal.length > 0 && gNormal[0].suit === suit;
             });
-            
+
             // Se for pra bater ou ir pro morto (0 ou 1 carta restando), ignora a regra de não matar a canastra
             const remainingCards = bot.hand.length - seq.length;
             const goingToBaterOrDead = remainingCards <= 1;
@@ -483,7 +474,7 @@ export function useBotAI() {
         const freshState = useGameStore.getState();
         const game = freshState.teams[bot.teamId].games[gi];
         if (!game) break;
-        
+
         if (card.isJoker) {
           if (game.some(c => c.isJoker)) continue; // Já tem curinga
           if (difficulty === 'easy') continue; // Fácil não usa curinga pra estender

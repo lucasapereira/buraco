@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card as CardType } from '../game/deck';
 import { Card } from './Card';
 
@@ -106,9 +106,9 @@ const styles = StyleSheet.create({
   },
   cardCount: {
     position: 'absolute',
-    top: 26, 
-    left: 6,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    top: 26,
+    left: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 10,
     paddingHorizontal: 7,
     paddingVertical: 1,
