@@ -107,9 +107,8 @@ function teamHasCleanCanasta(state: GameState, teamId: TeamId, extraGame?: Card[
   if (extraGame) allGames.push(extraGame);
   
   return allGames.some(g => {
-    if (g.length < 7) return false;
-    if (state.gameMode === 'araujo_pereira') return true; // Any canasta is enough
-    return g.filter(c => c.isJoker).length === 0;
+    const type = checkCanasta(g);
+    return type !== 'none' && (state.gameMode === 'araujo_pereira' || type === 'clean');
   });
 }
 
@@ -117,13 +116,15 @@ function wouldStrandPlayer(
   handAfterPlay: Card[], teamHasGottenDead: boolean,
   state: GameState, teamId: TeamId, extraGame?: Card[]
 ): boolean {
-  // Considera que o jogador sempre terá que descartar uma carta ao final.
-  // Se após jogar e descartar, ele ficaria com 0 cartas, verifica se ele pode "bater" ou pegar o morto.
-  const finalCountAfterDiscard = handAfterPlay.length === 0 ? 0 : handAfterPlay.length - 1;
+  const hasClean = teamHasCleanCanasta(state, teamId, extraGame);
+  const { isBatidaSafe } = require('../game/rules');
   
-  if (finalCountAfterDiscard > 0) return false;
-  if (!teamHasGottenDead && state.deads.length > 0) return false;
-  return !teamHasCleanCanasta(state, teamId, extraGame);
+  return !isBatidaSafe(
+    handAfterPlay.length,
+    teamHasGottenDead,
+    state.deads.length > 0,
+    hasClean
+  );
 }
 
 export const useGameStore = create<GameState & GameActions>((set, get) => ({
@@ -272,7 +273,14 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       canTake = true; // Free to take
     } else {
       const teamGames = state.teams[player.teamId].games;
-      canTake = canTakePile(player.hand, state.pile, teamGames, state.gameMode);
+      const team = state.teams[player.teamId];
+      const hasClean = teamHasCleanCanasta(state, player.teamId);
+      
+      canTake = canTakePile(player.hand, state.pile, teamGames, state.gameMode, {
+        hasGottenDead: team.hasGottenDead,
+        hasDeadsAvailable: state.deads.length > 0,
+        hasCleanCanasta: hasClean
+      });
       mustPlayTopId = state.pile[state.pile.length - 1].id;
     }
 
@@ -311,9 +319,25 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     // Verifica também se a carta ainda está na mão — se saiu, foi jogada de alguma forma
     if (state.mustPlayPileTopId !== null) {
       const player = state.players.find(p => p.id === playerId);
-      const pileTopStillInHand = player?.hand.some(c => c.id === state.mustPlayPileTopId);
-      if (pileTopStillInHand) return; // Ainda na mão, bloqueia
-      // Não está mais na mão — limpa a obrigação silenciosamente
+      if (player) {
+        const pileTopStillInHand = player.hand.some(c => c.id === state.mustPlayPileTopId);
+        if (pileTopStillInHand) {
+          // Deadlock prevention: verify if playing the top card is even possible now
+          const teamGames = state.teams[player.teamId].games;
+          const hasClean = teamHasCleanCanasta(state, player.teamId);
+          const canActuallyPlay = canTakePile(player.hand, [{ id: state.mustPlayPileTopId } as Card], teamGames, state.gameMode, {
+            hasGottenDead: state.teams[player.teamId].hasGottenDead,
+            hasDeadsAvailable: state.deads.length > 0,
+            hasCleanCanasta: hasClean
+          });
+
+          if (canActuallyPlay) {
+             return; // Still blocked, you have a legal way to play it
+          }
+          // If NOT canActuallyPlay, even after taking the pile, it means you're stuck.
+          // We release the obligation so the player can continue.
+        }
+      }
       set({ mustPlayPileTopId: null });
     }
 

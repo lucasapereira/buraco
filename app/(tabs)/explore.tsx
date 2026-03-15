@@ -126,13 +126,21 @@ export default function GameScreen() {
       return;
     }
     // Verifica regra: precisa ter jogo com o topo do lixo (exceto Araujo Pereira)
-    if (gameMode !== 'araujo_pereira' && !canTakePile(user.hand, pile, myTeamGames, gameMode)) {
-      const topCard = pile[pile.length - 1];
-      Alert.alert(
-        '❌ Não pode pegar o lixo',
-        `Você precisa usar a carta do topo do lixo em um jogo (novo ou existente).`
-      );
-      return;
+    if (gameMode !== 'araujo_pereira') {
+      const team = teams['team-1'];
+      const hasClean = team.games.some(g => checkCanasta(g) === 'clean');
+
+      if (!canTakePile(user.hand, pile, myTeamGames, gameMode, {
+        hasGottenDead: team.hasGottenDead,
+        hasDeadsAvailable: deads.length > 0,
+        hasCleanCanasta: hasClean
+      })) {
+        Alert.alert(
+          '❌ Não pode pegar o lixo',
+          `Você precisa usar a carta do topo do lixo em um jogo e essa jogada deve ser legal (não pode se enforcar).`
+        );
+        return;
+      }
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     drawFromPile('user');

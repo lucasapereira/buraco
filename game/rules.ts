@@ -157,6 +157,28 @@ export function canAddToGame(existingGame: Card[], newCards: Card[], gameMode: G
 }
 
 /**
+ * Verifica se uma batida seria segura (não resultaria em enforcamento ilegal).
+ * No Buraco, se você termina a fase de jogo com 0 ou 1 carta, você é obrigado a descartar
+ * e terminar a rodada. Isso só é permitido se você tiver as condições de batida.
+ */
+export function isBatidaSafe(
+  handSizeAfterPlay: number,
+  hasGottenDead: boolean,
+  hasDeadsAvailable: boolean,
+  hasCleanCanasta: boolean
+): boolean {
+  // Se sobrarem 2 ou mais cartas após a fase de jogo, o descarte deixará 1+, então é seguro.
+  // Se sobrar 1 ou 0, o descarte deixará 0, então precisa poder bater/pegar morto.
+  const cardsAfterDiscard = handSizeAfterPlay <= 1 ? 0 : handSizeAfterPlay - 1;
+  
+  if (cardsAfterDiscard > 0) return true;
+  
+  // Se for ficar com 0 cartas, precisa poder pegar o morto ou bater
+  if (!hasGottenDead && hasDeadsAvailable) return true; // Vai pegar o morto
+  return hasCleanCanasta; // Só pode ficar sem cartas se tiver canastra válida
+}
+
+/**
  * Verifica se o jogador pode pegar o lixo.
  * Regra: a carta do TOPO do lixo (última da array) deve obrigatoriamente
  * fazer parte de um jogo novo formado com cartas da mão do jogador.
@@ -165,26 +187,64 @@ export function canTakePile(
   hand: Card[],
   pile: Card[],
   existingGames: Card[][] = [],
-  gameMode: GameMode = 'classic'
+  gameMode: GameMode = 'classic',
+  batidaState?: {
+    hasGottenDead: boolean;
+    hasDeadsAvailable: boolean;
+    hasCleanCanasta: boolean;
+  }
 ): boolean {
   if (pile.length === 0) return false;
-  if (gameMode === 'araujo_pereira') return true; // Always can take in this mode
+  if (gameMode === 'araujo_pereira') return true; 
 
   const topCard = pile[pile.length - 1];
+  const totalCountIfTaken = hand.length + pile.length;
+
+  // Helper para verificar se uma jogada específica não causaria enforcamento
+  const checkSafe = (cardsPlayed: number, addedToGameIndex: number = -1, extraCards: Card[] = []) => {
+    if (!batidaState) return true;
+    
+    let canastaNow = batidaState.hasCleanCanasta;
+    if (!canastaNow) {
+      if (addedToGameIndex !== -1) {
+        const combined = [...existingGames[addedToGameIndex], ...extraCards, topCard];
+        const type = checkCanasta(combined);
+        canastaNow = type === 'clean';
+      } else if (extraCards.length + 1 >= 7) {
+        const combined = [...extraCards, topCard];
+        const type = checkCanasta(combined);
+        canastaNow = type === 'clean';
+      }
+    }
+
+    return isBatidaSafe(
+      totalCountIfTaken - cardsPlayed,
+      batidaState.hasGottenDead,
+      batidaState.hasDeadsAvailable,
+      canastaNow
+    );
+  };
 
   // Se a carta do topo encaixa diretamente em algum jogo existente, pode pegar
-  for (const game of existingGames) {
-    if (validateSequence([...game, topCard], gameMode)) return true;
+  for (let idx = 0; idx < existingGames.length; idx++) {
+    const game = existingGames[idx];
+    if (validateSequence([...game, topCard], gameMode)) {
+      if (checkSafe(1, idx)) return true;
+    }
 
     // Ou encaixa junto com 1 carta da mão
     for (let i = 0; i < hand.length; i++) {
-      if (validateSequence([...game, topCard, hand[i]], gameMode)) return true;
+      if (validateSequence([...game, topCard, hand[i]], gameMode)) {
+        if (checkSafe(2, idx, [hand[i]])) return true;
+      }
     }
 
     // Ou encaixa junto com 2 cartas da mão
     for (let i = 0; i < hand.length; i++) {
       for (let j = i + 1; j < hand.length; j++) {
-        if (validateSequence([...game, topCard, hand[i], hand[j]], gameMode)) return true;
+        if (validateSequence([...game, topCard, hand[i], hand[j]], gameMode)) {
+           if (checkSafe(3, idx, [hand[i], hand[j]])) return true;
+        }
       }
     }
   }
@@ -196,11 +256,15 @@ export function canTakePile(
   // Testa sequências de 3 com a carta do topo: topCard + 2 da mão
   for (let i = 0; i < nonJokers.length; i++) {
     for (let j = i + 1; j < nonJokers.length; j++) {
-      if (validateSequence([topCard, nonJokers[i], nonJokers[j]])) return true;
+      if (validateSequence([topCard, nonJokers[i], nonJokers[j]])) {
+        if (checkSafe(3, -1, [nonJokers[i], nonJokers[j]])) return true;
+      }
     }
     // Com 1 curinga
     if (jokers.length > 0) {
-      if (validateSequence([topCard, nonJokers[i], jokers[0]])) return true;
+      if (validateSequence([topCard, nonJokers[i], jokers[0]])) {
+        if (checkSafe(3, -1, [nonJokers[i], jokers[0]])) return true;
+      }
     }
   }
   return false;

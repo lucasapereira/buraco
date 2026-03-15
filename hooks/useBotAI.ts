@@ -166,7 +166,12 @@ function chooseBestDiscard(hand: Card[], discardedHistory: string[], difficulty:
 
 /** Avalia se vale a pena pegar o lixo (respeitando a regra obrigatória) */
 function shouldTakePile(
-  pile: Card[], hand: Card[], difficulty: BotDifficulty, teamGames: Card[][] = [], gameMode: GameMode = 'classic'
+  pile: Card[], 
+  hand: Card[], 
+  difficulty: BotDifficulty, 
+  teamGames: Card[][] = [], 
+  gameMode: GameMode = 'classic',
+  batidaState?: { hasGottenDead: boolean; hasDeadsAvailable: boolean; hasCleanCanasta: boolean }
 ): boolean {
   if (pile.length === 0) return false;
   
@@ -206,7 +211,7 @@ function shouldTakePile(
   const fitsExisting = teamGames.some(g => validateSequence([...g, topCard], gameMode));
 
   // REGRA: só pode pegar se consegue montar jogo com o topo
-  if (!canTakePile(hand, pile, teamGames, gameMode)) return false;
+  if (!canTakePile(hand, pile, teamGames, gameMode, batidaState)) return false;
 
   // Regra Avançada: Normalmente não pega o lixo se isso nos obrigar a criar um NOVO jogo
   // de um naipe que a nossa equipe JÁ TEM na mesa. 
@@ -238,12 +243,6 @@ function shouldTakePile(
     );
     return sameInHand.length >= 1;
   }).length;
-
-  // No modo Araujo Pereira, o bicho pega: se tiver QUALQUER carta útil ou se encaixar, leva.
-  if (gameMode === 'araujo_pereira') {
-    if (difficulty === 'hard') return true;
-    if (difficulty === 'medium') return (usefulCount >= 1 || fitsExisting);
-  }
 
   // Se encaixa em jogo existente, o bot Hard sempre pega. O Medium pega se tiver +1 útil.
   if (fitsExisting) {
@@ -291,8 +290,18 @@ export function useBotAI() {
       await delay(1500); // Tempo para o bot "pensar" na mesa
       
       const pile = s.pile;
-      const teamGames = s.teams[bot.teamId].games;
-      const takePile = shouldTakePile(pile, bot.hand, difficulty, teamGames, s.gameMode);
+      const team = s.teams[bot.teamId];
+      const hasClean = team.games.some(g => {
+        const { checkCanasta } = require('../game/rules');
+        const type = checkCanasta(g);
+        return type !== 'none' && (s.gameMode === 'araujo_pereira' || type === 'clean');
+      });
+
+      const takePile = shouldTakePile(pile, bot.hand, difficulty, team.games, s.gameMode, {
+        hasGottenDead: team.hasGottenDead,
+        hasDeadsAvailable: s.deads.length > 0,
+        hasCleanCanasta: hasClean
+      });
 
       animate(); // Animação de compra
       if (takePile) {
