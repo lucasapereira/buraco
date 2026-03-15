@@ -56,7 +56,7 @@ export const Hand: React.FC<HandProps> = ({
               />
               {isHighlighted && (
                 <View style={styles.newBadge}>
-                  <Text style={styles.newBadgeText}>NOVA</Text>
+                  <Text style={styles.newBadgeText}>N</Text>
                 </View>
               )}
             </View>
@@ -85,12 +85,15 @@ const styles = StyleSheet.create({
   newBadge: {
     position: 'absolute',
     top: 2,
-    left: 2,
+    left: 16,
     backgroundColor: '#FFD600',
-    borderRadius: 6,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
+    borderRadius: 10,
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
     zIndex: 10,
+    opacity: 0.8,
   },
   newBadgeText: {
     color: '#1B5E20',
