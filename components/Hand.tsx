@@ -69,14 +69,14 @@ export const Hand: React.FC<HandProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: 130,
+    height: 112,
     width: '100%',
   },
   scrollContent: {
     alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 4,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 2,
   },
   cardWrapper: {},
   highlightWrapper: {
@@ -94,14 +94,14 @@ const styles = StyleSheet.create({
   },
   newBadgeText: {
     color: '#1B5E20',
-    fontSize: 7,
+    fontSize: 9,
     fontWeight: '900',
   },
   cardCount: {
     position: 'absolute',
-    top: 2,
-    left: 16,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    top: 6,
+    left: 12,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
   },
   cardCountText: {
     color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

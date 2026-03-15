@@ -51,6 +51,8 @@ export interface GameState {
   discardedCardHistory: string[];
   mustPlayPileTopId: string | null; // ID da carta do topo do lixo que deve ser baixada
   deckReshuffleCount: number;        // Quantas vezes o lixo foi reembaralhado como novo monte
+  animatingDiscard?: { playerId: PlayerId; card: Card } | null;
+  animatingDrawPlayerId?: PlayerId | null;
 }
 
 export const TURN_ORDER: PlayerId[] = ['user', 'bot-1', 'bot-2', 'bot-3'];
@@ -60,7 +62,7 @@ export function getNextPlayer(currentId: PlayerId): PlayerId {
   return TURN_ORDER[(idx + 1) % 4];
 }
 
-export function createInitialGameState(targetScore: number = 3000, botDifficulty: BotDifficulty = 'medium', gameMode: GameMode = 'classic'): GameState {
+export function createInitialGameState(targetScore: number = 1500, botDifficulty: BotDifficulty = 'hard', gameMode: GameMode = 'classic'): GameState {
   const allCards = shuffle(generateDeck());
 
   // Separar os 2 mortos (11 cartas cada)

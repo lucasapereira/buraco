@@ -202,25 +202,30 @@ function shouldTakePile(
 
   if (difficulty === 'easy') return false; // Fácil nunca pega lixo
 
-  // REGRA: só pode pegar se consegue montar jogo com o topo
-  if (!canTakePile(hand, pile, gameMode)) return false;
-
   const topCard = pile[pile.length - 1];
+  const fitsExisting = teamGames.some(g => validateSequence([...g, topCard], gameMode));
 
-  // Regra Avançada: Não pega o lixo se isso nos obrigar a criar um NOVO jogo
-  // de um naipe que a nossa equipe JÁ TEM na mesa. Criar dois jogos do mesmo naipe
-  // "mata" a canastra.
+  // REGRA: só pode pegar se consegue montar jogo com o topo
+  if (!canTakePile(hand, pile, teamGames, gameMode)) return false;
+
+  // Regra Avançada: Normalmente não pega o lixo se isso nos obrigar a criar um NOVO jogo
+  // de um naipe que a nossa equipe JÁ TEM na mesa. 
   if (teamGames && teamGames.length > 0) {
-    const hasGameSameSuit = teamGames.some(g => {
-      const normalCards = g.filter(c => !c.isJoker);
-      if (normalCards.length === 0) return false;
-      return normalCards[0].suit === topCard.suit;
-    });
+    const fitsExisting = teamGames.some(g => validateSequence([...g, topCard], gameMode));
     
-    // Se já temos o naipe na mesa, preferimos NÃO pegar o lixo.
-    // (A dificuldade 'easy' já retornou false no início da função).
-    if (hasGameSameSuit) {
-      return false;
+    // Se a carta cabe em um jogo existente, ignoramos a restrição de "já ter o naipe"
+    // pois estamos apenas estendendo um jogo rumo à canastra.
+    if (!fitsExisting) {
+      const hasGameSameSuit = teamGames.some(g => {
+        const normalCards = g.filter(c => !c.isJoker);
+        if (normalCards.length === 0) return false;
+        return normalCards[0].suit === topCard.suit;
+      });
+      
+      // No modo araujo_pereira somos mais agressivos, mas no classic evitamos duplicar naipes
+      if (hasGameSameSuit && gameMode === 'classic') {
+        return false;
+      }
     }
   }
 
@@ -234,6 +239,18 @@ function shouldTakePile(
     return sameInHand.length >= 1;
   }).length;
 
+  // No modo Araujo Pereira, o bicho pega: se tiver QUALQUER carta útil ou se encaixar, leva.
+  if (gameMode === 'araujo_pereira') {
+    if (difficulty === 'hard') return true;
+    if (difficulty === 'medium') return (usefulCount >= 1 || fitsExisting);
+  }
+
+  // Se encaixa em jogo existente, o bot Hard sempre pega. O Medium pega se tiver +1 útil.
+  if (fitsExisting) {
+    if (difficulty === 'hard') return true;
+    if (difficulty === 'medium') return usefulCount >= 1;
+  }
+
   if (difficulty === 'medium') return usefulCount >= 2;
   if (difficulty === 'hard') return true; // Se passou o canTakePile, pega
   return false;
@@ -244,41 +261,32 @@ function shouldTakePile(
 // ──────────────────────────────────────
 
 export function useBotAI() {
-  const currentTurnPlayerId = useGameStore(s => s.currentTurnPlayerId);
-  const turnPhase = useGameStore(s => s.turnPhase);
   const roundOver = useGameStore(s => s.roundOver);
-  const processingRef = useRef(false);
 
   useEffect(() => {
-    if (currentTurnPlayerId === 'user') {
-      processingRef.current = false;
-      return;
-    }
-    if (roundOver) return;
-    if (processingRef.current) return;
-
-    processingRef.current = true;
-    const botId = currentTurnPlayerId;
+    const s = useGameStore.getState();
+    const botId = s.currentTurnPlayerId;
+    if (botId === 'user' || roundOver) return;
 
     const timer = setTimeout(() => {
       runBotTurnAsync(botId);
-    }, 100);
+    }, 500);
 
     return () => clearTimeout(timer);
-  }, [currentTurnPlayerId, roundOver]);
+  }, [useGameStore(s => s.currentTurnPlayerId), useGameStore(s => s.turnPhase), roundOver]);
 
   async function runBotTurnAsync(botId: PlayerId) {
     const s = useGameStore.getState();
     if (s.currentTurnPlayerId !== botId || s.roundOver) {
-      processingRef.current = false;
       return;
     }
 
     const difficulty = s.botDifficulty;
     const bot = s.players.find(p => p.id === botId);
-    if (!bot) { processingRef.current = false; return; }
+    if (!bot) return;
 
-    // ── FASE DRAW ──
+    try {
+      // ── FASE DRAW ──
     if (s.turnPhase === 'draw') {
       await delay(1500); // Tempo para o bot "pensar" na mesa
       
@@ -301,12 +309,27 @@ export function useBotAI() {
     if (s.turnPhase === 'play') {
       await doBotPlayAsync(botId);
     }
+    } catch (e: any) {
+      console.error('Bot turn failed:', e);
+      // Failsafe absoluto: Emite notificação e repassa o turno forçadamente.
+      useGameStore.setState(s => ({
+        gameLog: [...s.gameLog.slice(-19), {
+          id: Date.now(),
+          playerId: botId,
+          playerName: 'SYS',
+          type: 'round_end',
+          message: `CRASH BOT AI: ${e?.message || 'Erro Desconhecido'}`,
+          timestamp: Date.now()
+        }],
+        currentTurnPlayerId: require('../game/engine').getNextPlayer(botId),
+        turnPhase: 'draw' as const
+      }));
+    }
   }
 
   async function doBotPlayAsync(botId: PlayerId) {
     const s = useGameStore.getState();
     if (s.currentTurnPlayerId !== botId || s.turnPhase !== 'play' || s.roundOver) {
-      processingRef.current = false;
       return;
     }
 
@@ -471,7 +494,6 @@ export function useBotAI() {
   function doBotDiscard(botId: PlayerId) {
     const s = useGameStore.getState();
     if (s.currentTurnPlayerId !== botId || s.turnPhase !== 'play' || s.roundOver) {
-      processingRef.current = false;
       return;
     }
 
@@ -483,13 +505,11 @@ export function useBotAI() {
         currentTurnPlayerId: getNextPlayer(botId),
         turnPhase: 'draw' as const,
       });
-      processingRef.current = false;
       return;
     }
 
     const card = chooseBestDiscard(bot.hand, s.discardedCardHistory, s.botDifficulty, s.lastDrawnCardId, s.gameMode);
     animate(); // anim do lixo
     s.discard(botId, card.id);
-    processingRef.current = false;
   }
 }

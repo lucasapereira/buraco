@@ -104,13 +104,13 @@ const styles = StyleSheet.create({
   bannerText: {
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '600',
-    fontSize: 11,
+    fontSize: 13,
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   importantText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '900',
     color: '#fff',
   },
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
   },
   logEntry: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 10,
+    fontSize: 12,
     marginBottom: 1,
   },
 });

@@ -35,8 +35,8 @@ const TARGETS = [1500, 3000, 5000];
 export default function HomeScreen() {
   const router = useRouter();
   const startNewGame = useGameStore(s => s.startNewGame);
-  const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
-  const [targetScore, setTargetScore] = useState(3000);
+  const [difficulty, setDifficulty] = useState<BotDifficulty>('hard');
+  const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
 
   const handleStart = () => {
@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
     marginBottom: 36,
   },
   title: {
-    fontSize: 42,
+    fontSize: 45,
     fontWeight: '900',
     color: '#FFD600',
     letterSpacing: 4,
@@ -146,14 +146,14 @@ const styles = StyleSheet.create({
     textShadowRadius: 6,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 16,
     color: 'rgba(255,255,255,0.6)',
     letterSpacing: 2,
     marginTop: 4,
   },
   sectionTitle: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
   },
   modeText: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
   },
   modeTextActive: {
@@ -204,17 +204,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
   diffEmoji: {
-    fontSize: 22,
+    fontSize: 25,
     marginBottom: 4,
   },
   diffLabel: {
     color: 'rgba(255,255,255,0.8)',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
   },
   diffDesc: {
     color: 'rgba(255,255,255,0.45)',
-    fontSize: 11,
+    fontSize: 13,
     textAlign: 'center',
     marginBottom: 28,
     paddingHorizontal: 8,
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   },
   targetText: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
   },
   targetTextActive: {
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   },
   playText: {
     color: '#1B5E20',
-    fontSize: 20,
+    fontSize: 23,
     fontWeight: '900',
     letterSpacing: 2,
   },

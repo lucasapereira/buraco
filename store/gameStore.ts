@@ -57,11 +57,13 @@ function checkAndHandleDead(
   return { newHand: sortCardsBySuitAndValue(newHand), gotDead, newDeads };
 }
 
-function checkRoundEnd(state: GameState): Partial<GameState> | null {
-  for (const player of state.players) {
+function checkRoundEnd(state: GameState, playerId: PlayerId): Partial<GameState> | null {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return null;
+
+  if (player.hand.length === 0) {
     const team = state.teams[player.teamId];
-    if (player.hand.length === 0 && team.hasGottenDead) {
-      
+    if (team.hasGottenDead) {
       const canGoOut = team.games.some(g => {
         if (g.length < 7) return false;
         if (state.gameMode === 'araujo_pereira') return true; // Any canasta works
@@ -115,7 +117,11 @@ function wouldStrandPlayer(
   handAfterPlay: Card[], teamHasGottenDead: boolean,
   state: GameState, teamId: TeamId, extraGame?: Card[]
 ): boolean {
-  if (handAfterPlay.length > 0) return false;
+  // Considera que o jogador sempre terá que descartar uma carta ao final.
+  // Se após jogar e descartar, ele ficaria com 0 cartas, verifica se ele pode "bater" ou pegar o morto.
+  const finalCountAfterDiscard = handAfterPlay.length === 0 ? 0 : handAfterPlay.length - 1;
+  
+  if (finalCountAfterDiscard > 0) return false;
   if (!teamHasGottenDead && state.deads.length > 0) return false;
   return !teamHasCleanCanasta(state, teamId, extraGame);
 }
@@ -233,6 +239,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         players: updatedPlayers,
         turnPhase: 'play' as const,
         lastDrawnCardId: drawnCard.id,
+        animatingDrawPlayerId: playerId,
         gameLog: addLog(s.gameLog, makeEvent(
           playerId, name, 'draw_deck',
           `${name} comprou do monte`,
@@ -240,6 +247,10 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         )),
       };
     });
+
+    setTimeout(() => {
+      set({ animatingDrawPlayerId: null });
+    }, 1500);
   },
 
   drawFromPile: (playerId) => {
@@ -260,7 +271,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (state.gameMode === 'araujo_pereira') {
       canTake = true; // Free to take
     } else {
-      canTake = canTakePile(player.hand, state.pile);
+      const teamGames = state.teams[player.teamId].games;
+      canTake = canTakePile(player.hand, state.pile, teamGames, state.gameMode);
       mustPlayTopId = state.pile[state.pile.length - 1].id;
     }
 
@@ -319,6 +331,15 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       let newHand = [...hand];
       newHand.splice(cardIndex, 1);
 
+      // REGRA: Não pode descartar a última carta se não tiver canastra (e já tiver pego o morto)
+      if (newHand.length === 0) {
+        const willGetDead = !tState.hasGottenDead && s.deads.length > 0;
+        const hasCanasta = teamHasCleanCanasta(s, teamId);
+        if (!willGetDead && !hasCanasta) {
+          return s; // Bloqueia descarte ilegal
+        }
+      }
+
       const updatedPlayers = [...s.players];
       const { newHand: finalHand, gotDead, newDeads } = checkAndHandleDead(
         newHand, tState.hasGottenDead, s.deads
@@ -364,12 +385,19 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       };
 
       const newState = { ...s, ...baseUpdate };
-      const roundEnd = checkRoundEnd(newState);
+      const roundEnd = checkRoundEnd(newState, playerId);
       if (roundEnd) {
         return { ...baseUpdate, ...roundEnd };
       }
 
-      return baseUpdate;
+      setTimeout(() => {
+        set({ animatingDiscard: null });
+      }, 1500);
+
+      return {
+        ...baseUpdate,
+        animatingDiscard: { playerId, card: discardedCard }
+      };
     });
   },
 
@@ -446,7 +474,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       };
 
       const newState = { ...s, ...baseUpdate };
-      const roundEnd = checkRoundEnd(newState);
+      const roundEnd = checkRoundEnd(newState, playerId);
       if (roundEnd) {
         return { ...baseUpdate, ...roundEnd };
       }
@@ -463,7 +491,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (state.turnPhase !== 'play') return false;
 
     // REGRA: Primeira jogada após comprar o lixo DEVE ser novo jogo. Não pode adicionar a jogo existente.
-    if (state.mustPlayPileTopId) {
+    if (state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
       return false;
     }
 
@@ -536,7 +564,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       };
 
       const newState = { ...s, ...baseUpdate };
-      const roundEnd = checkRoundEnd(newState);
+      const roundEnd = checkRoundEnd(newState, playerId);
       if (roundEnd) {
         return { ...baseUpdate, ...roundEnd };
       }

@@ -19,8 +19,25 @@ export function sortCardsBySuitAndValue(cards: Card[]): Card[] {
 /**
  * Ordena apenas por valor (para validação de sequência)
  */
-function sortByValue(cards: Card[]): Card[] {
-  return [...cards].sort((a, b) => a.value - b.value);
+function sortByValue(cards: Card[], aceLow: boolean = false): Card[] {
+  const valueForSort = (c: Card) => (aceLow && c.value === 14 ? 1 : c.value);
+  return [...cards].sort((a, b) => valueForSort(a) - valueForSort(b));
+}
+
+function isValidRun(values: number[], jokers: number): boolean {
+  const sorted = [...values].sort((a, b) => a - b);
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === sorted[i - 1]) return false;
+  }
+
+  let totalGaps = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    const diff = sorted[i] - sorted[i - 1];
+    if (diff > 1) totalGaps += diff - 1;
+  }
+
+  return totalGaps <= jokers;
 }
 
 /**
@@ -30,13 +47,26 @@ function sortByValue(cards: Card[]): Card[] {
 export function sortGameCards(cards: Card[]): Card[] {
   const joker = cards.find(c => c.isJoker);
   const normal = cards.filter(c => !c.isJoker);
-  const sorted = sortByValue(normal);
+  if (normal.length === 0) return cards;
+
+  const hasAce = normal.some(c => c.value === 14);
+  const valuesHigh = normal.map(c => c.value);
+  const valuesLow = normal.map(c => (c.value === 14 ? 1 : c.value));
+  const jokers = joker ? 1 : 0;
+
+  const canHigh = isValidRun(valuesHigh, jokers);
+  const canLow = hasAce && isValidRun(valuesLow, jokers);
+  const useAceLow = !canHigh && canLow;
+
+  const sorted = sortByValue(normal, useAceLow);
 
   if (!joker) return sorted;
 
   // Encontra onde o joker encaixa (na lacuna entre dois valores)
   for (let i = 0; i < sorted.length - 1; i++) {
-    if (sorted[i + 1].value - sorted[i].value === 2) {
+    const left = useAceLow && sorted[i].value === 14 ? 1 : sorted[i].value;
+    const right = useAceLow && sorted[i + 1].value === 14 ? 1 : sorted[i + 1].value;
+    if (right - left === 2) {
       // Lacuna de 1 entre sorted[i] e sorted[i+1] — joker vai aqui
       return [
         ...sorted.slice(0, i + 1),
@@ -48,7 +78,8 @@ export function sortGameCards(cards: Card[]): Card[] {
 
   // Se não tem lacuna no meio: joker vai no início ou fim
   // Dica: se o menor valor > 3, pode ser antes; senão, no fim
-  if (sorted[0].value > 3) {
+  const firstVal = useAceLow && sorted[0].value === 14 ? 1 : sorted[0].value;
+  if (firstVal > 3) {
     return [joker, ...sorted]; // Ex: ★ 5♠ 6♠ → curinga como 4
   }
   return [...sorted, joker]; // Ex: 5♠ 6♠ ★ → curinga como 7
@@ -89,29 +120,19 @@ export function validateSequence(cardsToPlay: Card[], gameMode: GameMode = 'clas
   // Todas as cartas normais devem ser do mesmo naipe para sequência normal
   if (!isSameSuit) return false;
 
-  // Ordenar valores das cartas normais
-  const sorted = sortByValue(normalCards);
-  const values = sorted.map(c => c.value);
-
-  // Verificar duplicatas de valor (proibido — a não ser que tenha curinga cobrindo posição 2)
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] === values[i - 1]) return false;
-  }
-
-  // Contar lacunas totais na sequência
-  let totalGaps = 0;
-  for (let i = 1; i < values.length; i++) {
-    const diff = values[i] - values[i - 1];
-    if (diff > 1) {
-      totalGaps += diff - 1;
-    }
-  }
-
-  // O curinga cobre exatamente 1 lacuna
+  const valuesHigh = normalCards.map(c => c.value);
   const availableJokers = jokers.length;
-  if (totalGaps > availableJokers) return false;
 
-  return true;
+  if (isValidRun(valuesHigh, availableJokers)) return true;
+
+  // Permite Ás como 1 (ex: A ★ 3 4 ...)
+  const hasAce = valuesHigh.includes(14);
+  if (hasAce) {
+    const valuesLow = normalCards.map(c => (c.value === 14 ? 1 : c.value));
+    if (isValidRun(valuesLow, availableJokers)) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -140,11 +161,33 @@ export function canAddToGame(existingGame: Card[], newCards: Card[], gameMode: G
  * Regra: a carta do TOPO do lixo (última da array) deve obrigatoriamente
  * fazer parte de um jogo novo formado com cartas da mão do jogador.
  */
-export function canTakePile(hand: Card[], pile: Card[], gameMode: GameMode = 'classic'): boolean {
+export function canTakePile(
+  hand: Card[],
+  pile: Card[],
+  existingGames: Card[][] = [],
+  gameMode: GameMode = 'classic'
+): boolean {
   if (pile.length === 0) return false;
   if (gameMode === 'araujo_pereira') return true; // Always can take in this mode
 
   const topCard = pile[pile.length - 1];
+
+  // Se a carta do topo encaixa diretamente em algum jogo existente, pode pegar
+  for (const game of existingGames) {
+    if (validateSequence([...game, topCard], gameMode)) return true;
+
+    // Ou encaixa junto com 1 carta da mão
+    for (let i = 0; i < hand.length; i++) {
+      if (validateSequence([...game, topCard, hand[i]], gameMode)) return true;
+    }
+
+    // Ou encaixa junto com 2 cartas da mão
+    for (let i = 0; i < hand.length; i++) {
+      for (let j = i + 1; j < hand.length; j++) {
+        if (validateSequence([...game, topCard, hand[i], hand[j]], gameMode)) return true;
+      }
+    }
+  }
 
   // Tenta combinar a carta do topo com 2+ cartas da mão
   const nonJokers = hand.filter(c => !c.isJoker && c.suit === topCard.suit);

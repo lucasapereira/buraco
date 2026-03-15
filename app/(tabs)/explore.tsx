@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  StyleSheet, View, Text, TouchableOpacity, ScrollView,
+  StyleSheet, View, Text, TouchableOpacity,
   SafeAreaView, Alert, Modal, Dimensions, Platform, StatusBar, LayoutAnimation
 } from 'react-native';
 import { useGameStore } from '../../store/gameStore';
@@ -22,7 +22,8 @@ export default function GameScreen() {
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
     drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
     startNewRound, startNewGame,
-    gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode, botDifficulty
+    gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode, botDifficulty,
+    animatingDiscard, animatingDrawPlayerId
   } = useGameStore();
 
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
@@ -117,11 +118,11 @@ export default function GameScreen() {
       return;
     }
     // Verifica regra: precisa ter jogo com o topo do lixo (exceto Araujo Pereira)
-    if (gameMode !== 'araujo_pereira' && !canTakePile(user.hand, pile)) {
+    if (gameMode !== 'araujo_pereira' && !canTakePile(user.hand, pile, myTeamGames, gameMode)) {
       const topCard = pile[pile.length - 1];
       Alert.alert(
         '❌ Não pode pegar o lixo',
-        `Você precisa ter 2 cartas para montar um jogo com o topo do lixo.`
+        `Você precisa usar a carta do topo do lixo em um jogo (novo ou existente).`
       );
       return;
     }
@@ -146,6 +147,25 @@ export default function GameScreen() {
       Alert.alert('Selecione 1 carta', 'Para descartar, selecione exatamente 1 carta.');
       return;
     }
+
+    // Validação UX: Não permite descartar a última sem canastra/morto
+    if (user.hand.length === 1) {
+      const team = teams['team-1'];
+      const willGetDead = !team.hasGottenDead && deads.length > 0;
+      const hasCanasta = myTeamGames.some(g => {
+        const type = checkCanasta(g);
+        return type !== 'none' && (gameMode === 'araujo_pereira' || type === 'clean');
+      });
+
+      if (!willGetDead && !hasCanasta) {
+        Alert.alert(
+          '⚠️ Não pode bater',
+          `Sua equipe precisa de uma canastra ${gameMode === 'araujo_pereira' ? '' : 'limpa '}para bater e encerrar a rodada.`
+        );
+        return;
+      }
+    }
+
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     discard('user', selectedCards[0]);
     setSelectedCards([]);
@@ -172,8 +192,8 @@ export default function GameScreen() {
 
   const handleAddToGame = (gameIndex: number) => {
     if (!isMyTurn || turnPhase !== 'play') return;
-    if (mustPlayPileTopId) {
-      Alert.alert('⚠️ Regra do Lixo', 'Você deve PRIMEIRO baixar um NOVO jogo usando a carta do topo do lixo antes de adicionar cartas a jogos existentes.');
+    if (mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
+      Alert.alert('⚠️ Regra do Lixo', 'Você deve usar a carta do topo do lixo na sua primeira jogada (novo jogo ou adicionar a um existente).');
       return;
     }
     if (selectedCards.length === 0) {
@@ -254,11 +274,25 @@ export default function GameScreen() {
           if (p.id === 'user') shortName = 'Você';
 
           return (
-            <View key={p.id} style={[styles.statusItem, p.id === 'user' && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
-              <Text style={styles.statusName}>{shortName}</Text>
-              <Text style={styles.statusCards}>
-                {p.hand.length} 🎴 {teams[p.teamId].hasGottenDead ? '💀' : ''}
-              </Text>
+            <View key={p.id}>
+              <View style={[styles.statusItem, p.id === 'user' && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
+                <Text style={styles.statusName}>{shortName}</Text>
+                <Text style={styles.statusCards}>
+                  {p.hand.length} 🎴 {teams[p.teamId].hasGottenDead ? '💀' : ''}
+                </Text>
+              </View>
+              {/* Animação Compra */}
+              {animatingDrawPlayerId === p.id && (
+                <View style={styles.animCardContainer}>
+                  <Card card={{ id: 'anim-draw', suit: 'spades', value: 3, deck: 1, isJoker: false }} isHidden small />
+                </View>
+              )}
+              {/* Animação Descarte */}
+              {animatingDiscard?.playerId === p.id && (
+                <View style={styles.animCardContainer}>
+                  <Card card={animatingDiscard.card} small />
+                </View>
+              )}
             </View>
           );
         })}
@@ -274,107 +308,244 @@ export default function GameScreen() {
       {/* BOARD */}
       <View style={styles.board}>
         {/* Jogos montados */}
-        <ScrollView style={styles.gamesScroll} showsVerticalScrollIndicator={false}>
+        <View style={[styles.gamesScroll, styles.gamesScrollContent]}>
+          {(() => {
+            const totalGames = (myTeamGames || []).length + (opTeamGames || []).length;
+            const denseLevel = totalGames > 15 ? 2 : totalGames > 10 ? 1 : 0;
+            const denseMode = denseLevel > 0;
+            const tightMode = denseLevel > 1;
+            const scale = 1;
 
-          {/* Nossos jogos */}
-          <Text style={styles.sectionLabel}>🟢 Nossos Jogos</Text>
-          {myTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
-          <View style={styles.gamesGrid}>
-            {myTeamGames.map((gameCards, idx) => {
-              const canasta = checkCanasta(gameCards);
-              const canAdd = (() => {
-                if (!isMyTurn || turnPhase !== 'play' || selectedCards.length === 0) return false;
-                const selCards = user.hand.filter(c => selectedCards.includes(c.id));
-                const combined = [...gameCards, ...selCards];
-                return combined.length >= 3 && validateSequence(combined);
-              })();
-              const cardMargin = gameCards.length > 9 ? -36 : gameCards.length > 6 ? -32 : -28;
-              return (
-                <TouchableOpacity
-                  key={`my-${idx}`}
-                  style={[
-                    styles.gameCard,
-                    canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
-                    canAdd && styles.gameCardHighlight,
-                  ]}
-                  onPress={() => handleAddToGame(idx)}
-                  activeOpacity={0.6}
-                  hitSlop={{ top: 20, bottom: 20, left: 15, right: 15 }}
-                >
-                  <View pointerEvents="none" style={styles.gameCardInner}>
-                    <View style={styles.gameCards}>
-                      {gameCards.map((c, ci) => (
-                        <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
-                          <Card card={c} small />
-                        </View>
-                      ))}
-                    </View>
-                    <View style={styles.gameCardMid}>
-                      {canasta !== 'none' && <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>}
-                      {canAdd && <Text style={styles.addTag}>➕</Text>}
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+            return (
+              <>
+                {/* Nossos jogos */}
+                <Text style={styles.sectionLabel}>🟢 Nossos Jogos</Text>
+                {myTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
+                <View style={[
+                  styles.gamesGrid,
+                  denseMode && styles.gamesGridDense,
+                  tightMode && styles.gamesGridTight,
+                ]}>
+                  {myTeamGames.map((gameCards, idx) => {
+                    const canasta = checkCanasta(gameCards);
+                    const hasJoker = gameCards.some(c => c.isJoker);
+                    const normalCards = gameCards.filter(c => !c.isJoker);
+                    const isTrincaLike = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+                    
+                    let visibleCards = gameCards;
+                    let isCanasta = canasta !== 'none';
+                    let cardMargin = -20;
 
-          {/* Jogos dos adversários */}
-          <Text style={[styles.sectionLabel, { marginTop: 8 }]}>🔴 Jogos Adversário</Text>
-          {opTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
-          <View style={styles.gamesGrid}>
-            {opTeamGames.map((gameCards, idx) => {
-              const canasta = checkCanasta(gameCards);
-              const cardMargin = gameCards.length > 9 ? -36 : gameCards.length > 6 ? -32 : -28;
-              return (
-                <View
-                  key={`op-${idx}`}
-                  style={[
-                    styles.gameCard,
-                    styles.opponentGame,
-                    canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
-                  ]}
-                >
-                  <View style={styles.gameCardInner}>
-                    <View style={styles.gameCards}>
-                      {gameCards.map((c, ci) => (
-                        <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
-                          <Card card={c} small />
+                    if (isCanasta) {
+                      const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+                      if (isTrinca) {
+                        visibleCards = [gameCards[0], gameCards[gameCards.length - 1]];
+                      } else {
+                        // Mostra Início e os dois do Fim (para ver o valor real e o curinga se houver)
+                        visibleCards = [gameCards[0], gameCards[gameCards.length - 2], gameCards[gameCards.length - 1]];
+                      }
+                    } 
+                    
+                    if (visibleCards.length > 1) {
+                      const containerWidth = tightMode ? 100 : denseMode ? 112 : 160;
+                      const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
+                      // Canastas têm uma margem um pouco mais folgada se tiverem poucas cartas visíveis
+                      cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
+                    }
+
+                    const canAdd = (() => {
+                      if (!isMyTurn || turnPhase !== 'play' || selectedCards.length === 0) return false;
+                      const selCards = user.hand.filter(c => selectedCards.includes(c.id));
+                      const combined = [...gameCards, ...selCards];
+                      return combined.length >= 3 && validateSequence(combined);
+                    })();
+
+                    return (
+                      <TouchableOpacity
+                        key={`my-${idx}`}
+                        style={[
+                          styles.gameCard,
+                          denseMode && styles.gameCardDense,
+                          tightMode && styles.gameCardTight,
+                          canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
+                          canAdd && styles.gameCardHighlight,
+                          { transform: [{ scale }] }
+                        ]}
+                        onPress={() => handleAddToGame(idx)}
+                        activeOpacity={0.6}
+                      >
+                        <View pointerEvents="none" style={styles.gameCardInner}>
+                          <View style={[
+                            styles.gameCardsWrap,
+                            denseMode && styles.gameCardsWrapCompact,
+                            tightMode && styles.gameCardsWrapTight,
+                          ]}>
+                            <View style={[
+                              styles.gameCards,
+                              denseMode && styles.gameCardsDense,
+                            ]}>
+                              {visibleCards.map((c, ci) => {
+                                const isLast = ci === visibleCards.length - 1;
+                                return (
+                                  <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
+                                    <View style={[
+                                      styles.cardClip,
+                                      denseMode && styles.cardClipCompact,
+                                      tightMode && styles.cardClipTight,
+                                    ]}>
+                                      <Card card={c} small />
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                            {isCanasta && (
+                              <View pointerEvents="none" style={[styles.canastaRibbon, canasta === 'clean' ? styles.ribbonClean : styles.ribbonDirty]}>
+                                <Text style={styles.ribbonText}>{canasta === 'clean' ? 'LIMPA' : 'SUJA'}</Text>
+                              </View>
+                            )}
+                             <View style={styles.gameCardOverlay}>
+                               <View style={[
+                                 styles.counterBadgeOverlay,
+                                 isCanasta && (canasta === 'clean' ? styles.badgeClean : styles.badgeDirty)
+                               ]}>
+                                 <Text style={styles.counterTextOverlay}>
+                                   {isCanasta && (canasta === 'clean' ? '✨ ' : '★ ')}
+                                   {gameCards.length}
+                                 </Text>
+                               </View>
+                               {canAdd && <Text style={styles.addTag}>➕</Text>}
+                             </View>
+                          </View>
                         </View>
-                      ))}
-                    </View>
-                    {canasta !== 'none' && (
-                      <View style={styles.gameCardMid}>
-                        <Text style={styles.canastaTag}>{canasta === 'clean' ? '🏆' : '📦'}</Text>
-                      </View>
-                    )}
-                  </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              );
-            })}
-          </View>
-        </ScrollView>
+
+                {/* Jogos dos adversários */}
+                <Text style={[styles.sectionLabel, { marginTop: 8 }]}>🔴 Jogos Adversário</Text>
+                {opTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
+                <View style={[
+                  styles.gamesGrid,
+                  denseMode && styles.gamesGridDense,
+                  tightMode && styles.gamesGridTight,
+                ]}>
+                  {opTeamGames.map((gameCards, idx) => {
+                    const canasta = checkCanasta(gameCards);
+                    const hasJoker = gameCards.some(c => c.isJoker);
+                    const normalCards = gameCards.filter(c => !c.isJoker);
+                    const isTrincaLike = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+                    
+                    let visibleCards = gameCards;
+                    let isCanasta = canasta !== 'none';
+                    let cardMargin = -20;
+
+                    if (isCanasta) {
+                      const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+                      if (isTrinca) {
+                        visibleCards = [gameCards[0], gameCards[gameCards.length - 1]];
+                      } else {
+                        visibleCards = [gameCards[0], gameCards[gameCards.length - 2], gameCards[gameCards.length - 1]];
+                      }
+                    } 
+                    
+                    if (visibleCards.length > 1) {
+                      const containerWidth = tightMode ? 100 : denseMode ? 112 : 160;
+                      const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
+                      cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
+                    }
+
+                    return (
+                      <View
+                        key={`op-${idx}`}
+                        style={[
+                          styles.gameCard,
+                          denseMode && styles.gameCardDense,
+                          tightMode && styles.gameCardTight,
+                          styles.opponentGame,
+                          canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
+                          { transform: [{ scale }] }
+                        ]}
+                      >
+                        <View style={styles.gameCardInner}>
+                          <View style={[
+                            styles.gameCardsWrap,
+                            denseMode && styles.gameCardsWrapCompact,
+                            tightMode && styles.gameCardsWrapTight,
+                          ]}>
+                            <View style={[
+                              styles.gameCards,
+                              denseMode && styles.gameCardsDense,
+                            ]}>
+                              {visibleCards.map((c, ci) => {
+                                const isLast = ci === visibleCards.length - 1;
+                                return (
+                                  <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
+                                    <View style={[
+                                      styles.cardClip,
+                                      denseMode && styles.cardClipCompact,
+                                      tightMode && styles.cardClipTight,
+                                    ]}>
+                                      <Card card={c} small />
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                            {isCanasta && (
+                              <View pointerEvents="none" style={[styles.canastaRibbon, canasta === 'clean' ? styles.ribbonClean : styles.ribbonDirty]}>
+                                <Text style={styles.ribbonText}>{canasta === 'clean' ? 'LIMPA' : 'SUJA'}</Text>
+                              </View>
+                            )}
+                             <View style={styles.gameCardOverlay}>
+                               <View style={[
+                                 styles.counterBadgeOverlay,
+                                 isCanasta && (canasta === 'clean' ? styles.badgeClean : styles.badgeDirty)
+                               ]}>
+                                 <Text style={styles.counterTextOverlay}>
+                                   {isCanasta && (canasta === 'clean' ? '✨ ' : '★ ')}
+                                   {gameCards.length}
+                                 </Text>
+                               </View>
+                             </View>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            );
+          })()}
+        </View>
 
         {/* Monte e Lixo no lado direito */}
         <View style={styles.pilesColumn}>
           <View style={styles.pileBox}>
-            <Text style={styles.pileLabel}>Lixo ({pile.length})</Text>
             {pile.length > 0 ? (
-              <Card card={pile[pile.length - 1]} onPress={handleDrawPile} />
+              <View>
+                <Card card={pile[pile.length - 1]} small onPress={handleDrawPile} />
+                <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{pile.length}</Text></View>
+                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Lixo</Text></View>
+              </View>
             ) : (
               <TouchableOpacity onPress={handleDrawPile}>
-                <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Vazio</Text></View>
+                <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Lixo</Text></View>
               </TouchableOpacity>
             )}
           </View>
 
           <View style={styles.pileBox}>
-            <Text style={styles.pileLabel}>Monte ({deck.length})</Text>
             {deck.length > 0 ? (
-              <Card card={{ id: '__hidden__', suit: 'spades', value: 3, deck: 1, isJoker: false }} isHidden onPress={handleDrawDeck} />
+              <View>
+                <Card card={{ id: '__hidden__', suit: 'spades', value: 3, deck: 1, isJoker: false }} isHidden small onPress={handleDrawDeck} />
+                <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{deck.length}</Text></View>
+                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Monte</Text></View>
+              </View>
             ) : (
               <TouchableOpacity onPress={handleDrawDeck}>
-                <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Vazio</Text></View>
+                <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Monte</Text></View>
               </TouchableOpacity>
             )}
           </View>
@@ -521,28 +692,28 @@ export default function GameScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1B5E20', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0 },
-  emptyText: { color: '#fff', textAlign: 'center', marginTop: 100, fontSize: 18 },
+  emptyText: { color: '#fff', textAlign: 'center', marginTop: 100, fontSize: 20 },
 
   // HEADER
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 6,
+    paddingHorizontal: 12, paddingVertical: 2,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  scoreLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  scoreMain: { color: '#B9F6CA', fontSize: 22, fontWeight: '900' },
-  scoreLive: { color: '#FFD600', fontSize: 11, fontWeight: '700' },
-  scoreText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  targetText: { color: 'rgba(255,255,255,0.5)', fontSize: 10, marginTop: 2 },
+  scoreLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  scoreMain: { color: '#B9F6CA', fontSize: 25, fontWeight: '900' },
+  scoreLive: { color: '#FFD600', fontSize: 13, fontWeight: '700' },
+  scoreText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  targetText: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 },
   restartBtn: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
-  restartText: { fontSize: 16 },
+  restartText: { fontSize: 18 },
 
   // STATUS BAR
   statusBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     backgroundColor: 'rgba(0,0,0,0.2)',
-    paddingVertical: 6,
+    paddingVertical: 2,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
@@ -557,13 +728,13 @@ const styles = StyleSheet.create({
   },
   statusName: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '700',
     marginBottom: 2,
   },
   statusCards: {
     color: '#B9F6CA',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '800',
   },
 
@@ -575,66 +746,175 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  handArea: { backgroundColor: 'rgba(0,0,0,0.5)', paddingBottom: 12 },
+  handArea: { backgroundColor: 'rgba(0,0,0,0.5)', paddingBottom: 8 },
   turnBox: { alignItems: 'center' },
-  turnName: { color: '#FFD600', fontWeight: '900', fontSize: 16 },
+  turnName: { color: '#FFD600', fontWeight: '900', fontSize: 18 },
   phaseLabel: {
-    color: '#fff', fontWeight: '800', fontSize: 11,
+    color: '#fff', fontWeight: '800', fontSize: 13,
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, marginTop: 2,
     overflow: 'hidden',
   },
-  infoText: { color: '#B9F6CA', fontSize: 12, textAlign: 'right' },
+  infoText: { color: '#B9F6CA', fontSize: 14, textAlign: 'right' },
 
   // BOARD
-  board: { flex: 1, flexDirection: 'row', paddingHorizontal: 8, paddingTop: 6 },
+  board: { flex: 1, flexDirection: 'row', paddingHorizontal: 4, paddingTop: 4 },
   gamesScroll: { flex: 1 },
-  sectionLabel: { color: '#E8F5E9', fontWeight: '800', fontSize: 14, marginBottom: 4 },
-  emptyGames: { color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, fontStyle: 'italic' },
+  gamesScrollContent: { paddingLeft: 6, paddingRight: 6, paddingBottom: 6 },
+  sectionLabel: { color: '#E8F5E9', fontWeight: '800', fontSize: 16, marginBottom: 4 },
+  emptyGames: { color: 'rgba(255,255,255,0.4)', fontSize: 15, marginBottom: 8, fontStyle: 'italic' },
   // GRADE DE JOGOS
   gamesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    rowGap: 4,
-    columnGap: 10,
-    marginBottom: 4,
+    rowGap: 10,
+    columnGap: 8,
+    marginBottom: 6,
     justifyContent: 'space-between',
+    overflow: 'visible',
+  },
+  gamesGridDense: {
+    rowGap: 8,
+    columnGap: 6,
+  },
+  gamesGridTight: {
+    rowGap: 6,
+    columnGap: 6,
   },
   gameCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    // ~50% width minus gap, 2 per row
-    minWidth: '46%',
-    maxWidth: '48%',
-    flex: 0,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    flexBasis: '48%',
+    minWidth: '48%',
+    maxWidth: '49%',
+    flexGrow: 0,
+    flexShrink: 0,
     justifyContent: 'space-between',
+    overflow: 'visible',
+  },
+  gameCardDense: {
+    flexBasis: '31%',
+    minWidth: '31%',
+    maxWidth: '32%',
+    paddingVertical: 3,
+    paddingHorizontal: 3,
+  },
+  gameCardTight: {
+    paddingVertical: 2,
+    paddingHorizontal: 2,
   },
   gameCardInner: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    overflow: 'visible',
+  },
+  gameCardsWrap: {
+    flex: 1,
+    position: 'relative',
+    minHeight: 84, 
+    justifyContent: 'center',
+    paddingTop: 6,
+    overflow: 'visible',
+  },
+  gameCardsWrapCompact: {
+    minHeight: 80,
+    paddingTop: 4,
+  },
+  gameCardsWrapTight: {
+    minHeight: 76,
+    paddingTop: 2,
+  },
+  trincaChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  trincaChipText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
   },
   gameCardHighlight: {
     borderWidth: 1.5, borderColor: '#FFD600', backgroundColor: 'rgba(255,214,0,0.12)',
   },
-  gameCardMid: {
+  gameCardOverlay: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+  },
+  hiddenCountTag: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  canastaTag: { fontSize: 15 },
+  addTag: { fontSize: 14 },
+  jokerBadge: { fontSize: 13, color: '#FFD600', fontWeight: '900' },
+  counterBadgeOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 10,
+    minWidth: 19,
+    height: 19,
+    paddingHorizontal: 5,
     justifyContent: 'center',
-    flex: 1,
-    gap: 2,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  gameCardMidText: {
-    color: 'rgba(255,255,255,0.7)',
+  counterText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  counterTextOverlay: {
+    color: '#fff',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '900',
   },
-  canastaTag: { fontSize: 13 },
-  addTag: { fontSize: 12 },
-  jokerBadge: { fontSize: 11, color: '#FFD600', fontWeight: '900' },
+  pileCounterBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 10,
+    minWidth: 23,
+    height: 23,
+    paddingHorizontal: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  pileNameTag: {
+    position: 'absolute',
+    bottom: -6,
+    left: -4,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  pileNameText: {
+    color: '#E8F5E9',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  animCardContainer: {
+    position: 'absolute',
+    top: -40,
+    alignSelf: 'center',
+    zIndex: 100,
+  },
 
   // Mantidos para compatibilidade
   gameRow: {
@@ -647,31 +927,80 @@ const styles = StyleSheet.create({
   opponentGame: { backgroundColor: 'rgba(255,0,0,0.08)' },
   cleanCanasta: { borderLeftWidth: 3, borderLeftColor: '#FFD600' },
   dirtyCanasta: { borderLeftWidth: 3, borderLeftColor: '#FF9800' },
-  gameCards: { flexDirection: 'row', flex: 1 },
-  canastaLabel: { fontSize: 10, color: '#FFD600', fontWeight: '800', marginLeft: 4 },
-  gameCardCount: { fontSize: 10, color: 'rgba(255,255,255,0.5)', marginLeft: 4 },
+  gameCards: { flexDirection: 'row', flex: 1, overflow: 'visible', paddingLeft: 2, paddingRight: 6 },
+  gameCardsDense: { paddingLeft: 4, paddingRight: 4 },
+  cardClip: { 
+    overflow: 'hidden',
+    height: 72, // Exatamente a altura do small card
+  },
+  cardClipCompact: { height: 68 },
+  cardClipTight: { height: 64 },
+  cardClipLast: { width: 28 },
+  cardClipLastTight: { width: 24 },
+  canastaLabel: { fontSize: 12, color: '#FFD600', fontWeight: '800', marginLeft: 4 },
+  gameCardCount: { fontSize: 12, color: 'rgba(255,255,255,0.5)', marginLeft: 4 },
   gameInfo: { alignItems: 'flex-end', marginLeft: 4 },
-  addLabel: { fontSize: 9, color: '#FFD600', fontWeight: '800' },
+  addLabel: { fontSize: 11, color: '#FFD600', fontWeight: '800' },
+
+  canastaRibbon: {
+    position: 'absolute',
+    bottom: 2,
+    left: '50%',
+    transform: [{ translateX: -22 }], 
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    zIndex: 10,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+  },
+  ribbonClean: {
+    backgroundColor: '#388E3C',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  ribbonDirty: {
+    backgroundColor: '#E65100', // Laranja escuro para Suja
+    borderWidth: 1.5,
+    borderColor: '#FFD180',
+  },
+  ribbonText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  badgeClean: {
+    backgroundColor: '#FFD600',
+    borderColor: '#FFF176',
+  },
+  badgeDirty: {
+    backgroundColor: '#E65100',
+    borderColor: '#FFD180',
+  },
 
   // PILES
-  pilesColumn: { width: 80, alignItems: 'center', justifyContent: 'center', gap: 20 },
+  pilesColumn: { width: 70, alignItems: 'center', justifyContent: 'center', gap: 14 },
   pileBox: { alignItems: 'center' },
-  pileLabel: { color: '#E8F5E9', fontSize: 10, fontWeight: '700', marginBottom: 1 },
+  pileLabel: { color: '#E8F5E9', fontSize: 12, fontWeight: '700', marginBottom: 1 },
 
   // MENU ☰
   menuBtn: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
-  menuBtnText: { fontSize: 14, color: '#fff' },
+  menuBtnText: { fontSize: 16, color: '#fff' },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-start', alignItems: 'flex-end', paddingTop: 80, paddingRight: 12 },
   menuBox: { backgroundColor: '#1B4A28', borderRadius: 12, padding: 8, minWidth: 200, elevation: 10 },
-  menuTitle: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 6, letterSpacing: 1 },
+  menuTitle: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 6, letterSpacing: 1 },
   menuItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 8, marginBottom: 4, backgroundColor: 'rgba(255,255,255,0.06)' },
-  menuItemText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  menuItemText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   menuClose: { backgroundColor: 'transparent', marginTop: 4 },
   emptySlot: {
-    width: 60, height: 86, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
+    width: 66, height: 94, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
     borderStyle: 'dashed', borderRadius: 6, justifyContent: 'center', alignItems: 'center',
   },
-  emptySlotText: { color: 'rgba(255,255,255,0.3)', fontSize: 9 },
+  emptySlotText: { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
 
   // AÇÕES
   actionsRow: {
@@ -686,7 +1015,7 @@ const styles = StyleSheet.create({
   discardBtn: { backgroundColor: '#C62828' },
   clearBtn: { backgroundColor: '#616161', minWidth: 40 },
   disabled: { opacity: 0.35 },
-  actionText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  actionText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 
   // MODAL
   modalOverlay: {
@@ -698,18 +1027,18 @@ const styles = StyleSheet.create({
     width: SW * 0.85, alignItems: 'center',
     borderWidth: 2, borderColor: '#FFD600',
   },
-  modalTitle: { color: '#FFD600', fontSize: 22, fontWeight: '900', textAlign: 'center', marginBottom: 16 },
+  modalTitle: { color: '#FFD600', fontSize: 25, fontWeight: '900', textAlign: 'center', marginBottom: 16 },
   modalScores: { marginBottom: 12, width: '100%' },
-  modalScoreText: { color: '#fff', fontSize: 16, marginBottom: 4 },
-  modalWhoWent: { color: '#FFD600', fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
+  modalScoreText: { color: '#fff', fontSize: 18, marginBottom: 4 },
+  modalWhoWent: { color: '#FFD600', fontSize: 15, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
   modalTeamBlock: { width: '100%', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, marginBottom: 8 },
-  modalTeamTitle: { color: '#fff', fontSize: 13, fontWeight: '800', marginBottom: 4 },
-  modalScoreRow: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginBottom: 2 },
-  modalScoreTotal: { color: '#FFD600', fontSize: 14, fontWeight: '900', marginTop: 4 },
-  modalTarget: { color: '#B9F6CA', fontSize: 13, marginBottom: 16 },
+  modalTeamTitle: { color: '#fff', fontSize: 15, fontWeight: '800', marginBottom: 4 },
+  modalScoreRow: { color: 'rgba(255,255,255,0.75)', fontSize: 14, marginBottom: 2 },
+  modalScoreTotal: { color: '#FFD600', fontSize: 16, fontWeight: '900', marginTop: 4 },
+  modalTarget: { color: '#B9F6CA', fontSize: 15, marginBottom: 16 },
   modalBtn: {
     backgroundColor: '#FFD600', paddingHorizontal: 32, paddingVertical: 12,
     borderRadius: 24,
   },
-  modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 16 },
+  modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 18 },
 });
