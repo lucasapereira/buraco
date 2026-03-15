@@ -111,14 +111,14 @@ export default function GameScreen() {
     drawFromDeck('user');
   };
 
-  const handleDrawPile = () => {
+  const handlePileClick = () => {
     if (!isMyTurn) {
       const current = players.find(p => p.id === currentTurnPlayerId);
       Alert.alert('Aguarde', `É a vez de ${current?.name || 'outro jogador'}.`);
       return;
     }
-    if (turnPhase !== 'draw') {
-      Alert.alert('Já comprou', 'Você já comprou neste turno.');
+    if (turnPhase === 'play') {
+      handleDiscard();
       return;
     }
     if (pile.length === 0) {
@@ -214,6 +214,14 @@ export default function GameScreen() {
       setSelectedCards([]);
     } else {
       Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
+    }
+  };
+
+  const handleTableClick = () => {
+    if (isMyTurn && turnPhase === 'play' && selectedCards.length >= 3) {
+      handlePlayCards();
+    } else {
+      setSelectedCards([]);
     }
   };
 
@@ -316,7 +324,11 @@ export default function GameScreen() {
       {/* BOARD */}
       <View style={styles.board}>
         {/* Jogos montados */}
-        <View style={[styles.gamesScroll, styles.gamesScrollContent]}>
+        <TouchableOpacity 
+          activeOpacity={1} 
+          style={[styles.gamesScroll, styles.gamesScrollContent]} 
+          onPress={handleTableClick}
+        >
           {(() => {
             const totalGames = (myTeamGames || []).length + (opTeamGames || []).length;
             const denseLevel = totalGames > 15 ? 2 : totalGames > 10 ? 1 : 0;
@@ -560,19 +572,19 @@ export default function GameScreen() {
               </>
             );
           })()}
-        </View>
+        </TouchableOpacity>
 
         {/* Monte e Lixo no lado direito */}
         <View style={styles.pilesColumn}>
           <View style={styles.pileBox}>
             {pile.length > 0 ? (
               <View>
-                <Card card={pile[pile.length - 1]} small onPress={handleDrawPile} />
+                <Card card={pile[pile.length - 1]} small onPress={handlePileClick} />
                 <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{pile.length}</Text></View>
                 <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Lixo</Text></View>
               </View>
             ) : (
-              <TouchableOpacity onPress={handleDrawPile}>
+              <TouchableOpacity onPress={handlePileClick}>
                 <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Lixo</Text></View>
               </TouchableOpacity>
             )}
@@ -592,35 +604,6 @@ export default function GameScreen() {
             )}
           </View>
         </View>
-      </View>
-
-      {/* AÇÕES */}
-      <View style={styles.actionsRow}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.playBtn, (!isMyTurn || turnPhase !== 'play' || selectedCards.length < 3) && styles.disabled]}
-          onPress={handlePlayCards}
-          disabled={!isMyTurn || turnPhase !== 'play' || selectedCards.length < 3}
-        >
-          <Text style={styles.actionText}>⬇ Baixar</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.discardBtn, (!isMyTurn || turnPhase !== 'play' || selectedCards.length !== 1) && styles.disabled]}
-          onPress={handleDiscard}
-          disabled={!isMyTurn || turnPhase !== 'play' || selectedCards.length !== 1}
-        >
-          <Text style={styles.actionText}>🗑 Descartar</Text>
-        </TouchableOpacity>
-
-        {selectedCards.length > 0 && (
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.clearBtn]}
-            onPress={() => setSelectedCards([])}
-          >
-            <Text style={styles.actionText}>✕</Text>
-          </TouchableOpacity>
-        )}
-        {/* Reiniciar removido daqui — agora no menu ☰ */}
       </View>
 
       {/* MÃO DO JOGADOR */}
@@ -1040,21 +1023,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed', borderRadius: 6, justifyContent: 'center', alignItems: 'center',
   },
   emptySlotText: { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
-
-  // AÇÕES
-  actionsRow: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    paddingVertical: 6, paddingHorizontal: 12, gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-  },
-  actionBtn: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, minWidth: 90, alignItems: 'center',
-  },
-  playBtn: { backgroundColor: '#2E7D32' },
-  discardBtn: { backgroundColor: '#C62828' },
-  clearBtn: { backgroundColor: '#616161', minWidth: 40 },
-  disabled: { opacity: 0.35 },
-  actionText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 
   // MODAL
   modalOverlay: {
