@@ -37,6 +37,7 @@ export default function GameScreen() {
 
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [showMenu, setShowMenu] = useState(false);
+  const [tempOpenGame, setTempOpenGame] = useState<{ teamId: string; index: number } | null>(null);
   const router = useRouter();
   const { playSound } = useGameSounds();
 
@@ -207,22 +208,110 @@ export default function GameScreen() {
   };
 
   const handleAddToGame = (gameIndex: number) => {
-    if (!isMyTurn || turnPhase !== 'play') return;
+    const hasSelection = selectedCards.length > 0;
+    const canPlay = isMyTurn && turnPhase === 'play';
+
+    // Se NÃO tem cartas selecionadas, o objetivo é apenas ver o jogo (ZOOM)
+    if (!hasSelection) {
+      setTempOpenGame({ teamId: 'team-1', index: gameIndex });
+      setTimeout(() => {
+        setTempOpenGame(prev => (prev?.teamId === 'team-1' && prev?.index === gameIndex) ? null : prev);
+      }, 8000);
+      return;
+    }
+
+    // Se tem cartas selecionadas mas não é a vez do jogador, abre o ZOOM
+    if (!canPlay) {
+      setTempOpenGame({ teamId: 'team-1', index: gameIndex });
+      return;
+    }
+
+    // Regra do Lixo
     if (mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
       Alert.alert('⚠️ Regra do Lixo', 'Você deve usar a carta do topo do lixo na sua primeira jogada (novo jogo ou adicionar a um existente).');
       return;
     }
-    if (selectedCards.length === 0) {
-      Alert.alert('Selecione cartas', 'Selecione as cartas da sua mão que deseja adicionar a este jogo.');
-      return;
-    }
+
+    // Tenta adicionar
     const success = addToExistingGame('user', selectedCards, gameIndex);
     if (success) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
+      // SUCESSO: Não abre o modal, para o jogador ver a carta entrando no jogo
     } else {
+      // Se falhou por regra do jogo, abre o ZOOM para o jogador conferir o jogo e entender o erro
+      setTempOpenGame({ teamId: 'team-1', index: gameIndex });
       Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
     }
+  };
+
+  const handleOpenOpponentGame = (idx: number) => {
+    // Abre qualquer jogo do adversário para ver melhor
+    setTempOpenGame({ teamId: 'team-2', index: idx });
+    setTimeout(() => {
+      setTempOpenGame(prev => (prev?.teamId === 'team-2' && prev?.index === idx) ? null : prev);
+    }, 8000);
+  };
+
+  const getVisibleCards = (gameCards: any[], teamId: string, gameIdx: number, ignoreTempOpen = false) => {
+    const canasta = checkCanasta(gameCards);
+    const normalCards = gameCards.filter(c => !c.isJoker);
+    const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+    const isCanasta = canasta !== 'none';
+    // Regra: esconde se for canastra, trinca > 4, ou sequência de 5 ou 6 cartas
+    const hideMiddle = isCanasta || 
+                       (isTrinca && gameCards.length > 4) || 
+                       (!isTrinca && (gameCards.length === 5 || gameCards.length === 6));
+
+    if (!hideMiddle) {
+      return { visibleCards: [...gameCards], hideMiddle };
+    }
+
+    const idxs = new Set<number>([0, gameCards.length - 1]);
+    const jIdx = gameCards.findIndex(c => c.isJoker);
+    
+    if (isTrinca) {
+      if (jIdx !== -1) idxs.add(jIdx);
+      // Garante pelo menos 3 cartas se possível
+      if (idxs.size < 3 && gameCards.length >= 3) {
+        idxs.add(1);
+      }
+    } else {
+      // Sequência (limpa ou suja)
+      if (gameCards.length === 5) {
+        // Esconde 1 do meio (mostra 4)
+        idxs.add(1); idxs.add(3);
+      } else if (gameCards.length === 6) {
+        // Esconde 2 do meio (mostra 4)
+        idxs.add(1); idxs.add(4);
+      } else {
+        // Canastra (7+)
+        if (jIdx !== -1) {
+          // Canastra suja - mostra pontas e vizinhos do coringa
+          idxs.add(jIdx);
+          if (jIdx > 0) idxs.add(jIdx - 1);
+          if (jIdx < gameCards.length - 1) idxs.add(jIdx + 1);
+        } else {
+          // Canastra limpa - mostra pontas e a penúltima
+          if (gameCards.length > 2) idxs.add(gameCards.length - 2);
+        }
+      }
+      // Se tiver coringa, garante que ele está visível mesmo em sequências 5/6
+      if (jIdx !== -1) idxs.add(jIdx);
+    }
+
+    let visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => gameCards[i]);
+
+    // Garante coringa em primeiro na exibição resumida APENAS em trincas
+    if (isTrinca) {
+      const finalJokerIdx = visibleCards.findIndex(c => c.isJoker);
+      if (finalJokerIdx !== -1 && finalJokerIdx !== 0) {
+        const joker = visibleCards.splice(finalJokerIdx, 1)[0];
+        visibleCards.unshift(joker);
+      }
+    }
+
+    return { visibleCards, hideMiddle };
   };
 
   const handleTableClick = () => {
@@ -361,54 +450,11 @@ export default function GameScreen() {
                   ]}>
                     {opTeamGames.map((gameCards, idx) => {
                       const canasta = checkCanasta(gameCards);
-                      const normalCards = gameCards.filter(c => !c.isJoker);
-
-                      const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+                      const { visibleCards, hideMiddle } = getVisibleCards(gameCards, 'team-2', idx);
+                      const isTrinca = gameCards.length >= 3 && gameCards.filter(c => !c.isJoker).every((c, _, arr) => c.value === arr[0].value);
                       const isCanasta = canasta !== 'none';
-                      const isCleanSequence = !isTrinca && !gameCards.some(c => c.isJoker);
-                      const hideMiddle = isCanasta || 
-                                         (isTrinca && gameCards.length > 4) || 
-                                         (isCleanSequence && (gameCards.length === 5 || gameCards.length === 6));
-
-                      let visibleCards = [...gameCards];
-
-                      if (hideMiddle) {
-                        const idxs = new Set<number>([0, gameCards.length - 1]);
-                        const jIdx = gameCards.findIndex(c => c.isJoker);
-                        
-                        if (isTrinca) {
-                          if (jIdx !== -1) idxs.add(jIdx);
-                        } else {
-                          if (jIdx !== -1) {
-                            // Canastra suja (7+) ou sequência com joker - mostra pontas e vizinhos do coringa
-                            idxs.add(jIdx);
-                            if (jIdx > 0) idxs.add(jIdx - 1);
-                            if (jIdx < gameCards.length - 1) idxs.add(jIdx + 1);
-                          } else {
-                            // Sequência limpa (5, 6 ou 7+)
-                            if (gameCards.length === 5) {
-                              idxs.add(1); idxs.add(3); // Esconde o do meio (index 2)
-                            } else if (gameCards.length === 6) {
-                              idxs.add(1); idxs.add(4); // Esconde os dois do meio (indices 2, 3)
-                            } else {
-                              if (gameCards.length > 2) idxs.add(gameCards.length - 2);
-                            }
-                          }
-                        }
-                        visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => gameCards[i]);
-                      }
-
-                      // Garante coringa em primeiro na exibição resumida APENAS em trincas
-                      if (isTrinca) {
-                        const finalJokerIdx = visibleCards.findIndex(c => c.isJoker);
-                        if (finalJokerIdx !== -1 && finalJokerIdx !== 0) {
-                          const joker = visibleCards.splice(finalJokerIdx, 1)[0];
-                          visibleCards.unshift(joker);
-                        }
-                      }
 
                       let cardMargin = -20;
-
                       if (visibleCards.length > 1) {
                         const containerWidth = (SW - 90) / 3;
                         const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
@@ -416,8 +462,10 @@ export default function GameScreen() {
                       }
 
                       return (
-                        <View
+                        <TouchableOpacity
                           key={`op-${idx}`}
+                          activeOpacity={0.7}
+                          onPress={() => handleOpenOpponentGame(idx)}
                           style={[
                             styles.gameCard,
                             denseMode && styles.gameCardDense,
@@ -427,7 +475,7 @@ export default function GameScreen() {
                             { transform: [{ scale }] }
                           ]}
                         >
-                          <View style={styles.gameCardInner}>
+                          <View pointerEvents="none" style={styles.gameCardInner}>
                             <View style={[
                               styles.gameCardsWrap,
                               denseMode && styles.gameCardsWrapCompact,
@@ -469,7 +517,7 @@ export default function GameScreen() {
                               </View>
                             </View>
                           </View>
-                        </View>
+                        </TouchableOpacity>
                       );
                     })}
                   </View>
@@ -484,54 +532,11 @@ export default function GameScreen() {
                   ]}>
                     {myTeamGames.map((gameCards, idx) => {
                       const canasta = checkCanasta(gameCards);
-                      const normalCards = gameCards.filter(c => !c.isJoker);
-
-                      const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+                      const { visibleCards, hideMiddle } = getVisibleCards(gameCards, 'team-1', idx);
+                      const isTrinca = gameCards.length >= 3 && gameCards.filter(c => !c.isJoker).every((c, _, arr) => c.value === arr[0].value);
                       const isCanasta = canasta !== 'none';
-                      const isCleanSequence = !isTrinca && !gameCards.some(c => c.isJoker);
-                      const hideMiddle = isCanasta || 
-                                         (isTrinca && gameCards.length > 4) || 
-                                         (isCleanSequence && (gameCards.length === 5 || gameCards.length === 6));
-
-                      let visibleCards = [...gameCards];
-
-                      if (hideMiddle) {
-                        const idxs = new Set<number>([0, gameCards.length - 1]);
-                        const jIdx = gameCards.findIndex(c => c.isJoker);
-                        
-                        if (isTrinca) {
-                          if (jIdx !== -1) idxs.add(jIdx);
-                        } else {
-                          if (jIdx !== -1) {
-                            // Canastra suja (7+) ou sequência com joker - mostra pontas e vizinhos do coringa
-                            idxs.add(jIdx);
-                            if (jIdx > 0) idxs.add(jIdx - 1);
-                            if (jIdx < gameCards.length - 1) idxs.add(jIdx + 1);
-                          } else {
-                            // Sequência limpa (5, 6 ou 7+)
-                            if (gameCards.length === 5) {
-                              idxs.add(1); idxs.add(3); // Esconde o do meio (index 2)
-                            } else if (gameCards.length === 6) {
-                              idxs.add(1); idxs.add(4); // Esconde os dois do meio (indices 2, 3)
-                            } else {
-                              if (gameCards.length > 2) idxs.add(gameCards.length - 2);
-                            }
-                          }
-                        }
-                        visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => gameCards[i]);
-                      }
-
-                      // Garante coringa em primeiro na exibição resumida APENAS em trincas
-                      if (isTrinca) {
-                        const finalJokerIdx = visibleCards.findIndex(c => c.isJoker);
-                        if (finalJokerIdx !== -1 && finalJokerIdx !== 0) {
-                          const joker = visibleCards.splice(finalJokerIdx, 1)[0];
-                          visibleCards.unshift(joker);
-                        }
-                      }
 
                       let cardMargin = -20;
-
                       if (visibleCards.length > 1) {
                         const containerWidth = (SW - 90) / 3;
                         const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
@@ -540,9 +545,18 @@ export default function GameScreen() {
 
                       const canAdd = (() => {
                         if (!isMyTurn || turnPhase !== 'play' || selectedCards.length === 0) return false;
+                        if (!user) return false;
+
+                        // Regra do Lixo: se pegou o lixo, a seleção deve conter o topo
+                        if (mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) return false;
+
                         const selCards = user.hand.filter(c => selectedCards.includes(c.id));
+                        if (selCards.length === 0) return false;
+
                         const combined = [...gameCards, ...selCards];
-                        return combined.length >= 3 && validateSequence(combined, gameMode);
+                        
+                        // Valida a combinação usando as regras do jogo atual
+                        return validateSequence(combined, gameMode);
                       })();
 
                       return (
@@ -694,6 +708,27 @@ export default function GameScreen() {
             <TouchableOpacity style={[styles.menuItem, styles.menuClose]} onPress={() => setShowMenu(false)}>
               <Text style={[styles.menuItemText, { color: 'rgba(255,255,255,0.5)' }]}>Fechar</Text>
             </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* MODAL JOGO EXPANDIDO */}
+      <Modal visible={!!tempOpenGame} transparent animationType="fade" onRequestClose={() => setTempOpenGame(null)}>
+        <TouchableOpacity style={styles.expandedOverlay} activeOpacity={1} onPress={() => setTempOpenGame(null)}>
+          <View style={styles.expandedBox}>
+            <Text style={styles.expandedTitle}>
+              {tempOpenGame?.teamId === 'team-1' ? 'Nosso Jogo' : 'Jogo Adversário'}
+            </Text>
+            <View style={styles.expandedContent}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.expandedCardsScroll}>
+                {tempOpenGame && (tempOpenGame.teamId === 'team-1' ? teams['team-1'].games : teams['team-2'].games)[tempOpenGame.index].map((c) => (
+                  <View key={c.id} style={styles.expandedCardWrapper}>
+                    <Card card={c} />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+            <Text style={styles.expandedCloseHint}>Toque fora para fechar</Text>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -902,7 +937,10 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   gameCardHighlight: {
-    borderWidth: 1.5, borderColor: '#FFD600', backgroundColor: 'rgba(255,214,0,0.12)',
+    borderWidth: 2, 
+    borderColor: '#FFD600', 
+    backgroundColor: 'rgba(255,214,0,0.2)',
+    zIndex: 5,
   },
   gameCardOverlay: {
     position: 'absolute',
@@ -1086,4 +1124,37 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 18 },
+
+  // EXPANDED GAME MODAL
+  expandedOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  expandedBox: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  expandedTitle: {
+    color: '#FFD600', fontSize: 24, fontWeight: '900', marginBottom: 30,
+    textTransform: 'uppercase', letterSpacing: 4,
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4,
+  },
+  expandedContent: {
+    height: 180, // Altura suficiente para os cards normais
+    width: '100%',
+  },
+  expandedCardsScroll: {
+    paddingHorizontal: 40,
+    alignItems: 'center',
+    gap: -15, // Overlap elegante
+  },
+  expandedCardWrapper: {
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6, shadowRadius: 12, elevation: 15,
+    backgroundColor: '#fff', borderRadius: 6, // Garante que a sombra apareça bem
+  },
+  expandedCloseHint: {
+    color: 'rgba(255,255,255,0.4)', fontSize: 15, marginTop: 40,
+    fontWeight: '700', letterSpacing: 1,
+  },
 });
