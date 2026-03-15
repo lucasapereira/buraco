@@ -485,7 +485,7 @@ export default function GameScreen() {
                 </View>
 
                 {/* Nossos jogos */}
-                <Text style={[styles.sectionLabel, { marginTop: 8 }]}>🟢 Nossos Jogos</Text>
+                <Text style={[styles.sectionLabel, { marginTop: 5 }]}>🟢 Nossos Jogos</Text>
                 {myTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
                 <View style={[
                   styles.gamesGrid,
@@ -818,20 +818,21 @@ const styles = StyleSheet.create({
   infoText: { color: '#B9F6CA', fontSize: 14, textAlign: 'right' },
 
   // BOARD
-  board: { flex: 1, flexDirection: 'row', paddingHorizontal: 4, paddingTop: 4 },
+  board: { flex: 1, flexDirection: 'row', paddingHorizontal: 2, paddingTop: 2 },
   gamesScroll: { flex: 1 },
   gamesScrollContent: { paddingLeft: 6, paddingRight: 6, paddingBottom: 10, flexGrow: 1 },
-  sectionLabel: { color: '#E8F5E9', fontWeight: '800', fontSize: 16, marginBottom: 4 },
-  emptyGames: { color: 'rgba(255,255,255,0.4)', fontSize: 15, marginBottom: 8, fontStyle: 'italic' },
+  sectionLabel: { color: '#E8F5E9', fontWeight: '800', fontSize: 13, marginBottom: 2 },
+  emptyGames: { color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 6, fontStyle: 'italic' },
   // GRADE DE JOGOS
   gamesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    rowGap: 10,
-    columnGap: 8,
-    marginBottom: 6,
-    justifyContent: 'space-between',
+    rowGap: 6,
+    columnGap: 6,
+    marginBottom: 4,
+    justifyContent: 'flex-start',
     overflow: 'visible',
+    gap: 6
   },
   gamesGridDense: {
     rowGap: 8,
@@ -846,8 +847,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 3,
     flexBasis: '31%',
     minWidth: '31%',
     maxWidth: '32.5%',
@@ -874,17 +875,17 @@ const styles = StyleSheet.create({
   gameCardsWrap: {
     flex: 1,
     position: 'relative',
-    minHeight: 84, 
+    minHeight: 74, 
     justifyContent: 'center',
-    paddingTop: 6,
+    paddingTop: 4,
     overflow: 'visible',
   },
   gameCardsWrapCompact: {
-    minHeight: 80,
-    paddingTop: 4,
+    minHeight: 70,
+    paddingTop: 3,
   },
   gameCardsWrapTight: {
-    minHeight: 76,
+    minHeight: 66,
     paddingTop: 2,
   },
   trincaChip: {
@@ -936,7 +937,7 @@ const styles = StyleSheet.create({
   },
   counterTextOverlay: {
     color: '#fff',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '900',
   },
   pileCounterBadge: {
@@ -1027,9 +1028,9 @@ const styles = StyleSheet.create({
   },
   ribbonText: {
     color: '#fff',
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   badgeClean: {
     backgroundColor: '#FFD600',
@@ -1041,7 +1042,7 @@ const styles = StyleSheet.create({
   },
 
   // PILES
-  pilesColumn: { width: 70, alignItems: 'center', justifyContent: 'center', gap: 14 },
+  pilesColumn: { width: 66, alignItems: 'center', justifyContent: 'center', gap: 8 },
   pileBox: { alignItems: 'center' },
   pileLabel: { color: '#E8F5E9', fontSize: 12, fontWeight: '700', marginBottom: 1 },
 

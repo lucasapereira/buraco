@@ -22,7 +22,7 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
         onPress={onPress}
         style={[styles.card, styles.hiddenCard, { width: w, height: h }]}
       >
-        <Text style={[styles.hiddenText, small && { fontSize: 13 }]}>🂠</Text>
+        <Text style={[styles.hiddenText, small && { fontSize: 11 }]}>🂠</Text>
       </TouchableOpacity>
     );
   }
@@ -62,7 +62,7 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
       </View>
 
       <View style={styles.centerBox}>
-        <Text style={[styles.suitBig, { color }, small && { fontSize: 28 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.suitBig, { color }, small && { fontSize: 30 }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
       <View style={styles.bottomCorner}>
@@ -110,11 +110,11 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '180deg' }],
   },
   value: {
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: '800',
   },
   suitSmall: {
-    fontSize: 14,
+    fontSize: 16,
     marginTop: -2,
   },
   centerBox: {
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   suitBig: {
-    fontSize: 33,
+    fontSize: 38,
     opacity: 0.2,
   },
 });
