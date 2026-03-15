@@ -143,8 +143,61 @@ export function validateSequence(cardsToPlay: Card[], gameMode: GameMode = 'clas
  */
 export function checkCanasta(cards: Card[]): CanastaType {
   if (cards.length < 7) return 'none';
-  const hasJoker = cards.some(c => c.isJoker);
-  return hasJoker ? 'dirty' : 'clean';
+  
+  const jokers = cards.filter(c => c.isJoker);
+  if (jokers.length === 0) return 'clean';
+  
+  // No STBL, se tem 2(s) do naipe correto em posição natural, a canastra pode ser limpa.
+  // Mas se for trinca (mesmo valor), com curinga é sempre suja.
+  const normalCards = cards.filter(c => !c.isJoker);
+  if (normalCards.length === 0) return 'dirty'; // Caso improvável
+
+  const isTrinca = normalCards.every(c => c.value === normalCards[0].value);
+  if (isTrinca) return 'dirty';
+
+  // Para sequências (mesmo naipe):
+  const mainSuit = normalCards[0].suit;
+  
+  // Se qualquer curinga for de naipe diferente, é suja
+  if (jokers.some(j => j.suit !== mainSuit)) return 'dirty';
+  
+  // Se tem mais de um curinga (mesmo sendo do mesmo naipe), é suja
+  // No Buraco, você só pode ter um curinga por jogo, a menos que um deles seja o 2 natural.
+  // Mas para simplificar e seguir a regra de "máximo 1 curinga" definida anteriormente:
+  if (jokers.length > 1) return 'dirty';
+
+  const joker = jokers[0];
+  
+  // Ordenar cartas normais para ver onde o 2 se encaixa
+  const sortedNormal = [...normalCards].sort((a, b) => {
+    const vA = a.value === 14 ? 1 : a.value;
+    const vB = b.value === 14 ? 1 : b.value;
+    return vA - vB;
+  });
+
+  const firstVal = sortedNormal[0].value === 14 ? 1 : sortedNormal[0].value;
+  
+  // Se a sequência normal não tem buracos:
+  let hasGap = false;
+  for (let i = 0; i < sortedNormal.length - 1; i++) {
+    const v1 = sortedNormal[i].value === 14 ? 1 : sortedNormal[i].value;
+    const v2 = sortedNormal[i+1].value === 14 ? 1 : sortedNormal[i+1].value;
+    if (v2 - v1 !== 1 && !(v1 === 13 && sortedNormal[i+1].value === 14)) {
+      hasGap = true;
+      break;
+    }
+  }
+
+  if (!hasGap) {
+    // Se não tem buraco, o 2 está no início ou fim.
+    // Natural se for J Q K A 2 (não existe, 2 é baixo) ou A 2 3 ou 2 3 4.
+    // No Buraco o 2 natural fica entre o A e o 3 ou antes do 3.
+    if (firstVal === 3 || (firstVal === 1 && sortedNormal[1]?.value === 3)) {
+      return 'clean';
+    }
+  }
+
+  return 'dirty';
 }
 
 /**

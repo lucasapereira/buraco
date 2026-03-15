@@ -35,8 +35,9 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
   };
 
   const getDisplayValue = () => {
-    if (card.isJoker) return '★';
+    if (card.isJoker && card.value !== 2) return '★'; // No caso de adicionarmos jokers reais sem valor
     switch (card.value) {
+      case 2: return '2';
       case 11: return 'J';
       case 12: return 'Q';
       case 13: return 'K';

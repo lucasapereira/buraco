@@ -57,7 +57,6 @@ const VALUE_LABELS: Record<number, string> = {
 };
 
 export function cardLabel(card: Card): string {
-  if (card.isJoker) return '★';
-  const val = VALUE_LABELS[card.value] || card.value.toString();
+  const val = card.value === 2 ? '2' : (VALUE_LABELS[card.value] || card.value.toString());
   return `${val}${SUIT_SYMBOLS[card.suit]}`;
 }
