@@ -326,8 +326,119 @@ export default function GameScreen() {
 
             return (
               <>
+                {/* Jogos dos adversários */}
+                <Text style={styles.sectionLabel}>🔴 Jogos Adversário</Text>
+                {opTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
+                <View style={[
+                  styles.gamesGrid,
+                  denseMode && styles.gamesGridDense,
+                  tightMode && styles.gamesGridTight,
+                ]}>
+                  {opTeamGames.map((gameCards, idx) => {
+                    const canasta = checkCanasta(gameCards);
+                    const normalCards = gameCards.filter(c => !c.isJoker);
+                    
+                    let visibleCards = gameCards;
+                    let isCanasta = canasta !== 'none';
+                    let cardMargin = -20;
+
+                    if (isCanasta) {
+                      const idxs = new Set<number>([0, gameCards.length - 1]);
+                      const jIdx = gameCards.findIndex(c => c.isJoker);
+                      const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+
+                      if (isTrinca) {
+                        if (jIdx !== -1) {
+                          idxs.add(jIdx);
+                        }
+                        // Trincas sempre mostram 3 cartas para não ficar estranho
+                        if (idxs.size < 3 && gameCards.length > 2) {
+                           idxs.add(1); 
+                        }
+                        if (idxs.size < 3 && gameCards.length > 3) {
+                           idxs.add(2);
+                        }
+                      } else {
+                        // Sequências
+                        if (jIdx !== -1) {
+                          idxs.add(jIdx);
+                          if (jIdx > 0) idxs.add(jIdx - 1);
+                          if (jIdx < gameCards.length - 1) idxs.add(jIdx + 1);
+                        } else {
+                          if (gameCards.length > 2) idxs.add(gameCards.length - 2);
+                        }
+                      }
+                      
+                      visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => gameCards[i]);
+                    } 
+                    
+                    if (visibleCards.length > 1) {
+                      const containerWidth = (SW - 90) / 3; // Estimativa para 3 por linha
+                      const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
+                      cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
+                    }
+
+                    return (
+                      <View
+                        key={`op-${idx}`}
+                        style={[
+                          styles.gameCard,
+                          denseMode && styles.gameCardDense,
+                          tightMode && styles.gameCardTight,
+                          styles.opponentGame,
+                          canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
+                          { transform: [{ scale }] }
+                        ]}
+                      >
+                        <View style={styles.gameCardInner}>
+                          <View style={[
+                            styles.gameCardsWrap,
+                            denseMode && styles.gameCardsWrapCompact,
+                            tightMode && styles.gameCardsWrapTight,
+                          ]}>
+                            <View style={[
+                              styles.gameCards,
+                              denseMode && styles.gameCardsDense,
+                            ]}>
+                              {visibleCards.map((c, ci) => {
+                                return (
+                                  <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
+                                    <View style={[
+                                      styles.cardClip,
+                                      denseMode && styles.cardClipCompact,
+                                      tightMode && styles.cardClipTight,
+                                    ]}>
+                                      <Card card={c} small />
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                            {isCanasta && (
+                              <View pointerEvents="none" style={[styles.canastaRibbon, canasta === 'clean' ? styles.ribbonClean : styles.ribbonDirty]}>
+                                <Text style={styles.ribbonText}>{canasta === 'clean' ? 'LIMPA' : 'SUJA'}</Text>
+                              </View>
+                            )}
+                             <View style={styles.gameCardOverlay}>
+                               <View style={[
+                                 styles.counterBadgeOverlay,
+                                 isCanasta && (canasta === 'clean' ? styles.badgeClean : styles.badgeDirty)
+                               ]}>
+                                 <Text style={styles.counterTextOverlay}>
+                                   {isCanasta && (canasta === 'clean' ? '✨ ' : '★ ')}
+                                   {gameCards.length}
+                                 </Text>
+                               </View>
+                             </View>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+
                 {/* Nossos jogos */}
-                <Text style={styles.sectionLabel}>🟢 Nossos Jogos</Text>
+                <Text style={[styles.sectionLabel, { marginTop: 8 }]}>🟢 Nossos Jogos</Text>
                 {myTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
                 <View style={[
                   styles.gamesGrid,
@@ -336,28 +447,45 @@ export default function GameScreen() {
                 ]}>
                   {myTeamGames.map((gameCards, idx) => {
                     const canasta = checkCanasta(gameCards);
-                    const hasJoker = gameCards.some(c => c.isJoker);
                     const normalCards = gameCards.filter(c => !c.isJoker);
-                    const isTrincaLike = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
                     
                     let visibleCards = gameCards;
                     let isCanasta = canasta !== 'none';
                     let cardMargin = -20;
 
                     if (isCanasta) {
+                      const idxs = new Set<number>([0, gameCards.length - 1]);
+                      const jIdx = gameCards.findIndex(c => c.isJoker);
                       const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+
                       if (isTrinca) {
-                        visibleCards = [gameCards[0], gameCards[gameCards.length - 1]];
+                        if (jIdx !== -1) {
+                          idxs.add(jIdx);
+                        }
+                        // Trincas sempre mostram 3 cartas para não ficar estranho
+                        if (idxs.size < 3 && gameCards.length > 2) {
+                           idxs.add(1); 
+                        }
+                        if (idxs.size < 3 && gameCards.length > 3) {
+                           idxs.add(2);
+                        }
                       } else {
-                        // Mostra Início e os dois do Fim (para ver o valor real e o curinga se houver)
-                        visibleCards = [gameCards[0], gameCards[gameCards.length - 2], gameCards[gameCards.length - 1]];
+                        // Sequências
+                        if (jIdx !== -1) {
+                          idxs.add(jIdx);
+                          if (jIdx > 0) idxs.add(jIdx - 1);
+                          if (jIdx < gameCards.length - 1) idxs.add(jIdx + 1);
+                        } else {
+                          if (gameCards.length > 2) idxs.add(gameCards.length - 2);
+                        }
                       }
+                      
+                      visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => gameCards[i]);
                     } 
                     
                     if (visibleCards.length > 1) {
-                      const containerWidth = tightMode ? 100 : denseMode ? 112 : 160;
+                      const containerWidth = (SW - 90) / 3;
                       const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
-                      // Canastas têm uma margem um pouco mais folgada se tiverem poucas cartas visíveis
                       cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
                     }
 
@@ -365,7 +493,7 @@ export default function GameScreen() {
                       if (!isMyTurn || turnPhase !== 'play' || selectedCards.length === 0) return false;
                       const selCards = user.hand.filter(c => selectedCards.includes(c.id));
                       const combined = [...gameCards, ...selCards];
-                      return combined.length >= 3 && validateSequence(combined);
+                      return combined.length >= 3 && validateSequence(combined, gameMode);
                     })();
 
                     return (
@@ -393,7 +521,6 @@ export default function GameScreen() {
                               denseMode && styles.gameCardsDense,
                             ]}>
                               {visibleCards.map((c, ci) => {
-                                const isLast = ci === visibleCards.length - 1;
                                 return (
                                   <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
                                     <View style={[
@@ -427,99 +554,6 @@ export default function GameScreen() {
                           </View>
                         </View>
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Jogos dos adversários */}
-                <Text style={[styles.sectionLabel, { marginTop: 8 }]}>🔴 Jogos Adversário</Text>
-                {opTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
-                <View style={[
-                  styles.gamesGrid,
-                  denseMode && styles.gamesGridDense,
-                  tightMode && styles.gamesGridTight,
-                ]}>
-                  {opTeamGames.map((gameCards, idx) => {
-                    const canasta = checkCanasta(gameCards);
-                    const hasJoker = gameCards.some(c => c.isJoker);
-                    const normalCards = gameCards.filter(c => !c.isJoker);
-                    const isTrincaLike = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
-                    
-                    let visibleCards = gameCards;
-                    let isCanasta = canasta !== 'none';
-                    let cardMargin = -20;
-
-                    if (isCanasta) {
-                      const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
-                      if (isTrinca) {
-                        visibleCards = [gameCards[0], gameCards[gameCards.length - 1]];
-                      } else {
-                        visibleCards = [gameCards[0], gameCards[gameCards.length - 2], gameCards[gameCards.length - 1]];
-                      }
-                    } 
-                    
-                    if (visibleCards.length > 1) {
-                      const containerWidth = tightMode ? 100 : denseMode ? 112 : 160;
-                      const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
-                      cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
-                    }
-
-                    return (
-                      <View
-                        key={`op-${idx}`}
-                        style={[
-                          styles.gameCard,
-                          denseMode && styles.gameCardDense,
-                          tightMode && styles.gameCardTight,
-                          styles.opponentGame,
-                          canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
-                          { transform: [{ scale }] }
-                        ]}
-                      >
-                        <View style={styles.gameCardInner}>
-                          <View style={[
-                            styles.gameCardsWrap,
-                            denseMode && styles.gameCardsWrapCompact,
-                            tightMode && styles.gameCardsWrapTight,
-                          ]}>
-                            <View style={[
-                              styles.gameCards,
-                              denseMode && styles.gameCardsDense,
-                            ]}>
-                              {visibleCards.map((c, ci) => {
-                                const isLast = ci === visibleCards.length - 1;
-                                return (
-                                  <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
-                                    <View style={[
-                                      styles.cardClip,
-                                      denseMode && styles.cardClipCompact,
-                                      tightMode && styles.cardClipTight,
-                                    ]}>
-                                      <Card card={c} small />
-                                    </View>
-                                  </View>
-                                );
-                              })}
-                            </View>
-                            {isCanasta && (
-                              <View pointerEvents="none" style={[styles.canastaRibbon, canasta === 'clean' ? styles.ribbonClean : styles.ribbonDirty]}>
-                                <Text style={styles.ribbonText}>{canasta === 'clean' ? 'LIMPA' : 'SUJA'}</Text>
-                              </View>
-                            )}
-                             <View style={styles.gameCardOverlay}>
-                               <View style={[
-                                 styles.counterBadgeOverlay,
-                                 isCanasta && (canasta === 'clean' ? styles.badgeClean : styles.badgeDirty)
-                               ]}>
-                                 <Text style={styles.counterTextOverlay}>
-                                   {isCanasta && (canasta === 'clean' ? '✨ ' : '★ ')}
-                                   {gameCards.length}
-                                 </Text>
-                               </View>
-                             </View>
-                          </View>
-                        </View>
-                      </View>
                     );
                   })}
                 </View>
@@ -795,18 +829,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 4,
     paddingHorizontal: 4,
-    flexBasis: '48%',
-    minWidth: '48%',
-    maxWidth: '49%',
+    flexBasis: '31%',
+    minWidth: '31%',
+    maxWidth: '32.5%',
     flexGrow: 0,
     flexShrink: 0,
     justifyContent: 'space-between',
     overflow: 'visible',
   },
   gameCardDense: {
-    flexBasis: '31%',
-    minWidth: '31%',
-    maxWidth: '32%',
     paddingVertical: 3,
     paddingHorizontal: 3,
   },
