@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  StyleSheet, View, Text, TouchableOpacity,
+  StyleSheet, View, Text, TouchableOpacity, ScrollView,
   SafeAreaView, Alert, Modal, Dimensions, Platform, StatusBar, LayoutAnimation
 } from 'react-native';
 import { useGameStore } from '../../store/gameStore';
@@ -189,12 +189,25 @@ export default function GameScreen() {
       Alert.alert('Mínimo 3 cartas', 'Selecione no mínimo 3 cartas para baixar um jogo STBL.');
       return;
     }
-    const success = playCards('user', selectedCards);
-    if (success) {
+    const result = playCards('user', selectedCards);
+    if (result.success) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
     } else {
-      Alert.alert('Sequência inválida', 'As cartas selecionadas não formam uma sequência válida no STBL.\n\nLembre: mesmo naipe, valores consecutivos, máximo 1 curinga (2).');
+      if (result.error === 'stranding_prohibited') {
+        Alert.alert(
+          '⚠️ Não pode ficar sem cartas',
+          'Você não pode baixar essa sequência agora porque ficaria sem cartas na mão sem ter uma canastra limpa para bater.'
+        );
+      } else if (result.error === 'top_card_required') {
+        // Já tem mensagem no início do handlePlayCards, mas por segurança:
+        Alert.alert('⚠️ Regra do Lixo', 'Sua primeira jogada DEVE ser com a carta comprada do topo do lixo.');
+      } else {
+        Alert.alert(
+          'Sequência inválida',
+          'As cartas selecionadas não formam uma sequência válida no STBL.\n\nLembre: mesmo naipe, valores consecutivos, máximo 1 curinga (2).'
+        );
+      }
     }
   };
 
@@ -208,12 +221,21 @@ export default function GameScreen() {
       Alert.alert('Selecione cartas', 'Selecione as cartas da sua mão que deseja adicionar a este jogo.');
       return;
     }
-    const success = addToExistingGame('user', selectedCards, gameIndex);
-    if (success) {
+    const result = addToExistingGame('user', selectedCards, gameIndex);
+    if (result.success) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
     } else {
-      Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
+      if (result.error === 'stranding_prohibited') {
+        Alert.alert(
+          '⚠️ Não pode ficar sem cartas',
+          'Adicionar estas cartas deixaria você sem mão antes de ter uma canastra limpa para bater.'
+        );
+      } else if (result.error === 'top_card_required') {
+         Alert.alert('⚠️ Regra do Lixo', 'Sua primeira jogada deve ser usando a carta do topo do lixo.');
+      } else {
+        Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
+      }
     }
   };
 
@@ -324,17 +346,22 @@ export default function GameScreen() {
       {/* BOARD */}
       <View style={styles.board}>
         {/* Jogos montados */}
-        <TouchableOpacity 
-          activeOpacity={1} 
-          style={[styles.gamesScroll, styles.gamesScrollContent]} 
-          onPress={handleTableClick}
+        <ScrollView 
+          style={styles.gamesScroll} 
+          contentContainerStyle={[styles.gamesScrollContent, { flexGrow: 1 }]}
+          showsVerticalScrollIndicator={false}
         >
-          {(() => {
-            const totalGames = (myTeamGames || []).length + (opTeamGames || []).length;
-            const denseLevel = totalGames > 15 ? 2 : totalGames > 10 ? 1 : 0;
-            const denseMode = denseLevel > 0;
-            const tightMode = denseLevel > 1;
-            const scale = 1;
+          <TouchableOpacity 
+            activeOpacity={1} 
+            onPress={handleTableClick}
+            style={{ flexGrow: 1 }} 
+          >
+            {(() => {
+              const totalGames = (myTeamGames || []).length + (opTeamGames || []).length;
+              const denseLevel = totalGames > 15 ? 2 : totalGames > 10 ? 1 : 0;
+              const denseMode = denseLevel > 0;
+              const tightMode = denseLevel > 1;
+              const scale = 1;
 
             return (
               <>
@@ -569,10 +596,11 @@ export default function GameScreen() {
                     );
                   })}
                 </View>
-              </>
-            );
-          })()}
-        </TouchableOpacity>
+            </>
+          );
+        })()}
+          </TouchableOpacity>
+        </ScrollView>
 
         {/* Monte e Lixo no lado direito */}
         <View style={styles.pilesColumn}>
@@ -771,7 +799,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  handArea: { backgroundColor: 'rgba(0,0,0,0.2)', paddingBottom: 8 },
+  handArea: { backgroundColor: 'rgba(0,0,0,0.2)', paddingBottom: 0, overflow: 'visible' },
   turnBox: { alignItems: 'center' },
   turnName: { color: '#FFD600', fontWeight: '900', fontSize: 18 },
   phaseLabel: {
@@ -784,7 +812,7 @@ const styles = StyleSheet.create({
   // BOARD
   board: { flex: 1, flexDirection: 'row', paddingHorizontal: 4, paddingTop: 4 },
   gamesScroll: { flex: 1 },
-  gamesScrollContent: { paddingLeft: 6, paddingRight: 6, paddingBottom: 6 },
+  gamesScrollContent: { paddingLeft: 6, paddingRight: 6, paddingBottom: 10, flexGrow: 1 },
   sectionLabel: { color: '#E8F5E9', fontWeight: '800', fontSize: 16, marginBottom: 4 },
   emptyGames: { color: 'rgba(255,255,255,0.4)', fontSize: 15, marginBottom: 8, fontStyle: 'italic' },
   // GRADE DE JOGOS

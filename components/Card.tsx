@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     padding: 3,
   },
   selectedCard: {
-    transform: [{ translateY: -16 }],
+    transform: [{ translateY: -42 }],
     borderColor: '#FFD600',
     borderWidth: 2.5,
     backgroundColor: '#FFFFF0',

@@ -13,7 +13,8 @@ export const EventBanner: React.FC<EventBannerProps> = ({ events }) => {
   const translateY = useRef(new Animated.Value(-30)).current;
   const lastEventId = useRef(-1);
 
-  const lastEvent = events.length > 0 ? events[events.length - 1] : null;
+  const filteredEvents = events.filter(e => e.type !== 'play_cards' && e.type !== 'add_to_game');
+  const lastEvent = filteredEvents.length > 0 ? filteredEvents[filteredEvents.length - 1] : null;
 
   useEffect(() => {
     if (!lastEvent || lastEvent.id === lastEventId.current) return;
@@ -74,7 +75,8 @@ interface EventLogProps {
 }
 
 export const EventLog: React.FC<EventLogProps> = ({ events, maxItems = 5 }) => {
-  const recent = events.slice(-maxItems).reverse();
+  const filtered = events.filter(e => e.type !== 'play_cards' && e.type !== 'add_to_game');
+  const recent = filtered.slice(-maxItems).reverse();
 
   return (
     <View style={styles.logContainer}>

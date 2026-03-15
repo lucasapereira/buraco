@@ -32,6 +32,8 @@ export const Hand: React.FC<HandProps> = ({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={{ overflow: 'visible' }}
+        removeClippedSubviews={false}
         contentContainerStyle={[
           styles.scrollContent,
           !needsScroll && { justifyContent: 'center', flex: 1 },
@@ -55,7 +57,7 @@ export const Hand: React.FC<HandProps> = ({
                 onPress={() => onToggleCard(card.id)}
               />
               {isHighlighted && (
-                <View style={styles.newBadge}>
+                <View pointerEvents="none" style={styles.newBadge}>
                   <Text style={styles.newBadgeText}>N</Text>
                 </View>
               )}
@@ -69,14 +71,16 @@ export const Hand: React.FC<HandProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: 102,
+    height: 44,
     width: '100%',
+    overflow: 'visible',
   },
   scrollContent: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 2,
+    paddingTop: 0,
+    paddingBottom: 0,
+    overflow: 'visible',
   },
   cardWrapper: {},
   highlightWrapper: {
@@ -102,13 +106,13 @@ const styles = StyleSheet.create({
   },
   cardCount: {
     position: 'absolute',
-    top: 12,
+    top: 26, 
     left: 12,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    zIndex: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    zIndex: 30,
   },
   cardCountText: {
     color: '#fff',

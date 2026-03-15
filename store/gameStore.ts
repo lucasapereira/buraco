@@ -14,8 +14,8 @@ interface GameActions {
   drawFromDeck: (playerId: PlayerId) => void;
   drawFromPile: (playerId: PlayerId) => boolean; // false = não pode pegar (regra)
   discard: (playerId: PlayerId, cardId: string) => void;
-  playCards: (playerId: PlayerId, cardIds: string[]) => boolean;
-  addToExistingGame: (playerId: PlayerId, cardIds: string[], gameIndex: number) => boolean;
+  playCards: (playerId: PlayerId, cardIds: string[]) => { success: boolean; error?: string };
+  addToExistingGame: (playerId: PlayerId, cardIds: string[], gameIndex: number) => { success: boolean; error?: string };
 }
 
 let eventCounter = 0;
@@ -403,23 +403,25 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   playCards: (playerId, cardIds) => {
     const state = get();
-    if (state.currentTurnPlayerId !== playerId) return false;
-    if (state.turnPhase !== 'play') return false;
+    if (state.currentTurnPlayerId !== playerId) return { success: false };
+    if (state.turnPhase !== 'play') return { success: false };
 
     // REGRA: Primeira jogada após comprar o lixo DEVE ser criando um novo jogo com a carta do topo
     if (state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
-      return false;
+      return { success: false, error: 'top_card_required' };
     }
 
     const player = state.players.find(p => p.id === playerId);
-    if (!player) return false;
+    if (!player) return { success: false };
 
     const selectedCards = player.hand.filter(c => cardIds.includes(c.id));
-    if (!validateSequence(selectedCards, state.gameMode)) return false;
+    if (!validateSequence(selectedCards, state.gameMode)) {
+      return { success: false, error: 'invalid_sequence' };
+    }
 
     const remaining = player.hand.filter(c => !cardIds.includes(c.id));
     if (wouldStrandPlayer(remaining, state.teams[player.teamId].hasGottenDead, state, player.teamId, selectedCards)) {
-      return false;
+      return { success: false, error: 'stranding_prohibited' };
     }
 
     const name = getPlayerName(state.players, playerId);
@@ -482,34 +484,36 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       return baseUpdate;
     });
 
-    return true;
+    return { success: true };
   },
 
   addToExistingGame: (playerId, cardIds, gameIndex) => {
     const state = get();
-    if (state.currentTurnPlayerId !== playerId) return false;
-    if (state.turnPhase !== 'play') return false;
+    if (state.currentTurnPlayerId !== playerId) return { success: false };
+    if (state.turnPhase !== 'play') return { success: false };
 
     // REGRA: Primeira jogada após comprar o lixo DEVE ser novo jogo. Não pode adicionar a jogo existente.
     if (state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
-      return false;
+      return { success: false, error: 'top_card_required' };
     }
 
     const player = state.players.find(p => p.id === playerId);
-    if (!player) return false;
+    if (!player) return { success: false };
 
     const teamId = player.teamId;
     const existingGame = state.teams[teamId].games[gameIndex];
-    if (!existingGame) return false;
+    if (!existingGame) return { success: false };
 
     const selectedCards = player.hand.filter(c => cardIds.includes(c.id));
     const combinedCards = [...existingGame, ...selectedCards];
 
-    if (!validateSequence(combinedCards, state.gameMode)) return false;
+    if (!validateSequence(combinedCards, state.gameMode)) {
+      return { success: false, error: 'invalid_sequence' };
+    }
 
     const remaining = player.hand.filter(c => !cardIds.includes(c.id));
     if (wouldStrandPlayer(remaining, state.teams[teamId].hasGottenDead, state, teamId, combinedCards)) {
-      return false;
+      return { success: false, error: 'stranding_prohibited' };
     }
 
     const name = getPlayerName(state.players, playerId);
@@ -572,6 +576,6 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       return baseUpdate;
     });
 
-    return true;
+    return { success: true };
   },
 }));
