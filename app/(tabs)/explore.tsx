@@ -771,7 +771,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  handArea: { backgroundColor: 'rgba(0,0,0,0.5)', paddingBottom: 8 },
+  handArea: { backgroundColor: 'rgba(0,0,0,0.2)', paddingBottom: 8 },
   turnBox: { alignItems: 'center' },
   turnName: { color: '#FFD600', fontWeight: '900', fontSize: 18 },
   phaseLabel: {

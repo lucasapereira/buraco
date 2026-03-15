@@ -69,7 +69,7 @@ export const Hand: React.FC<HandProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: 112,
+    height: 102,
     width: '100%',
   },
   scrollContent: {
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
   },
   cardCount: {
     position: 'absolute',
-    top: 6,
+    top: 12,
     left: 12,
     backgroundColor: 'rgba(0,0,0,0.45)',
     borderRadius: 10,
