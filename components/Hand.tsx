@@ -107,8 +107,8 @@ const styles = StyleSheet.create({
   cardCount: {
     position: 'absolute',
     top: 26, 
-    left: 12,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    left: 6,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     borderRadius: 10,
     paddingHorizontal: 7,
     paddingVertical: 1,

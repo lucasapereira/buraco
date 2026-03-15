@@ -384,45 +384,56 @@ export default function GameScreen() {
                   {opTeamGames.map((gameCards, idx) => {
                     const canasta = checkCanasta(gameCards);
                     const normalCards = gameCards.filter(c => !c.isJoker);
+                    const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
                     
-                    let visibleCards = gameCards;
+                    let visibleCards = [...gameCards];
                     let isCanasta = canasta !== 'none';
-                    let cardMargin = -20;
 
-                    if (isCanasta) {
-                      const idxs = new Set<number>([0, gameCards.length - 1]);
-                      const jIdx = gameCards.findIndex(c => c.isJoker);
-                      const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+                    // 1. Regra do Coringa na Trinca (4+ cartas)
+                    if (isTrinca && gameCards.length >= 4) {
+                      const jIdx = visibleCards.findIndex(c => c.isJoker);
+                      if (jIdx !== -1 && jIdx !== 0) {
+                        const joker = visibleCards.splice(jIdx, 1)[0];
+                        visibleCards.unshift(joker);
+                      }
+                    }
+
+                    // 2. Regra de Esconder Cartas (Sequência 5-6 ou Canastra 7+)
+                    const shouldHide = isCanasta || (!isTrinca && (gameCards.length === 5 || gameCards.length === 6));
+                    
+                    if (shouldHide) {
+                      const currentCards = [...visibleCards];
+                      const idxs = new Set<number>([0, currentCards.length - 1]);
+                      const jIdx = currentCards.findIndex(c => c.isJoker);
 
                       if (isTrinca) {
-                        if (jIdx !== -1) {
-                          idxs.add(jIdx);
-                        }
-                        // Trincas sempre mostram 3 cartas para não ficar estranho
-                        if (idxs.size < 3 && gameCards.length > 2) {
-                           idxs.add(1); 
-                        }
-                        if (idxs.size < 3 && gameCards.length > 3) {
-                           idxs.add(2);
-                        }
+                        if (jIdx !== -1) idxs.add(jIdx);
+                        if (idxs.size < 3 && currentCards.length > 2) idxs.add(1);
+                        if (idxs.size < 3 && currentCards.length > 3) idxs.add(2);
                       } else {
                         // Sequências
                         if (jIdx !== -1) {
                           idxs.add(jIdx);
                           if (jIdx > 0) idxs.add(jIdx - 1);
-                          if (jIdx < gameCards.length - 1) idxs.add(jIdx + 1);
+                          if (jIdx < currentCards.length - 1) idxs.add(jIdx + 1);
                         } else {
-                          if (gameCards.length > 2) idxs.add(gameCards.length - 2);
+                          if (currentCards.length === 5) {
+                            idxs.add(1); // mostra 0, 1, 4 (esconde 2, 3)
+                          } else if (currentCards.length === 6) {
+                            idxs.add(1); idxs.add(4); // mostra 0, 1, 4, 5 (esconde 2, 3)
+                          } else {
+                            if (currentCards.length > 2) idxs.add(currentCards.length - 2);
+                          }
                         }
                       }
-                      
-                      visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => gameCards[i]);
+                      visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => currentCards[i]);
                     } 
                     
+                    let cardMargin = -20;
                     if (visibleCards.length > 1) {
-                      const containerWidth = (SW - 90) / 3; // Estimativa para 3 por linha
+                      const containerWidth = (SW - 90) / 3;
                       const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
-                      cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
+                      cardMargin = Math.min(isCanasta || shouldHide ? -24 : -18, calcMargin);
                     }
 
                     return (
@@ -495,45 +506,56 @@ export default function GameScreen() {
                   {myTeamGames.map((gameCards, idx) => {
                     const canasta = checkCanasta(gameCards);
                     const normalCards = gameCards.filter(c => !c.isJoker);
+                    const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
                     
-                    let visibleCards = gameCards;
+                    let visibleCards = [...gameCards];
                     let isCanasta = canasta !== 'none';
-                    let cardMargin = -20;
 
-                    if (isCanasta) {
-                      const idxs = new Set<number>([0, gameCards.length - 1]);
-                      const jIdx = gameCards.findIndex(c => c.isJoker);
-                      const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
+                    // 1. Regra do Coringa na Trinca (4+ cartas)
+                    if (isTrinca && gameCards.length >= 4) {
+                      const jIdx = visibleCards.findIndex(c => c.isJoker);
+                      if (jIdx !== -1 && jIdx !== 0) {
+                        const joker = visibleCards.splice(jIdx, 1)[0];
+                        visibleCards.unshift(joker);
+                      }
+                    }
+
+                    // 2. Regra de Esconder Cartas (Sequência 5-6 ou Canastra 7+)
+                    const shouldHide = isCanasta || (!isTrinca && (gameCards.length === 5 || gameCards.length === 6));
+                    
+                    if (shouldHide) {
+                      const currentCards = [...visibleCards];
+                      const idxs = new Set<number>([0, currentCards.length - 1]);
+                      const jIdx = currentCards.findIndex(c => c.isJoker);
 
                       if (isTrinca) {
-                        if (jIdx !== -1) {
-                          idxs.add(jIdx);
-                        }
-                        // Trincas sempre mostram 3 cartas para não ficar estranho
-                        if (idxs.size < 3 && gameCards.length > 2) {
-                           idxs.add(1); 
-                        }
-                        if (idxs.size < 3 && gameCards.length > 3) {
-                           idxs.add(2);
-                        }
+                        if (jIdx !== -1) idxs.add(jIdx);
+                        if (idxs.size < 3 && currentCards.length > 2) idxs.add(1);
+                        if (idxs.size < 3 && currentCards.length > 3) idxs.add(2);
                       } else {
                         // Sequências
                         if (jIdx !== -1) {
                           idxs.add(jIdx);
                           if (jIdx > 0) idxs.add(jIdx - 1);
-                          if (jIdx < gameCards.length - 1) idxs.add(jIdx + 1);
+                          if (jIdx < currentCards.length - 1) idxs.add(jIdx + 1);
                         } else {
-                          if (gameCards.length > 2) idxs.add(gameCards.length - 2);
+                          if (currentCards.length === 5) {
+                            idxs.add(1); // mostra 0, 1, 4 (esconde 2, 3)
+                          } else if (currentCards.length === 6) {
+                            idxs.add(1); idxs.add(4); // mostra 0, 1, 4, 5 (esconde 2, 3)
+                          } else {
+                            if (currentCards.length > 2) idxs.add(currentCards.length - 2);
+                          }
                         }
                       }
-                      
-                      visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => gameCards[i]);
+                      visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => currentCards[i]);
                     } 
                     
+                    let cardMargin = -20;
                     if (visibleCards.length > 1) {
                       const containerWidth = (SW - 90) / 3;
                       const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
-                      cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
+                      cardMargin = Math.min(isCanasta || shouldHide ? -24 : -18, calcMargin);
                     }
 
                     const canAdd = (() => {

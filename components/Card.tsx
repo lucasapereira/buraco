@@ -57,17 +57,17 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
       ]}
     >
       <View style={styles.topCorner}>
-        <Text style={[styles.value, { color }, small && { fontSize: 19 }]}>{getDisplayValue()}</Text>
-        <Text style={[styles.suitSmall, { color }, small && { fontSize: 15, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.value, { color }, small && { fontSize: 21 }]}>{getDisplayValue()}</Text>
+        <Text style={[styles.suitSmall, { color }, small && { fontSize: 17, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
       <View style={styles.centerBox}>
-        <Text style={[styles.suitBig, { color }, small && { fontSize: 30 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.suitBig, { color }, small && { fontSize: 34 }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
       <View style={styles.bottomCorner}>
-        <Text style={[styles.value, { color }, small && { fontSize: 19 }]}>{getDisplayValue()}</Text>
-        <Text style={[styles.suitSmall, { color }, small && { fontSize: 15, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.value, { color }, small && { fontSize: 21 }]}>{getDisplayValue()}</Text>
+        <Text style={[styles.suitSmall, { color }, small && { fontSize: 17, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -110,11 +110,11 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '180deg' }],
   },
   value: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
   },
   suitSmall: {
-    fontSize: 16,
+    fontSize: 18,
     marginTop: -2,
   },
   centerBox: {
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   suitBig: {
-    fontSize: 38,
+    fontSize: 42,
     opacity: 0.2,
   },
 });
