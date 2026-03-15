@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { EventBanner, EventLog } from '../../components/EventBanner';
 import { cardLabel as getCardLabel } from '../../game/deck';
 import { useGameSounds } from '../../hooks/useGameSounds';
+import * as NavigationBar from 'expo-navigation-bar';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -68,6 +69,13 @@ export default function GameScreen() {
   }, [currentTurnPlayerId, playSound]);
 
   useBotAI();
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('inset-touch');
+    }
+  }, []);
 
   const user = players.find(p => p.id === 'user');
   if (!user) {

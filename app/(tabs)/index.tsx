@@ -3,6 +3,9 @@ import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-nati
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { BotDifficulty, GameMode } from '../../game/engine';
+import { Platform } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
+import { useEffect } from 'react';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -43,6 +46,13 @@ export default function HomeScreen() {
     startNewGame(targetScore, difficulty, gameMode);
     router.replace('/(tabs)/explore' as any);
   };
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('inset-touch');
+    }
+  }, []);
 
   return (
     <View style={styles.container}>
