@@ -5,6 +5,7 @@ import {
   GameEvent,
   GameMode,
   GameState,
+  UndoState,
   PlayerId, TeamId,
   calculateRoundScore,
   createInitialGameState,
@@ -22,6 +23,7 @@ interface GameActions {
   discard: (playerId: PlayerId, cardId: string) => void;
   playCards: (playerId: PlayerId, cardIds: string[]) => boolean;
   addToExistingGame: (playerId: PlayerId, cardIds: string[], gameIndex: number) => boolean;
+  undoLastPlay: (playerId: PlayerId) => boolean;
 }
 
 let eventCounter = 0;
@@ -40,6 +42,16 @@ function makeEvent(
 
 function addLog(log: GameEvent[], event: GameEvent): GameEvent[] {
   return [...log.slice(-19), event]; // Mantém últimos 20 eventos
+}
+
+function createUndoState(state: GameState): UndoState {
+  return {
+    players: state.players,
+    teams: state.teams,
+    deads: state.deads,
+    gameLog: state.gameLog,
+    mustPlayPileTopId: state.mustPlayPileTopId,
+  };
 }
 
 function getPlayerName(players: GameState['players'], id: PlayerId): string {
@@ -319,6 +331,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         turnPhase: 'play' as const,
         lastDrawnCardId: null,
         mustPlayPileTopId: topCardId,
+        turnHistory: [],
         gameLog: addLog(s.gameLog, makeEvent(
           playerId, name, 'draw_pile',
           `${name} pegou o lixo (${pileCount} cartas)`
@@ -405,6 +418,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         lastDrawnCardId: null,
         gameLog: log,
         discardedCardHistory: [...s.discardedCardHistory, discardedCard.id],
+        turnHistory: [],
         teams: {
           ...s.teams,
           [teamId]: {
@@ -493,6 +507,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         gameLog: log,
         // Limpa obrigação se a carta do topo do lixo foi usada nesta jogada
         mustPlayPileTopId: (s.mustPlayPileTopId && cardIds.includes(s.mustPlayPileTopId)) ? null : s.mustPlayPileTopId,
+        turnHistory: [...s.turnHistory, createUndoState(s)],
         teams: {
           ...s.teams,
           [teamId]: {
@@ -583,6 +598,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         deads: newDeads,
         gameLog: log,
         mustPlayPileTopId: (s.mustPlayPileTopId && cardIds.includes(s.mustPlayPileTopId)) ? null : s.mustPlayPileTopId,
+        turnHistory: [...s.turnHistory, createUndoState(s)],
         teams: {
           ...s.teams,
           [teamId]: {
@@ -602,6 +618,26 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       return baseUpdate;
     });
 
+    return true;
+  },
+
+  undoLastPlay: (playerId) => {
+    const state = get();
+    if (state.currentTurnPlayerId !== playerId) return false;
+    if (state.turnPhase !== 'play') return false;
+    if (state.turnHistory.length === 0) return false;
+
+    const previousState = state.turnHistory[state.turnHistory.length - 1];
+    
+    set((s) => ({
+      ...s,
+      players: previousState.players,
+      teams: previousState.teams,
+      deads: previousState.deads,
+      gameLog: previousState.gameLog,
+      mustPlayPileTopId: previousState.mustPlayPileTopId,
+      turnHistory: s.turnHistory.slice(0, -1)
+    }));
     return true;
   },
 }));

@@ -32,6 +32,14 @@ export interface GameEvent {
   timestamp: number;
 }
 
+export interface UndoState {
+  players: Player[];
+  teams: Record<TeamId, TeamState>;
+  deads: Card[][];
+  gameLog: GameEvent[];
+  mustPlayPileTopId: string | null;
+}
+
 export interface GameState {
   players: Player[];
   teams: Record<TeamId, TeamState>;
@@ -53,6 +61,7 @@ export interface GameState {
   deckReshuffleCount: number;        // Quantas vezes o lixo foi reembaralhado como novo monte
   animatingDiscard?: { playerId: PlayerId; card: Card } | null;
   animatingDrawPlayerId?: PlayerId | null;
+  turnHistory: UndoState[]; // Histórico de jogadas do turno atual para a funcionalidade de Desfazer
 }
 
 export const TURN_ORDER: PlayerId[] = ['user', 'bot-1', 'bot-2', 'bot-3'];
@@ -106,6 +115,7 @@ export function createInitialGameState(targetScore: number = 1500, botDifficulty
     discardedCardHistory: [],
     mustPlayPileTopId: null,
     deckReshuffleCount: 0,
+    turnHistory: [],
   };
 }
 

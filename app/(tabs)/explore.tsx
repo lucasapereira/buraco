@@ -33,7 +33,8 @@ export default function GameScreen() {
     drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
     startNewRound, startNewGame,
     gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode, botDifficulty,
-    animatingDiscard, animatingDrawPlayerId
+    animatingDiscard, animatingDrawPlayerId,
+    turnHistory, undoLastPlay
   } = useGameStore();
 
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
@@ -698,6 +699,21 @@ export default function GameScreen() {
         />
       </View>
 
+      {/* BOTÃO DESFAZER JOGADA */}
+      {isMyTurn && turnPhase === 'play' && turnHistory.length > 0 && (
+        <TouchableOpacity
+          style={styles.undoButton}
+          onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            undoLastPlay('user');
+            setSelectedCards([]);
+          }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.undoButtonText}>↩️ Desfazer</Text>
+        </TouchableOpacity>
+      )}
+
       {/* MODAL MENU */}
       <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
         <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={() => setShowMenu(false)}>
@@ -1181,6 +1197,32 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 18 },
+
+  // BOTÃO DESFAZER
+  undoButton: {
+    position: 'absolute',
+    bottom: 80, // Acima da mão
+    left: 16,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#FFD600',
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 100,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+  },
+  undoButtonText: {
+    color: '#FFD600',
+    fontWeight: '900',
+    fontSize: 15,
+  },
 
   // EXPANDED GAME MODAL
   expandedOverlay: {
