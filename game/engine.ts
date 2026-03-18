@@ -26,7 +26,7 @@ export interface GameEvent {
   id: number;
   playerId: PlayerId;
   playerName: string;
-  type: 'draw_deck' | 'draw_pile' | 'discard' | 'play_cards' | 'add_to_game' | 'got_dead' | 'round_end';
+  type: 'draw_deck' | 'draw_pile' | 'discard' | 'play_cards' | 'add_to_game' | 'got_dead' | 'morto_to_deck' | 'round_end';
   message: string;
   cardLabel?: string; // ex: "7♠" para discard
   timestamp: number;
@@ -145,6 +145,11 @@ export function calculateRoundScore(team: TeamState, teamPlayers: Player[], went
 
   // Bonus por bater
   if (wentOut) score += 100;
+
+  // Penalidade por não pegar o morto
+  if (!team.hasGottenDead) {
+    score -= 100;
+  }
 
   return score;
 }

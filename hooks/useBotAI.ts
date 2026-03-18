@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Card } from '../game/deck';
 import { BotDifficulty, GameMode, PlayerId } from '../game/engine';
-import { canTakePile, sortCardsBySuitAndValue, validateSequence } from '../game/rules';
+import { canTakePile, sortCardsBySuitAndValue, validateSequence, checkCanasta } from '../game/rules';
 import { useGameStore } from '../store/gameStore';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -438,8 +438,8 @@ export function useBotAI() {
         // Verifica se a jogada não vai deixar o bot travado
         const remaining = bot.hand.filter(c => !seq.some(s => s.id === c.id));
         const wouldStrand = remaining.length === 0 &&
-          s.teams[bot.teamId].hasGottenDead &&
-          !s.teams[bot.teamId].games.some(g => g.length >= 7 && (s.gameMode === 'araujo_pereira' || !g.some(c => c.isJoker)));
+          (s.teams[bot.teamId].hasGottenDead || s.deads.length === 0) &&
+          !s.teams[bot.teamId].games.some(g => g.length >= 7 && (s.gameMode === 'araujo_pereira' || checkCanasta(g) === 'clean'));
 
         if (wouldStrand && difficulty !== 'hard') continue; // Fácil/Médio evita
 

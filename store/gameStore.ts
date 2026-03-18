@@ -10,7 +10,7 @@ import {
   createInitialGameState,
   getNextPlayer
 } from '../game/engine';
-import { canTakePile, sortCardsBySuitAndValue, sortGameCards, validateSequence } from '../game/rules';
+import { canTakePile, sortCardsBySuitAndValue, sortGameCards, validateSequence, checkCanasta } from '../game/rules';
 
 type TurnPhase = 'draw' | 'play' | 'discard';
 
@@ -69,11 +69,11 @@ function checkRoundEnd(state: GameState, playerId: PlayerId): Partial<GameState>
 
   if (player.hand.length === 0) {
     const team = state.teams[player.teamId];
-    if (team.hasGottenDead) {
+    if (team.hasGottenDead || state.deads.length === 0) {
       const canGoOut = team.games.some(g => {
         if (g.length < 7) return false;
         if (state.gameMode === 'araujo_pereira') return true; // Any canasta works
-        return g.filter(c => c.isJoker).length === 0; // Must be clean for classic
+        return checkCanasta(g) === 'clean'; // Must be clean for classic
       });
 
       if (canGoOut) {
@@ -115,7 +115,7 @@ function teamHasCleanCanasta(state: GameState, teamId: TeamId, extraGame?: Card[
   return allGames.some(g => {
     if (g.length < 7) return false;
     if (state.gameMode === 'araujo_pereira') return true; // Any canasta is enough
-    return g.filter(c => c.isJoker).length === 0;
+    return checkCanasta(g) === 'clean';
   });
 }
 
@@ -158,8 +158,73 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
     const name = getPlayerName(state.players, playerId);
 
-    // Monte e Lixo ambos vazios → encerra rodada
-    if (state.deck.length === 0 && state.pile.length === 0) {
+    // Monte esgotado?
+    if (state.deck.length === 0) {
+      // 1. Verifica se tem morto sobrando
+      if (state.deads.length > 0) {
+        const nextDeads = [...state.deads];
+        const mortoParaMonte = nextDeads.pop()!;
+        
+        set((s) => ({
+          deck: mortoParaMonte,
+          deads: nextDeads,
+          gameLog: addLog(s.gameLog, makeEvent(
+            playerId, name, 'morto_to_deck',
+            '📦 Monte esgotado! O MORTO foi para o MONTE!'
+          )),
+        }));
+        
+        // Tenta comprar novamente do novo monte
+        get().drawFromDeck(playerId);
+        return;
+      }
+
+      // 2. Se não tem morto, tenta o lixo (reembaralhamento)
+      if (state.pile.length > 0) {
+        const newReshuffleCount = state.deckReshuffleCount + 1;
+        const MAX_RESHUFFLES = 3;
+
+        if (newReshuffleCount >= MAX_RESHUFFLES) {
+          const t1Players = state.players.filter(p => p.teamId === 'team-1');
+          const t2Players = state.players.filter(p => p.teamId === 'team-2');
+          const t1Score = calculateRoundScore(state.teams['team-1'], t1Players, false);
+          const t2Score = calculateRoundScore(state.teams['team-2'], t2Players, false);
+          const newMatchScores = {
+            'team-1': state.matchScores['team-1'] + t1Score,
+            'team-2': state.matchScores['team-2'] + t2Score,
+          };
+          let winnerTeamId: TeamId | null = null;
+          if (newMatchScores['team-1'] >= state.targetScore || newMatchScores['team-2'] >= state.targetScore) {
+            winnerTeamId = newMatchScores['team-1'] >= newMatchScores['team-2'] ? 'team-1' : 'team-2';
+          }
+          set({
+            roundOver: true,
+            winnerTeamId,
+            matchScores: newMatchScores,
+            gameLog: addLog(state.gameLog, makeEvent(
+              playerId, name, 'round_end', '⏹️ Baralho esgotado 3x — rodada encerrada!'
+            )),
+          });
+          return;
+        }
+
+        const { shuffle } = require('../game/deck');
+        const newDeck = shuffle([...state.pile]);
+        set((s) => ({
+          deck: newDeck,
+          pile: [],
+          deckReshuffleCount: newReshuffleCount,
+          gameLog: addLog(s.gameLog, makeEvent(
+            playerId, name, 'draw_deck',
+            `🔀 Monte esgotado (${newReshuffleCount}/${MAX_RESHUFFLES}) — Lixo reembaralhado!`
+          )),
+        }));
+        // Tenta comprar novamente
+        get().drawFromDeck(playerId);
+        return;
+      }
+
+      // 3. Monte, mortos e lixo vazios → encerra rodada (empate técnico / fim de cartas)
       const t1Players = state.players.filter(p => p.teamId === 'team-1');
       const t2Players = state.players.filter(p => p.teamId === 'team-2');
       const t1Score = calculateRoundScore(state.teams['team-1'], t1Players, false);
@@ -177,58 +242,13 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         winnerTeamId,
         matchScores: newMatchScores,
         gameLog: addLog(state.gameLog, makeEvent(
-          playerId, name, 'round_end', '🃏 Monte e Lixo esgotados — rodada encerrada!'
+          playerId, name, 'round_end', '🃏 Tudo esgotado — rodada encerrada!'
         )),
       });
       return;
     }
 
-    // Monte vazio mas Lixo tem cartas → reembaralha lixo como novo monte
-    if (state.deck.length === 0 && state.pile.length > 0) {
-      const newReshuffleCount = state.deckReshuffleCount + 1;
-
-      // Se já reembaralhamos 3 vezes → empate técnico, encerra rodada
-      const MAX_RESHUFFLES = 3;
-      if (newReshuffleCount >= MAX_RESHUFFLES) {
-        const t1Players = state.players.filter(p => p.teamId === 'team-1');
-        const t2Players = state.players.filter(p => p.teamId === 'team-2');
-        const t1Score = calculateRoundScore(state.teams['team-1'], t1Players, false);
-        const t2Score = calculateRoundScore(state.teams['team-2'], t2Players, false);
-        const newMatchScores = {
-          'team-1': state.matchScores['team-1'] + t1Score,
-          'team-2': state.matchScores['team-2'] + t2Score,
-        };
-        let winnerTeamId: TeamId | null = null;
-        if (newMatchScores['team-1'] >= state.targetScore || newMatchScores['team-2'] >= state.targetScore) {
-          winnerTeamId = newMatchScores['team-1'] >= newMatchScores['team-2'] ? 'team-1' : 'team-2';
-        }
-        set({
-          roundOver: true,
-          winnerTeamId,
-          matchScores: newMatchScores,
-          gameLog: addLog(state.gameLog, makeEvent(
-            playerId, name, 'round_end', '⏹️ Baralho esgotado 3x — rodada encerrada!'
-          )),
-        });
-        return;
-      }
-
-      const { shuffle } = require('../game/deck');
-      const newDeck = shuffle([...state.pile]);
-      set((s) => ({
-        deck: newDeck,
-        pile: [],
-        deckReshuffleCount: newReshuffleCount,
-        gameLog: addLog(s.gameLog, makeEvent(
-          playerId, name, 'draw_deck',
-          `🔀 Monte esgotado (${newReshuffleCount}/${MAX_RESHUFFLES}) — Lixo reembaralhado!`
-        )),
-      }));
-      // Agora tenta comprar de novo
-      get().drawFromDeck(playerId);
-      return;
-    }
-
+    // Caso normal: Deck tem cartas
     const nextDeck = [...state.deck];
     const drawnCard = nextDeck.pop()!;
 
@@ -259,6 +279,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     }, 1500);
   },
 
+
   drawFromPile: (playerId) => {
     const state = get();
     if (state.currentTurnPlayerId !== playerId) return false;
@@ -271,15 +292,14 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
     // REGRA: só pode pegar o lixo se conseguir montar um jogo com o topo
     // EXCETO no modo Araujo Pereira, onde pegar o lixo é livre
+    const topCardId = state.pile[state.pile.length - 1].id;
     let canTake = false;
-    let mustPlayTopId: string | null = null;
 
     if (state.gameMode === 'araujo_pereira') {
       canTake = true; // Free to take
     } else {
       const teamGames = state.teams[player.teamId].games;
       canTake = canTakePile(player.hand, state.pile, teamGames, state.gameMode);
-      mustPlayTopId = state.pile[state.pile.length - 1].id;
     }
 
     if (!canTake) return false;
@@ -298,7 +318,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         players: updatedPlayers,
         turnPhase: 'play' as const,
         lastDrawnCardId: null,
-        mustPlayPileTopId: mustPlayTopId,
+        mustPlayPileTopId: topCardId,
         gameLog: addLog(s.gameLog, makeEvent(
           playerId, name, 'draw_pile',
           `${name} pegou o lixo (${pileCount} cartas)`
@@ -318,8 +338,12 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (state.mustPlayPileTopId !== null) {
       const player = state.players.find(p => p.id === playerId);
       const pileTopStillInHand = player?.hand.some(c => c.id === state.mustPlayPileTopId);
-      if (pileTopStillInHand) return; // Ainda na mão, bloqueia
-      // Não está mais na mão — limpa a obrigação silenciosamente
+      
+      if (pileTopStillInHand && state.gameMode !== 'araujo_pereira') {
+        return; // Mandatory play in STBL
+      }
+      
+      // Clear obligation if played or if in Araujo Pereira (where it's just a hint)
       set({ mustPlayPileTopId: null });
     }
 
@@ -413,7 +437,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (state.turnPhase !== 'play') return false;
 
     // REGRA: Primeira jogada após comprar o lixo DEVE ser criando um novo jogo com a carta do topo
-    if (state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
+    if (state.gameMode !== 'araujo_pereira' && state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
       return false;
     }
 
@@ -497,7 +521,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (state.turnPhase !== 'play') return false;
 
     // REGRA: Primeira jogada após comprar o lixo DEVE ser novo jogo. Não pode adicionar a jogo existente.
-    if (state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
+    if (state.gameMode !== 'araujo_pereira' && state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
       return false;
     }
 

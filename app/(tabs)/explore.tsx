@@ -22,6 +22,7 @@ import { canTakePile, checkCanasta, validateSequence } from '../../game/rules';
 import { useBotAI } from '../../hooks/useBotAI';
 import { useGameSounds } from '../../hooks/useGameSounds';
 import { useGameStore } from '../../store/gameStore';
+import { cardLabel } from '../../game/deck';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -139,7 +140,7 @@ export default function GameScreen() {
       const topCard = pile[pile.length - 1];
       Alert.alert(
         '❌ Não pode pegar o lixo',
-        `Você precisa usar a carta do topo do lixo em um jogo (novo ou existente).`
+        `Você precisa usar o ${cardLabel(topCard)} em um jogo (novo ou existente).`
       );
       return;
     }
@@ -149,12 +150,14 @@ export default function GameScreen() {
 
   const handleDiscard = () => {
     if (!isMyTurn || turnPhase !== 'play') return;
-    if (mustPlayPileTopId !== null) {
+    if (mustPlayPileTopId !== null && gameMode !== 'araujo_pereira') {
       const pileTopStillInHand = user.hand.some(c => c.id === mustPlayPileTopId);
       if (pileTopStillInHand) {
+        const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
+        const label = topCard ? cardLabel(topCard) : 'do topo';
         Alert.alert(
           '⚠️ Baixe o jogo primeiro',
-          'Você pegou o lixo e deve baixar um jogo usando a carta do topo antes de descartar.'
+          `Você pegou o lixo e deve baixar um jogo usando o ${label} antes de descartar.`
         );
         return;
       }
@@ -190,8 +193,10 @@ export default function GameScreen() {
 
   const handlePlayCards = () => {
     if (!isMyTurn || turnPhase !== 'play') return;
-    if (mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
-      Alert.alert('⚠️ Regra do Lixo', 'Sua primeira jogada DEVE ser com a carta comprada do topo do lixo para formar um NOVO jogo de pelo menos 3 cartas.');
+    if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
+      const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
+      const label = topCard ? cardLabel(topCard) : 'comprada';
+      Alert.alert('⚠️ Regra do Lixo', `Sua primeira jogada DEVE ser com o ${label} (topo do lixo) para formar um NOVO jogo de pelo menos 3 cartas.`);
       return;
     }
     if (selectedCards.length < 3) {
@@ -227,8 +232,10 @@ export default function GameScreen() {
     }
 
     // Regra do Lixo
-    if (mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
-      Alert.alert('⚠️ Regra do Lixo', 'Você deve usar a carta do topo do lixo na sua primeira jogada (novo jogo ou adicionar a um existente).');
+    if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
+      const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
+      const label = topCard ? cardLabel(topCard) : 'do topo';
+      Alert.alert('⚠️ Regra do Lixo', `Você deve usar o ${label} (topo do lixo) na sua primeira jogada (novo jogo ou adicionar a um existente).`);
       return;
     }
 
@@ -339,9 +346,18 @@ export default function GameScreen() {
   const opHandPenalty = players
     .filter(p => p.teamId === 'team-2')
     .reduce((sum, p) => sum + p.hand.reduce((s, c) => s + calculateCardPoints(c), 0), 0);
+
+  // Informações da batida para exibição no breakdown
+  const lastRoundEndEvent = gameLog.slice().reverse().find(e => e.type === 'round_end');
+  const hitterId = lastRoundEndEvent?.playerId;
+  const hitterTeamId = players.find(p => p.id === hitterId)?.teamId;
+
   // Score total atual = acumulado + jogos na mesa esta rodada
-  const myTotal = myAccum + myLive;
-  const opTotal = opAccum + opLive;
+  // Se a rodada acabou, matchScores já contém o total atualizado, não precisa somar o live
+  const myTotal = roundOver ? myAccum : myAccum + myLive;
+  const opTotal = roundOver ? opAccum : opAccum + opLive;
+  const myRodadaDisplay = roundOver ? teams['team-1'].score : myLive;
+  const opRodadaDisplay = roundOver ? teams['team-2'].score : opLive;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -356,7 +372,11 @@ export default function GameScreen() {
           <View style={{ alignItems: 'center' }}>
             <Text style={styles.scoreLabel}>NÓS</Text>
             <Text style={styles.scoreMain}>{myTotal}</Text>
-            {myLive > 0 && <Text style={styles.scoreLive}>+{myLive} rodada</Text>}
+            {myRodadaDisplay !== 0 && (
+              <Text style={styles.scoreLive}>
+                {myRodadaDisplay > 0 ? '+' : ''}{myRodadaDisplay} rodada
+              </Text>
+            )}
           </View>
         </View>
         {/* Centro: turno */}
@@ -373,7 +393,11 @@ export default function GameScreen() {
         <View style={{ alignItems: 'center' }}>
           <Text style={styles.scoreLabel}>ELES</Text>
           <Text style={[styles.scoreMain, { color: '#FF8A80' }]}>{opTotal}</Text>
-          {opLive > 0 && <Text style={styles.scoreLive}>+{opLive} rodada</Text>}
+          {opRodadaDisplay !== 0 && (
+            <Text style={styles.scoreLive}>
+              {opRodadaDisplay > 0 ? '+' : ''}{opRodadaDisplay} rodada
+            </Text>
+          )}
         </View>
       </View>
 
@@ -409,9 +433,15 @@ export default function GameScreen() {
             </View>
           );
         })}
-        <View style={[styles.statusItem, { backgroundColor: 'rgba(255,214,0,0.1)' }]}>
+        <View style={[
+          styles.statusItem, 
+          { backgroundColor: 'rgba(255,214,0,0.1)' },
+          deads.length === 0 && { borderColor: '#FF5252', borderWidth: 1 }
+        ]}>
           <Text style={styles.statusName}>Mortos</Text>
-          <Text style={[styles.statusCards, { color: '#FFD600' }]}>{deads.length} 📦</Text>
+          <Text style={[styles.statusCards, { color: deads.length === 0 ? '#FF5252' : '#FFD600' }]}>
+            {deads.length} {deads.length === 0 ? '🚫' : '📦'}
+          </Text>
         </View>
       </View>
 
@@ -757,6 +787,12 @@ export default function GameScreen() {
               <Text style={styles.modalTeamTitle}>🟢 Nossa equipe</Text>
               <Text style={styles.modalScoreRow}>Jogos na mesa: +{calculateLiveScore(teams['team-1'])}</Text>
               <Text style={styles.modalScoreRow}>Penalidade mão: -{myHandPenalty}</Text>
+              {hitterTeamId === 'team-1' && (
+                <Text style={[styles.modalScoreRow, { color: '#B9F6CA' }]}>Batida: +100</Text>
+              )}
+              {!teams['team-1'].hasGottenDead && (
+                <Text style={[styles.modalScoreRow, { color: '#FF8A80' }]}>Não pegou morto: -100</Text>
+              )}
               <Text style={styles.modalScoreRow}>Esta rodada: {teams['team-1'].score}</Text>
               <Text style={styles.modalScoreTotal}>Total: {matchScores['team-1']}</Text>
             </View>
@@ -766,6 +802,12 @@ export default function GameScreen() {
               <Text style={styles.modalTeamTitle}>🔴 Equipe adversária</Text>
               <Text style={styles.modalScoreRow}>Jogos na mesa: +{calculateLiveScore(teams['team-2'])}</Text>
               <Text style={styles.modalScoreRow}>Penalidade mão: -{opHandPenalty}</Text>
+              {hitterTeamId === 'team-2' && (
+                <Text style={[styles.modalScoreRow, { color: '#B9F6CA' }]}>Batida: +100</Text>
+              )}
+              {!teams['team-2'].hasGottenDead && (
+                <Text style={[styles.modalScoreRow, { color: '#FF8A80' }]}>Não pegou morto: -100</Text>
+              )}
               <Text style={styles.modalScoreRow}>Esta rodada: {teams['team-2'].score}</Text>
               <Text style={styles.modalScoreTotal}>Total: {matchScores['team-2']}</Text>
             </View>
@@ -981,26 +1023,30 @@ const styles = StyleSheet.create({
   },
   pileCounterBadge: {
     position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 10,
-    minWidth: 23,
-    height: 23,
-    paddingHorizontal: 5,
+    top: -8,
+    right: -8,
+    backgroundColor: '#FF5722', // Cores mais vivas para facilitar a identificação
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 4,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    zIndex: 100, // Valor bem alto para garantir topo
+    elevation: 10,
   },
   pileNameTag: {
     position: 'absolute',
-    bottom: -6,
+    bottom: -8,
     left: -4,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 6,
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
     paddingVertical: 2,
+    zIndex: 100,
+    elevation: 10,
   },
   pileNameText: {
     color: '#E8F5E9',
@@ -1081,8 +1127,19 @@ const styles = StyleSheet.create({
   },
 
   // PILES
-  pilesColumn: { width: 70, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  pileBox: { alignItems: 'center' },
+  pilesColumn: { 
+    width: 80, // Aumentado levemente para tablet
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 20,
+    zIndex: 50, // Prioridade sobre o ScrollView de jogos
+    elevation: 5,
+    paddingRight: 4,
+  },
+  pileBox: { 
+    alignItems: 'center',
+    zIndex: 60, // Individualmente alto também
+  },
   pileLabel: { color: '#E8F5E9', fontSize: 12, fontWeight: '700', marginBottom: 1 },
 
   // MENU ☰

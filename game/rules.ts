@@ -45,17 +45,28 @@ function isValidRun(values: number[], jokers: number): boolean {
  * na lacuna correta da sequência (ex: 5♠ ★ 7♠ — não ★ 5♠ 7♠).
  */
 export function sortGameCards(cards: Card[]): Card[] {
-  const joker = cards.find(c => c.isJoker);
-  const normal = cards.filter(c => !c.isJoker);
+  let jokers = cards.filter(c => c.isJoker);
+  let normal = cards.filter(c => !c.isJoker);
   if (normal.length === 0) return cards;
+
+  if (jokers.length === 2) {
+    const mainSuit = normal[0].suit;
+    const naturalJokerIndex = jokers.findIndex(j => j.suit === mainSuit);
+    if (naturalJokerIndex !== -1) {
+      normal.push(jokers[naturalJokerIndex]);
+      jokers.splice(naturalJokerIndex, 1);
+    }
+  }
+
+  const joker = jokers.length > 0 ? jokers[0] : undefined;
 
   const hasAce = normal.some(c => c.value === 14);
   const valuesHigh = normal.map(c => c.value);
   const valuesLow = normal.map(c => (c.value === 14 ? 1 : c.value));
-  const jokers = joker ? 1 : 0;
+  const availableJokers = joker ? 1 : 0;
 
-  const canHigh = isValidRun(valuesHigh, jokers);
-  const canLow = hasAce && isValidRun(valuesLow, jokers);
+  const canHigh = isValidRun(valuesHigh, availableJokers);
+  const canLow = hasAce && isValidRun(valuesLow, availableJokers);
   const useAceLow = !canHigh && canLow;
 
   const sorted = sortByValue(normal, useAceLow);
@@ -77,10 +88,12 @@ export function sortGameCards(cards: Card[]): Card[] {
   }
 
   // Se não tem lacuna no meio: joker vai no início ou fim
-  // Dica: se o menor valor > 3, pode ser antes; senão, no fim
+  // Dica: se o menor valor > 3, pode ser antes.
+  // Se o menor valor for 3 e o curinga for do mesmo naipe, também vai antes para ser o 2 natural.
   const firstVal = useAceLow && sorted[0].value === 14 ? 1 : sorted[0].value;
-  if (firstVal > 3) {
-    return [joker, ...sorted]; // Ex: ★ 5♠ 6♠ → curinga como 4
+  
+  if (firstVal > 3 || (firstVal === 3 && joker.suit === normal[0].suit)) {
+    return [joker, ...sorted]; // Ex: ★ 5♠ 6♠ → curinga como 4, ou ★ 3♠ 4♠ (sendo ★ do mesmo naipe)
   }
   return [...sorted, joker]; // Ex: 5♠ 6♠ ★ → curinga como 7
 }
@@ -102,14 +115,25 @@ export function sortGameCards(cards: Card[]): Card[] {
 export function validateSequence(cardsToPlay: Card[], gameMode: GameMode = 'classic'): boolean {
   if (cardsToPlay.length < 3) return false;
 
-  const jokers = cardsToPlay.filter(c => c.isJoker);
-  const normalCards = cardsToPlay.filter(c => !c.isJoker);
+  let jokers = cardsToPlay.filter(c => c.isJoker);
+  let normalCards = cardsToPlay.filter(c => !c.isJoker);
 
-  // Máximo 1 curinga por jogo
-  if (jokers.length > 1) return false;
   if (normalCards.length === 0) return false;
 
   const mainSuit = normalCards[0].suit;
+
+  if (jokers.length === 2) {
+    const naturalJokerIndex = jokers.findIndex(j => j.suit === mainSuit);
+    if (naturalJokerIndex !== -1) {
+      normalCards.push(jokers[naturalJokerIndex]);
+      jokers.splice(naturalJokerIndex, 1);
+    } else {
+      return false;
+    }
+  } else if (jokers.length > 2) {
+    return false;
+  }
+
   const isSameSuit = normalCards.every(c => c.suit === mainSuit);
   const isTrinca = normalCards.every(c => c.value === normalCards[0].value);
 
@@ -168,33 +192,36 @@ export function checkCanasta(cards: Card[]): CanastaType {
 
   const joker = jokers[0];
   
-  // Ordenar cartas normais para ver onde o 2 se encaixa
-  const sortedNormal = [...normalCards].sort((a, b) => {
-    const vA = a.value === 14 ? 1 : a.value;
-    const vB = b.value === 14 ? 1 : b.value;
-    return vA - vB;
-  });
+  // Trata o joker como a carta natural de valor 2 para testar se há lacunas
+  // AceLow mapeia o Ás para 1
+  const allValuesLow = [...normalCards, joker]
+    .map(c => (c.value === 14 ? 1 : c.value))
+    .sort((a, b) => a - b);
+    
+  // allValuesHigh mantém o Ás como 14
+  const allValuesHigh = [...normalCards, joker]
+    .map(c => c.value)
+    .sort((a, b) => a - b);
 
-  const firstVal = sortedNormal[0].value === 14 ? 1 : sortedNormal[0].value;
-  
-  // Se a sequência normal não tem buracos:
-  let hasGap = false;
-  for (let i = 0; i < sortedNormal.length - 1; i++) {
-    const v1 = sortedNormal[i].value === 14 ? 1 : sortedNormal[i].value;
-    const v2 = sortedNormal[i+1].value === 14 ? 1 : sortedNormal[i+1].value;
-    if (v2 - v1 !== 1 && !(v1 === 13 && sortedNormal[i+1].value === 14)) {
-      hasGap = true;
+  let hasGapLow = false;
+  for (let i = 0; i < allValuesLow.length - 1; i++) {
+    if (allValuesLow[i + 1] - allValuesLow[i] !== 1) {
+      hasGapLow = true;
       break;
     }
   }
 
-  if (!hasGap) {
-    // Se não tem buraco, o 2 está no início ou fim.
-    // Natural se for J Q K A 2 (não existe, 2 é baixo) ou A 2 3 ou 2 3 4.
-    // No Buraco o 2 natural fica entre o A e o 3 ou antes do 3.
-    if (firstVal === 3 || (firstVal === 1 && sortedNormal[1]?.value === 3)) {
-      return 'clean';
+  let hasGapHigh = false;
+  for (let i = 0; i < allValuesHigh.length - 1; i++) {
+    if (allValuesHigh[i + 1] - allValuesHigh[i] !== 1) {
+      hasGapHigh = true;
+      break;
     }
+  }
+
+  // Se não tem buraco quando o 2 está em sua posição natural, a canastra é limpa
+  if (!hasGapLow || !hasGapHigh) {
+    return 'clean';
   }
 
   return 'dirty';

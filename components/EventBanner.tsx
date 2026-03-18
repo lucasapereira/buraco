@@ -48,8 +48,8 @@ export const EventBanner: React.FC<EventBannerProps> = ({ events }) => {
 
   if (!lastEvent) return null;
 
-  const isImportant = lastEvent.type === 'got_dead' || lastEvent.type === 'round_end' || lastEvent.type === 'play_cards';
-  const bgColor = lastEvent.type === 'got_dead' ? '#FF6F00'
+  const isImportant = lastEvent.type === 'got_dead' || lastEvent.type === 'round_end' || lastEvent.type === 'play_cards' || lastEvent.type === 'morto_to_deck';
+  const bgColor = lastEvent.type === 'got_dead' || lastEvent.type === 'morto_to_deck' ? '#FF6F00'
     : lastEvent.type === 'round_end' ? '#FFD600'
       : lastEvent.type === 'play_cards' || lastEvent.type === 'add_to_game' ? '#1565C0'
         : lastEvent.type === 'discard' ? '#C62828'
