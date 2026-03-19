@@ -106,13 +106,13 @@ const styles = StyleSheet.create({
   bannerText: {
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '600',
-    fontSize: 13,
+    fontSize: 15, // Aumentado de 13 para 15
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   importantText: {
-    fontSize: 15,
+    fontSize: 17, // Aumentado de 15 para 17
     fontWeight: '900',
     color: '#fff',
   },

@@ -402,52 +402,6 @@ export default function GameScreen() {
         </View>
       </View>
 
-      {/* STATUS BAR DOS JOGADORES */}
-      <View style={styles.statusBar}>
-        {players.map(p => {
-          let shortName = p.name;
-          if (p.id === 'bot-1') shortName = 'Adv 1';
-          if (p.id === 'bot-2') shortName = 'Parc';
-          if (p.id === 'bot-3') shortName = 'Adv 2';
-          if (p.id === 'user') shortName = 'Você';
-
-          return (
-            <View key={p.id}>
-              <View style={[styles.statusItem, p.id === 'user' && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
-                <Text style={styles.statusName}>{shortName}</Text>
-                <Text style={styles.statusCards}>
-                  {p.hand.length} 🎴 {teams[p.teamId].hasGottenDead ? '💀' : ''}
-                </Text>
-              </View>
-              {/* Animação Compra */}
-              {animatingDrawPlayerId === p.id && (
-                <View style={styles.animCardContainer}>
-                  <Card card={{ id: 'anim-draw', suit: 'spades', value: 3, deck: 1, isJoker: false }} isHidden small />
-                </View>
-              )}
-              {/* Animação Descarte */}
-              {animatingDiscard?.playerId === p.id && (
-                <View style={styles.animCardContainer}>
-                  <Card card={animatingDiscard.card} small />
-                </View>
-              )}
-            </View>
-          );
-        })}
-        <View style={[
-          styles.statusItem, 
-          { backgroundColor: 'rgba(255,214,0,0.1)' },
-          deads.length === 0 && { borderColor: '#FF5252', borderWidth: 1 }
-        ]}>
-          <Text style={styles.statusName}>Mortos</Text>
-          <Text style={[styles.statusCards, { color: deads.length === 0 ? '#FF5252' : '#FFD600' }]}>
-            {deads.length} {deads.length === 0 ? '🚫' : '📦'}
-          </Text>
-        </View>
-      </View>
-
-      {/* BANNER DE EVENTO — no fluxo normal, não absolute */}
-      <EventBanner events={gameLog} />
 
       {/* BOARD */}
       <View style={styles.board}>
@@ -472,7 +426,6 @@ export default function GameScreen() {
               return (
                 <>
                   {/* Jogos dos adversários */}
-                  <Text style={styles.sectionLabel}>🔴 Jogos Adversário</Text>
                   {opTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
                   <View style={[
                     styles.gamesGrid,
@@ -553,9 +506,58 @@ export default function GameScreen() {
                     })}
                   </View>
 
+                  {/* ========================================================== */}
+                  {/* INÍCIO DA ÁREA CENTRAL (PLACAR/STATUS) DIVIDINDO OS JOGOS */}
+                  {/* ========================================================== */}
+                  <View style={styles.middleDividerContainer}>
+                    {/* STATUS BAR DOS JOGADORES */}
+                    <View style={styles.statusBar}>
+                      {players.map(p => {
+                        let shortName = p.name;
+                        if (p.id === 'bot-1') shortName = 'Adv 1';
+                        if (p.id === 'bot-2') shortName = 'Parc';
+                        if (p.id === 'bot-3') shortName = 'Adv 2';
+                        if (p.id === 'user') shortName = 'Você';
+
+                        return (
+                          <View key={p.id}>
+                            <View style={[styles.statusItem, p.id === 'user' && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
+                              <Text style={styles.statusName}>{shortName}</Text>
+                              <Text style={styles.statusCards}>
+                                {p.hand.length} 🎴 {teams[p.teamId].hasGottenDead ? '💀' : ''}
+                              </Text>
+                            </View>
+                            {/* Animação Compra */}
+                            {animatingDrawPlayerId === p.id && (
+                              <View style={styles.animCardContainer}>
+                                <Card card={{ id: 'anim-draw', suit: 'spades', value: 3, deck: 1, isJoker: false }} isHidden small />
+                              </View>
+                            )}
+                            {/* Animação Descarte */}
+                            {animatingDiscard?.playerId === p.id && (
+                              <View style={styles.animCardContainer}>
+                                <Card card={animatingDiscard.card} small />
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                      <View style={[
+                        styles.statusItem, 
+                        { backgroundColor: 'rgba(255,214,0,0.1)' },
+                        deads.length === 0 && { borderColor: '#FF5252', borderWidth: 1 }
+                      ]}>
+                        <Text style={styles.statusName}>Mortos</Text>
+                        <Text style={[styles.statusCards, { color: deads.length === 0 ? '#FF5252' : '#FFD600' }]}>
+                          {deads.length} {deads.length === 0 ? '🚫' : '📦'}
+                        </Text>
+                      </View>
+                    </View>
+                    {/* BANNER DE EVENTO — no fluxo normal, não absolute */}
+                    <EventBanner events={gameLog} />
+                  </View>
+                  {/* ========================================================== */}
                   {/* Nossos jogos */}
-                  <Text style={[styles.sectionLabel, { marginTop: 8 }]}>🟢 Nossos Jogos</Text>
-                  {myTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
                   <View style={[
                     styles.gamesGrid,
                     denseMode && styles.gamesGridDense,
@@ -657,32 +659,52 @@ export default function GameScreen() {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Monte e Lixo no lado direito */}
-        <View style={styles.pilesColumn}>
-          <View style={styles.pileBox}>
+      </View>
+
+
+      {/* ACTION BAR INFERIOR */}
+      <View style={styles.actionBar}>
+        <View style={styles.actionBarLeft}>
+          {isMyTurn && turnPhase === 'play' && turnHistory.length > 0 && (
+            <TouchableOpacity
+              style={styles.undoButtonInline}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                undoLastPlay('user');
+                setSelectedCards([]);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.undoButtonText}>↩️ Desfazer</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.actionBarRight}>
+        <View style={styles.pileBox}>
             {pile.length > 0 ? (
               <View>
                 <Card card={pile[pile.length - 1]} small onPress={handlePileClick} />
-                <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{pile.length}</Text></View>
-                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Lixo</Text></View>
+              <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{pile.length}</Text></View>
+              <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Lixo</Text></View>
               </View>
             ) : (
               <TouchableOpacity onPress={handlePileClick}>
-                <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Lixo</Text></View>
+              <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Lixo</Text></View>
               </TouchableOpacity>
             )}
           </View>
 
-          <View style={styles.pileBox}>
+        <View style={styles.pileBox}>
             {deck.length > 0 ? (
               <View>
                 <Card card={{ id: '__hidden__', suit: 'spades', value: 3, deck: 1, isJoker: false }} isHidden small onPress={handleDrawDeck} />
-                <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{deck.length}</Text></View>
-                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Monte</Text></View>
+              <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{deck.length}</Text></View>
+              <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Monte</Text></View>
               </View>
             ) : (
               <TouchableOpacity onPress={handleDrawDeck}>
-                <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Monte</Text></View>
+              <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Monte</Text></View>
               </TouchableOpacity>
             )}
           </View>
@@ -698,21 +720,6 @@ export default function GameScreen() {
           highlightCardId={mustPlayPileTopId ?? lastDrawnCardId}
         />
       </View>
-
-      {/* BOTÃO DESFAZER JOGADA */}
-      {isMyTurn && turnPhase === 'play' && turnHistory.length > 0 && (
-        <TouchableOpacity
-          style={styles.undoButton}
-          onPress={() => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            undoLastPlay('user');
-            setSelectedCards([]);
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.undoButtonText}>↩️ Desfazer</Text>
-        </TouchableOpacity>
-      )}
 
       {/* MODAL MENU */}
       <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
@@ -1143,14 +1150,47 @@ const styles = StyleSheet.create({
   },
 
   // PILES
-  pilesColumn: { 
-    width: 80, // Aumentado levemente para tablet
-    alignItems: 'center', 
-    justifyContent: 'center', 
+  actionBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 16,
+    marginBottom: 45, // Moved up significantly to avoid overlap with popping cards
+    zIndex: 10,
+  },
+  actionBarLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
+    paddingTop: 8,
+  },
+  actionBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 20,
-    zIndex: 50, // Prioridade sobre o ScrollView de jogos
-    elevation: 5,
-    paddingRight: 4,
+  },
+  undoButtonInline: {
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#FFD600',
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  middleDividerContainer: {
+    marginTop: -8, // pull up closer to opponent games
+    marginBottom: 16,
+    borderRadius: 8,
+    overflow: 'visible',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   pileBox: { 
     alignItems: 'center',
@@ -1168,7 +1208,7 @@ const styles = StyleSheet.create({
   menuItemText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   menuClose: { backgroundColor: 'transparent', marginTop: 4 },
   emptySlot: {
-    width: 66, height: 94, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
+    width: 50, height: 72, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
     borderStyle: 'dashed', borderRadius: 6, justifyContent: 'center', alignItems: 'center',
   },
   emptySlotText: { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
@@ -1198,26 +1238,6 @@ const styles = StyleSheet.create({
   },
   modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 18 },
 
-  // BOTÃO DESFAZER
-  undoButton: {
-    position: 'absolute',
-    bottom: 80, // Acima da mão
-    left: 16,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: '#FFD600',
-    flexDirection: 'row',
-    alignItems: 'center',
-    zIndex: 100,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-  },
   undoButtonText: {
     color: '#FFD600',
     fontWeight: '900',

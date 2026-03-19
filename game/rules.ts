@@ -67,18 +67,43 @@ export function sortGameCards(cards: Card[]): Card[] {
 
   const canHigh = isValidRun(valuesHigh, availableJokers);
   const canLow = hasAce && isValidRun(valuesLow, availableJokers);
-  const useAceLow = !canHigh && canLow;
+  
+  let canBoth = false;
+  const aces = normal.filter(c => c.value === 14);
+  if (aces.length === 2) {
+    let first = true;
+    const valuesBoth = normal.map(c => {
+      if (c.value === 14) {
+        if (first) { first = false; return 1; }
+        return 14;
+      }
+      return c.value;
+    });
+    canBoth = isValidRun(valuesBoth, availableJokers);
+  }
 
-  const sorted = sortByValue(normal, useAceLow);
+  const useAceLow = !canHigh && canLow;
+  let sorted: Card[];
+  
+  if (canBoth) {
+    const others = normal.filter(c => c.value !== 14).sort((a,b) => a.value - b.value);
+    sorted = [aces[0], ...others, aces[1]];
+  } else {
+    sorted = sortByValue(normal, useAceLow);
+  }
 
   if (!joker) return sorted;
 
-  // Encontra onde o joker encaixa (na lacuna entre dois valores)
+  const effectiveValues = sorted.map((c, i) => {
+    if (c.value !== 14) return c.value;
+    if (canBoth) return i === 0 ? 1 : 14;
+    return useAceLow ? 1 : 14;
+  });
+
   for (let i = 0; i < sorted.length - 1; i++) {
-    const left = useAceLow && sorted[i].value === 14 ? 1 : sorted[i].value;
-    const right = useAceLow && sorted[i + 1].value === 14 ? 1 : sorted[i + 1].value;
+    const left = effectiveValues[i];
+    const right = effectiveValues[i + 1];
     if (right - left === 2) {
-      // Lacuna de 1 entre sorted[i] e sorted[i+1] — joker vai aqui
       return [
         ...sorted.slice(0, i + 1),
         joker,
@@ -87,15 +112,11 @@ export function sortGameCards(cards: Card[]): Card[] {
     }
   }
 
-  // Se não tem lacuna no meio: joker vai no início ou fim
-  // Dica: se o menor valor > 3, pode ser antes.
-  // Se o menor valor for 3 e o curinga for do mesmo naipe, também vai antes para ser o 2 natural.
-  const firstVal = useAceLow && sorted[0].value === 14 ? 1 : sorted[0].value;
-  
+  const firstVal = effectiveValues[0];
   if (firstVal > 3 || (firstVal === 3 && joker.suit === normal[0].suit)) {
-    return [joker, ...sorted]; // Ex: ★ 5♠ 6♠ → curinga como 4, ou ★ 3♠ 4♠ (sendo ★ do mesmo naipe)
+    return [joker, ...sorted];
   }
-  return [...sorted, joker]; // Ex: 5♠ 6♠ ★ → curinga como 7
+  return [...sorted, joker];
 }
 
 /**
@@ -154,6 +175,20 @@ export function validateSequence(cardsToPlay: Card[], gameMode: GameMode = 'clas
   if (hasAce) {
     const valuesLow = normalCards.map(c => (c.value === 14 ? 1 : c.value));
     if (isValidRun(valuesLow, availableJokers)) return true;
+    
+    // Suporta dois Ases (um como 1, outro como 14)
+    const numAces = valuesHigh.filter(v => v === 14).length;
+    if (numAces === 2) {
+      let first = true;
+      const valuesBoth = normalCards.map(c => {
+        if (c.value === 14) {
+          if (first) { first = false; return 1; }
+          return 14;
+        }
+        return c.value;
+      });
+      if (isValidRun(valuesBoth, availableJokers)) return true;
+    }
   }
 
   return false;
@@ -219,8 +254,29 @@ export function checkCanasta(cards: Card[]): CanastaType {
     }
   }
 
+  let hasGapBoth = true;
+  const numAces = normalCards.filter(c => c.value === 14).length;
+  if (numAces === 2) {
+    let first = true;
+    const allValuesBoth = [...normalCards, joker].map(c => {
+      if (c.value === 14) {
+        if (first) { first = false; return 1; }
+        return 14;
+      }
+      return c.value;
+    }).sort((a, b) => a - b);
+    
+    hasGapBoth = false;
+    for (let i = 0; i < allValuesBoth.length - 1; i++) {
+      if (allValuesBoth[i + 1] - allValuesBoth[i] !== 1) {
+        hasGapBoth = true;
+        break;
+      }
+    }
+  }
+
   // Se não tem buraco quando o 2 está em sua posição natural, a canastra é limpa
-  if (!hasGapLow || !hasGapHigh) {
+  if (!hasGapLow || !hasGapHigh || !hasGapBoth) {
     return 'clean';
   }
 

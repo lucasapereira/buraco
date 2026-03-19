@@ -1,5 +1,5 @@
 import { Card, generateDeck, shuffle } from './deck';
-import { sortCardsBySuitAndValue } from './rules';
+import { checkCanasta, sortCardsBySuitAndValue } from './rules';
 
 export type PlayerId = 'user' | 'bot-1' | 'bot-2' | 'bot-3';
 export type TeamId = 'team-1' | 'team-2';
@@ -140,9 +140,13 @@ export function calculateRoundScore(team: TeamState, teamPlayers: Player[], went
       score += calculateCardPoints(card);
     }
     // Bonus canastas
-    const jokers = game.filter(c => c.isJoker).length;
-    if (game.length >= 7) {
-      score += jokers === 0 ? 200 : 100; // Limpa = 200, Suja = 100
+    const canastaType = checkCanasta(game);
+    if (canastaType === 'clean') {
+      if (game.length === 14) score += 1000;
+      else if (game.length === 13) score += 500;
+      else score += 200;
+    } else if (canastaType === 'dirty') {
+      score += 100;
     }
   }
 
@@ -174,9 +178,13 @@ export function calculateLiveScore(team: TeamState): number {
     for (const card of game) {
       score += calculateCardPoints(card);
     }
-    const jokers = game.filter(c => c.isJoker).length;
-    if (game.length >= 7) {
-      score += jokers === 0 ? 200 : 100;
+    const canastaType = checkCanasta(game);
+    if (canastaType === 'clean') {
+      if (game.length === 14) score += 1000;
+      else if (game.length === 13) score += 500;
+      else score += 200;
+    } else if (canastaType === 'dirty') {
+      score += 100;
     }
   }
   return score;
