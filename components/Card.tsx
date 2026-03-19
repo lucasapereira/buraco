@@ -58,7 +58,7 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
       ]}
     >
       <View style={styles.topCorner}>
-        <Text style={[styles.value, { color }, small && { fontSize: 20 }]}>{getDisplayValue()}</Text>
+        <Text style={[styles.value, { color }, small && { fontSize: 22 }]}>{getDisplayValue()}</Text>
         <Text style={[styles.suitSmall, { color }, small && { fontSize: 14, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
@@ -67,7 +67,7 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
       </View>
 
       <View style={styles.bottomCorner}>
-        <Text style={[styles.value, { color }, small && { fontSize: 20 }]}>{getDisplayValue()}</Text>
+        <Text style={[styles.value, { color }, small && { fontSize: 22 }]}>{getDisplayValue()}</Text>
         <Text style={[styles.suitSmall, { color }, small && { fontSize: 14, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
       </View>
     </TouchableOpacity>
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '180deg' }],
   },
   value: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '800',
   },
   suitSmall: {

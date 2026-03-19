@@ -265,61 +265,55 @@ export default function GameScreen() {
     const canasta = checkCanasta(gameCards);
     const normalCards = gameCards.filter(c => !c.isJoker);
     const isTrinca = normalCards.length >= 2 && normalCards.every(c => c.value === normalCards[0].value);
-    const isCanasta = canasta !== 'none';
-    // Regra: esconde se for canastra, trinca > 4, ou sequência de 5 ou 6 cartas
-    const hideMiddle = isCanasta || 
-                       (isTrinca && gameCards.length > 4) || 
-                       (!isTrinca && (gameCards.length === 5 || gameCards.length === 6));
-
-    if (!hideMiddle) {
-      return { visibleCards: [...gameCards], hideMiddle };
-    }
-
-    const idxs = new Set<number>([0, gameCards.length - 1]);
-    const jIdx = gameCards.findIndex(c => c.isJoker);
     
-    if (isTrinca) {
-      if (jIdx !== -1) idxs.add(jIdx);
-      // Garante pelo menos 3 cartas se possível
-      if (idxs.size < 3 && gameCards.length >= 3) {
-        idxs.add(1);
-      }
-    } else {
-      // Sequência (limpa ou suja)
-      if (gameCards.length === 5) {
-        // Esconde 1 do meio (mostra 4)
-        idxs.add(1); idxs.add(3);
-      } else if (gameCards.length === 6) {
-        // Esconde 2 do meio (mostra 4)
-        idxs.add(1); idxs.add(4);
+    // Regra: esconde se for maior que 5 cartas
+    const hideMiddle = gameCards.length > 5;
+
+    let mappedCards = gameCards.map(c => ({ ...c, _isObscured: false }));
+
+    if (hideMiddle) {
+      const jIdx = mappedCards.findIndex(c => c.isJoker);
+      
+      if (isTrinca) {
+        // Trinca: esconde tudo que não for pontas e coringa
+        mappedCards.forEach((c, i) => {
+          if (i !== 0 && i !== mappedCards.length - 1 && i !== jIdx) {
+            c._isObscured = true;
+          }
+        });
       } else {
-        // Canastra (7+)
+        // Sequência
+        mappedCards.forEach((c, i) => {
+          // Default: esconde tudo que não for as extremidades
+          if (i !== 0 && i !== mappedCards.length - 1) {
+            c._isObscured = true;
+          }
+        });
+        
+        // Se tiver coringa, mostra ele e os vizinhos
         if (jIdx !== -1) {
-          // Canastra suja - mostra pontas e vizinhos do coringa
-          idxs.add(jIdx);
-          if (jIdx > 0) idxs.add(jIdx - 1);
-          if (jIdx < gameCards.length - 1) idxs.add(jIdx + 1);
-        } else {
-          // Canastra limpa - mostra pontas e a penúltima
-          if (gameCards.length > 2) idxs.add(gameCards.length - 2);
+          mappedCards[jIdx]._isObscured = false;
+          if (jIdx > 0) mappedCards[jIdx - 1]._isObscured = false;
+          if (jIdx < mappedCards.length - 1) mappedCards[jIdx + 1]._isObscured = false;
         }
       }
-      // Se tiver coringa, garante que ele está visível mesmo em sequências 5/6
-      if (jIdx !== -1) idxs.add(jIdx);
-    }
 
-    let visibleCards = Array.from(idxs).sort((a, b) => a - b).map(i => gameCards[i]);
-
-    // Garante coringa em primeiro na exibição resumida APENAS em trincas
-    if (isTrinca) {
-      const finalJokerIdx = visibleCards.findIndex(c => c.isJoker);
-      if (finalJokerIdx !== -1 && finalJokerIdx !== 0) {
-        const joker = visibleCards.splice(finalJokerIdx, 1)[0];
-        visibleCards.unshift(joker);
+      // SEMPRE mostrar a penúltima
+      if (mappedCards.length > 2) {
+        mappedCards[mappedCards.length - 2]._isObscured = false;
       }
     }
 
-    return { visibleCards, hideMiddle };
+    // Opcional: manter o coringa em primeiro nas trincas se ele estiver visível
+    if (isTrinca && hideMiddle) {
+      const finalJokerIdx = mappedCards.findIndex(c => c.isJoker);
+      if (finalJokerIdx !== -1 && finalJokerIdx !== 0) {
+        const joker = mappedCards.splice(finalJokerIdx, 1)[0];
+        mappedCards.unshift(joker);
+      }
+    }
+
+    return { visibleCards: mappedCards, hideMiddle };
   };
 
   const handleTableClick = () => {
@@ -438,11 +432,21 @@ export default function GameScreen() {
                       const isTrinca = gameCards.length >= 3 && gameCards.filter(c => !c.isJoker).every((c, _, arr) => c.value === arr[0].value);
                       const isCanasta = canasta !== 'none';
 
-                      let cardMargin = -20;
+                      let cardMargin = -28;
+                      const obscuredMargin = -46;
                       if (visibleCards.length > 1) {
                         const containerWidth = (SW - 90) / 3;
-                        const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
-                        cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
+                        const numObscured = visibleCards.filter((c: any) => c._isObscured).length;
+                        const numNormalNotFirst = visibleCards.length - 1 - numObscured;
+                        
+                        let normalMargin = isCanasta ? -30 : -28;
+                        if (numNormalNotFirst > 0) {
+                           const obscuredWidth = numObscured * (50 + obscuredMargin);
+                           const spaceForNormal = containerWidth - 50 - obscuredWidth + 16; // 16px gained by clipping last card
+                           const calcMargin = Math.floor(spaceForNormal / numNormalNotFirst) - 50;
+                           normalMargin = Math.max(-34, Math.min(normalMargin, calcMargin));
+                        }
+                        cardMargin = normalMargin;
                       }
 
                       return (
@@ -469,13 +473,15 @@ export default function GameScreen() {
                                 styles.gameCards,
                                 denseMode && styles.gameCardsDense,
                               ]}>
-                                {visibleCards.map((c, ci) => {
+                                {visibleCards.map((c: any, ci: number) => {
+                                  const isPrevObscured = ci > 0 && visibleCards[ci - 1]._isObscured;
                                   return (
-                                    <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
+                                    <View key={c.id} style={ci > 0 ? { marginLeft: isPrevObscured ? obscuredMargin : cardMargin } : undefined}>
                                       <View style={[
                                         styles.cardClip,
                                         denseMode && styles.cardClipCompact,
                                         tightMode && styles.cardClipTight,
+                                        ci === visibleCards.length - 1 && styles.cardClipLast,
                                       ]}>
                                         <Card card={c} small />
                                       </View>
@@ -569,11 +575,21 @@ export default function GameScreen() {
                       const isTrinca = gameCards.length >= 3 && gameCards.filter(c => !c.isJoker).every((c, _, arr) => c.value === arr[0].value);
                       const isCanasta = canasta !== 'none';
 
-                      let cardMargin = -20;
+                      let cardMargin = -28;
+                      const obscuredMargin = -46;
                       if (visibleCards.length > 1) {
                         const containerWidth = (SW - 90) / 3;
-                        const calcMargin = Math.floor((containerWidth - 50) / (visibleCards.length - 1)) - 50;
-                        cardMargin = Math.min(isCanasta ? -24 : -18, calcMargin);
+                        const numObscured = visibleCards.filter((c: any) => c._isObscured).length;
+                        const numNormalNotFirst = visibleCards.length - 1 - numObscured;
+                        
+                        let normalMargin = isCanasta ? -30 : -28;
+                        if (numNormalNotFirst > 0) {
+                           const obscuredWidth = numObscured * (50 + obscuredMargin);
+                           const spaceForNormal = containerWidth - 50 - obscuredWidth + 16;
+                           const calcMargin = Math.floor(spaceForNormal / numNormalNotFirst) - 50;
+                           normalMargin = Math.max(-34, Math.min(normalMargin, calcMargin));
+                        }
+                        cardMargin = normalMargin;
                       }
 
                       const canAdd = (() => {
@@ -616,13 +632,15 @@ export default function GameScreen() {
                                 styles.gameCards,
                                 denseMode && styles.gameCardsDense,
                               ]}>
-                                {visibleCards.map((c, ci) => {
+                                {visibleCards.map((c: any, ci: number) => {
+                                  const isPrevObscured = ci > 0 && visibleCards[ci - 1]._isObscured;
                                   return (
-                                    <View key={c.id} style={ci > 0 ? { marginLeft: cardMargin } : undefined}>
+                                    <View key={c.id} style={ci > 0 ? { marginLeft: isPrevObscured ? obscuredMargin : cardMargin } : undefined}>
                                       <View style={[
                                         styles.cardClip,
                                         denseMode && styles.cardClipCompact,
                                         tightMode && styles.cardClipTight,
+                                        ci === visibleCards.length - 1 && styles.cardClipLast,
                                       ]}>
                                         <Card card={c} small />
                                       </View>
@@ -952,9 +970,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     flexBasis: '31%',
     minWidth: '31%',
-    maxWidth: '32.5%',
     flexGrow: 0,
-    flexShrink: 0,
+    flexShrink: 1,
     justifyContent: 'space-between',
     overflow: 'visible',
   },
@@ -1102,8 +1119,8 @@ const styles = StyleSheet.create({
   },
   cardClipCompact: { height: 68 },
   cardClipTight: { height: 64 },
-  cardClipLast: { width: 28 },
-  cardClipLastTight: { width: 24 },
+  cardClipLast: { width: 34 },
+  cardClipLastTight: { width: 30 },
   canastaLabel: { fontSize: 12, color: '#FFD600', fontWeight: '800', marginLeft: 4 },
   gameCardCount: { fontSize: 12, color: 'rgba(255,255,255,0.5)', marginLeft: 4 },
   gameInfo: { alignItems: 'flex-end', marginLeft: 4 },
