@@ -89,6 +89,7 @@ const styles = StyleSheet.create({
     paddingVertical: 1, // Reduzido para aproximar o número da borda
     paddingLeft: 1,
     paddingRight: 5,
+    overflow: 'hidden',
   },
   selectedCard: {
     borderColor: '#FFD600',

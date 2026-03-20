@@ -68,7 +68,7 @@ export const Hand: React.FC<HandProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: 100,
+    height: 93,
     width: '100%',
     overflow: 'visible',
   },

@@ -214,7 +214,7 @@ export default function GameScreen() {
       const fits = validateSequence(user.hand.filter(c => selectedCards.includes(c.id)), gameMode);
       if (!fits) {
         const msg = gameMode === 'araujo_pereira' 
-          ? 'As cartas não formam uma sequência válida ou trinca (máximo 1 curinga em trincas).'
+          ? 'As cartas não formam uma sequência válida ou trinca (máximo 1 curinga em Buraco Mole).'
           : 'As cartas selecionadas não formam uma sequência válida.\n\nLembre: mesmo naipe, valores consecutivos, máximo 1 curinga (2).';
         Alert.alert('Combinação Inválida', msg);
       } else {
@@ -406,7 +406,7 @@ export default function GameScreen() {
           {isMyTurn && (
             <Text style={[styles.phaseLabel, { backgroundColor: phaseColor }]}>{phaseLabel}</Text>
           )}
-          <Text style={styles.targetText}>Meta: {targetScore}</Text>
+          <Text style={styles.targetText}>Meta: {targetScore} | {gameMode === 'araujo_pereira' ? 'Buraco Mole' : 'Clássico'}</Text>
         </View>
         {/* ELES lado direito */}
         <View style={{ alignItems: 'center' }}>
@@ -706,6 +706,12 @@ export default function GameScreen() {
 
       {/* ACTION BAR INFERIOR */}
       <View style={styles.actionBar}>
+        {/* Background clicável para não ter "ponto cego" na hora de baixar jogo */}
+        <TouchableOpacity 
+          activeOpacity={1} 
+          onPress={handleTableClick} 
+          style={StyleSheet.absoluteFill} 
+        />
         <View style={styles.actionBarLeft}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             {isMyTurn && turnPhase === 'play' && turnHistory.length > 0 && (
@@ -959,7 +965,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
   handArea: { 
-    height: 110,
+    height: 93,
     overflow: 'visible',
     paddingBottom: 0,
     justifyContent: 'flex-start',
@@ -1115,7 +1121,7 @@ const styles = StyleSheet.create({
   },
   pileNameTag: {
     position: 'absolute',
-    bottom: -8,
+    bottom: 2,
     left: -4,
     backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 6,
@@ -1207,9 +1213,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 2,
     paddingHorizontal: 16,
-    marginBottom: 0, // Ajustado para dar espaço às cartas inteiras
+    marginBottom: 0, 
+    backgroundColor: 'rgba(0,0,0,0.25)', // Um pouco mais escuro que a mesa
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.05)',
     zIndex: 10,
   },
   actionBarLeft: {

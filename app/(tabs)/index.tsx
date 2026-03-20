@@ -77,7 +77,7 @@ export default function HomeScreen() {
           onPress={() => setGameMode('araujo_pereira')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.modeText, gameMode === 'araujo_pereira' && styles.modeTextActive]}>Araujo Pereira</Text>
+          <Text style={[styles.modeText, gameMode === 'araujo_pereira' && styles.modeTextActive]}>Buraco Mole</Text>
         </TouchableOpacity>
       </View>
       <Text style={styles.diffDesc}>
