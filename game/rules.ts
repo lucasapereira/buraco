@@ -49,6 +49,13 @@ export function sortGameCards(cards: Card[]): Card[] {
   let normal = cards.filter(c => !c.isJoker);
   if (normal.length === 0) return cards;
 
+  const isTrinca = normal.every(c => c.value === normal[0].value);
+  if (isTrinca) {
+    // Trinca: ordena por naipe e junta jokers no final
+    const suitOrder: Record<string, number> = { spades: 1, hearts: 2, clubs: 3, diamonds: 4 };
+    return [...normal.sort((a, b) => suitOrder[a.suit] - suitOrder[b.suit]), ...jokers];
+  }
+
   if (jokers.length === 2) {
     const mainSuit = normal[0].suit;
     const naturalJokerIndex = jokers.findIndex(j => j.suit === mainSuit);
@@ -136,51 +143,65 @@ export function sortGameCards(cards: Card[]): Card[] {
 export function validateSequence(cardsToPlay: Card[], gameMode: GameMode = 'classic'): boolean {
   if (cardsToPlay.length < 3) return false;
 
-  let jokers = cardsToPlay.filter(c => c.isJoker);
-  let normalCards = cardsToPlay.filter(c => !c.isJoker);
+  const jokers = cardsToPlay.filter(c => c.isJoker);
+  const normalCards = cardsToPlay.filter(c => !c.isJoker);
 
-  if (normalCards.length === 0) return false;
-
-  const mainSuit = normalCards[0].suit;
-
-  if (jokers.length === 2) {
-    const naturalJokerIndex = jokers.findIndex(j => j.suit === mainSuit);
-    if (naturalJokerIndex !== -1) {
-      normalCards.push(jokers[naturalJokerIndex]);
-      jokers.splice(naturalJokerIndex, 1);
-    } else {
-      return false;
+  if (normalCards.length === 0) {
+    // Caso especial: trinca de 2? (raro, mas permitido em alguns modos)
+    if (gameMode === 'araujo_pereira' && jokers.length >= 3) {
+      return true;
     }
-  } else if (jokers.length > 2) {
     return false;
   }
 
-  const isSameSuit = normalCards.every(c => c.suit === mainSuit);
-  const isTrinca = normalCards.every(c => c.value === normalCards[0].value);
-
-  if (gameMode === 'araujo_pereira' && isTrinca) {
-    return true; // Trinca válida
+  // --- Caso TRINCA (Araujo Pereira) ---
+  const isTrincaAtBase = normalCards.every(c => c.value === normalCards[0].value);
+  if (gameMode === 'araujo_pereira' && isTrincaAtBase) {
+    // Em trinca, no máximo um curinga (tipo 2 de outro naipe).
+    // Nota: um '2' do mesmo valor da trinca (trinca de 2) já cairia no case acima ou seria tratado como joker aqui.
+    // Mas se é trinca de 8, e tem dois 2s, é inválido no Buraco.
+    if (jokers.length > 1) return false;
+    return true; 
   }
 
-  // Todas as cartas normais devem ser do mesmo naipe para sequência normal
-  if (!isSameSuit) return false;
+  // --- Caso SEQUÊNCIA (STBL) ---
+  if (normalCards.length === 0) return false;
+  const mainSuit = normalCards[0].suit;
 
-  const valuesHigh = normalCards.map(c => c.value);
-  const availableJokers = jokers.length;
+  // No STBL, todas as cartas "normais" devem ser do mesmo naipe
+  if (!normalCards.every(c => c.suit === mainSuit)) return false;
+
+  let finalNormalCards = [...normalCards];
+  let finalJokers = [...jokers];
+
+  if (finalJokers.length === 2) {
+    const naturalJokerIndex = finalJokers.findIndex(j => j.suit === mainSuit);
+    if (naturalJokerIndex !== -1) {
+      finalNormalCards.push(finalJokers[naturalJokerIndex]);
+      finalJokers.splice(naturalJokerIndex, 1);
+    } else {
+      return false;
+    }
+  } else if (finalJokers.length > 2) {
+    return false;
+  }
+
+  const valuesHigh = finalNormalCards.map(c => c.value);
+  const availableJokers = finalJokers.length;
 
   if (isValidRun(valuesHigh, availableJokers)) return true;
 
   // Permite Ás como 1 (ex: A ★ 3 4 ...)
   const hasAce = valuesHigh.includes(14);
   if (hasAce) {
-    const valuesLow = normalCards.map(c => (c.value === 14 ? 1 : c.value));
+    const valuesLow = finalNormalCards.map(c => (c.value === 14 ? 1 : c.value));
     if (isValidRun(valuesLow, availableJokers)) return true;
     
     // Suporta dois Ases (um como 1, outro como 14)
     const numAces = valuesHigh.filter(v => v === 14).length;
     if (numAces === 2) {
       let first = true;
-      const valuesBoth = normalCards.map(c => {
+      const valuesBoth = finalNormalCards.map(c => {
         if (c.value === 14) {
           if (first) { first = false; return 1; }
           return 14;

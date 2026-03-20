@@ -209,7 +209,17 @@ export default function GameScreen() {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
     } else {
-      Alert.alert('Sequência inválida', 'As cartas selecionadas não formam uma sequência válida no STBL.\n\nLembre: mesmo naipe, valores consecutivos, máximo 1 curinga (2).');
+      // Feedback melhorado dependendo do motivo da falha
+      const fits = validateSequence(user.hand.filter(c => selectedCards.includes(c.id)), gameMode);
+      if (!fits) {
+        const msg = gameMode === 'araujo_pereira' 
+          ? 'As cartas não formam uma sequência válida ou trinca (máximo 1 curinga em trincas).'
+          : 'As cartas selecionadas não formam uma sequência válida.\n\nLembre: mesmo naipe, valores consecutivos, máximo 1 curinga (2).';
+        Alert.alert('Combinação Inválida', msg);
+      } else {
+        // Encaixa, mas o store recusou (provavelmente trancaria o jogador)
+        Alert.alert('⚠️ Ação bloqueada', 'Você não pode ficar sem cartas na mão sem ter uma canastra ou pegar o morto.');
+      }
     }
   };
 
@@ -247,9 +257,22 @@ export default function GameScreen() {
       setSelectedCards([]);
       // SUCESSO: Não abre o modal, para o jogador ver a carta entrando no jogo
     } else {
-      // Se falhou por regra do jogo, abre o ZOOM para o jogador conferir o jogo e entender o erro
-      setTempOpenGame({ teamId: 'team-1', index: gameIndex });
-      Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
+      // Se falhou, verifica o motivo para dar um feedback melhor
+      const player = players.find(p => p.id === 'user');
+      if (player) {
+        const selCards = player.hand.filter(c => selectedCards.includes(c.id));
+        const combined = [...teams['team-1'].games[gameIndex], ...selCards];
+        const fits = validateSequence(combined, gameMode);
+        
+        if (!fits) {
+          // Se falhou por regra do jogo, abre o ZOOM para o jogador conferir o jogo e entender o erro
+          setTempOpenGame({ teamId: 'team-1', index: gameIndex });
+          Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
+        } else {
+          // Encaixa, mas o store recusou (provavelmente "wouldStrandPlayer")
+          Alert.alert('⚠️ Ação bloqueada', 'Você não pode ficar sem cartas na mão sem ter uma canastra ou pegar o morto.');
+        }
+      }
     }
   };
 
@@ -683,19 +706,26 @@ export default function GameScreen() {
       {/* ACTION BAR INFERIOR */}
       <View style={styles.actionBar}>
         <View style={styles.actionBarLeft}>
-          {isMyTurn && turnPhase === 'play' && turnHistory.length > 0 && (
-            <TouchableOpacity
-              style={styles.undoButtonInline}
-              onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                undoLastPlay('user');
-                setSelectedCards([]);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.undoButtonText}>↩️ Desfazer</Text>
-            </TouchableOpacity>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {isMyTurn && turnPhase === 'play' && turnHistory.length > 0 && (
+              <TouchableOpacity
+                style={styles.undoButtonInline}
+                onPress={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  undoLastPlay('user');
+                  setSelectedCards([]);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.undoButtonText}>↩️</Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.handCounterSmall}>
+               <Text style={styles.handCounterLabel}>VOCÊ</Text>
+               <Text style={styles.handCounterValue}>{user.hand.length}</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.actionBarRight}>
@@ -927,7 +957,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  handArea: { backgroundColor: 'rgba(0,0,0,0.2)', paddingBottom: 0, overflow: 'visible' },
+  handArea: { 
+    height: 110,
+    overflow: 'visible',
+    paddingBottom: 0,
+    justifyContent: 'flex-start',
+  },
   turnBox: { alignItems: 'center' },
   turnName: { color: '#FFD600', fontWeight: '900', fontSize: 18 },
   phaseLabel: {
@@ -1173,7 +1208,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
     paddingHorizontal: 16,
-    marginBottom: 45, // Moved up significantly to avoid overlap with popping cards
+    marginBottom: 0, // Ajustado para dar espaço às cartas inteiras
     zIndex: 10,
   },
   actionBarLeft: {
@@ -1187,10 +1222,10 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   undoButtonInline: {
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
+    backgroundColor: 'rgba(255,214,0,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: '#FFD600',
     flexDirection: 'row',
@@ -1293,4 +1328,16 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)', fontSize: 15, marginTop: 40,
     fontWeight: '700', letterSpacing: 1,
   },
+  handCounterSmall: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    minWidth: 50,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  handCounterLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 9, fontWeight: '700' },
+  handCounterValue: { color: '#fff', fontSize: 16, fontWeight: '900' },
 });

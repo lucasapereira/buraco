@@ -183,20 +183,31 @@ function shouldTakePile(
 
     // Verifica utilidade imediata para a mão
     const jokersInHand = hand.filter(h => h.isJoker).length;
+    let usefulCount = 0;
+    let fitsHand = false;
+
     for (const pCard of pile) {
       // Tem pelo menos duas cartas iguais na mão? (formaria trinca limpa)
       const sameValueCount = hand.filter(h => h.value === pCard.value && !h.isJoker).length;
-      if (sameValueCount >= 2) return true;
+      if (sameValueCount >= 2) fitsHand = true;
       // Tem uma igual e um curinga na mão? (formaria trinca suja)
-      if (sameValueCount === 1 && jokersInHand > 0) return true;
+      if (sameValueCount === 1 && jokersInHand > 0) fitsHand = true;
 
       // Formaria sequência normal?
       const sameSuit = hand.filter(h => !h.isJoker && h.suit === pCard.suit);
       const adjacent = sameSuit.filter(h => Math.abs(h.value - pCard.value) <= 2);
-      if (adjacent.length >= 2) return true; // heurística simples
+      if (adjacent.length >= 2) fitsHand = true;
+
+      // Conta utilidade
+      if (pile.some(pileCard => !pileCard.isJoker && hand.some(h => !h.isJoker && h.suit === pileCard.suit && Math.abs(h.value - pileCard.value) <= 2))) {
+        usefulCount++;
+      }
     }
 
-    // Se nenhuma carta for claramente útil e o lixo for pequeno, deixa passar
+    if (fitsHand) return true;
+    if (difficulty === 'hard') return true;
+    if (difficulty === 'medium') return usefulCount >= 1;
+
     return false;
   }
 
@@ -238,12 +249,6 @@ function shouldTakePile(
     );
     return sameInHand.length >= 1;
   }).length;
-
-  // No modo Araujo Pereira, o bicho pega: se tiver QUALQUER carta útil ou se encaixar, leva.
-  if (gameMode === 'araujo_pereira') {
-    if (difficulty === 'hard') return true;
-    if (difficulty === 'medium') return (usefulCount >= 1 || fitsExisting);
-  }
 
   // Se encaixa em jogo existente, o bot Hard sempre pega. O Medium pega se tiver +1 útil.
   if (fitsExisting) {
@@ -337,7 +342,7 @@ export function useBotAI() {
 
     // Se pegou do lixo, PRIMEIRO deve jogar um jogo com o topo
     if (s.mustPlayPileTopId) {
-      doBotPlayWithPileTop(botId, s.mustPlayPileTopId);
+      await doBotPlayWithPileTop(botId, s.mustPlayPileTopId);
       await delay(800);
     }
 
@@ -356,15 +361,24 @@ export function useBotAI() {
   }
 
   /** Força jogar uma sequência que inclua o topo do lixo */
-  function doBotPlayWithPileTop(botId: PlayerId, pileTopId: string) {
+  async function doBotPlayWithPileTop(botId: PlayerId, pileTopId: string) {
     const s = useGameStore.getState();
     const bot = s.players.find(p => p.id === botId);
     if (!bot) return;
 
     const topCard = bot.hand.find(c => c.id === pileTopId);
-    if (!topCard) return; // Carta não está mais na mão (já foi jogada)
+    if (!topCard) return;
 
-    // 1) Tenta via findBestSequences
+    // 1) Tenta ADICIONAR a um jogo existente (prioridade para não matar canastras)
+    const teamGames = s.teams[bot.teamId].games;
+    for (let gi = 0; gi < teamGames.length; gi++) {
+      if (validateSequence([...teamGames[gi], topCard], s.gameMode)) {
+        animate();
+        if (useGameStore.getState().addToExistingGame(botId, [pileTopId], gi)) return;
+      }
+    }
+
+    // 2) Tenta via findBestSequences (novo jogo)
     const sequences = findBestSequences(bot.hand, s.gameMode);
     for (const seq of sequences) {
       if (seq.some(c => c.id === pileTopId)) {
@@ -373,24 +387,38 @@ export function useBotAI() {
       }
     }
 
-    // 2) Tenta combinações brutas de 3 cartas com o topo
-    const sameNaipe = bot.hand.filter(c => !c.isJoker && c.suit === topCard.suit && c.id !== pileTopId);
+    // 3) Tenta combinações brutas de 3 cartas com o topo
+    const sameSuit = bot.hand.filter(c => !c.isJoker && c.suit === topCard.suit && c.id !== pileTopId);
+    const sameValue = bot.hand.filter(c => !c.isJoker && c.value === topCard.value && c.id !== pileTopId);
     const jokers = bot.hand.filter(c => c.isJoker);
 
-    for (let i = 0; i < sameNaipe.length; i++) {
-      for (let j = i + 1; j < sameNaipe.length; j++) {
+    // Tenta sequência do mesmo naipe
+    for (let i = 0; i < sameSuit.length; i++) {
+      for (let j = i + 1; j < sameSuit.length; j++) {
         animate();
-        if (useGameStore.getState().playCards(botId, [pileTopId, sameNaipe[i].id, sameNaipe[j].id])) return;
+        if (useGameStore.getState().playCards(botId, [pileTopId, sameSuit[i].id, sameSuit[j].id])) return;
       }
-      // Com curinga
       if (jokers.length > 0) {
         animate();
-        if (useGameStore.getState().playCards(botId, [pileTopId, sameNaipe[i].id, jokers[0].id])) return;
+        if (useGameStore.getState().playCards(botId, [pileTopId, sameSuit[i].id, jokers[0].id])) return;
       }
     }
 
-    // 3) Fallback: impossível jogar o topo — limpa a obrigação pra não travar o bot
-    // (situação rara: canTakePile validou mas validateSequence não encontra combo)
+    // Tenta trinca do mesmo valor (Araujo Pereira)
+    if (s.gameMode === 'araujo_pereira') {
+      for (let i = 0; i < sameValue.length; i++) {
+        for (let j = i + 1; j < sameValue.length; j++) {
+          animate();
+          if (useGameStore.getState().playCards(botId, [pileTopId, sameValue[i].id, sameValue[j].id])) return;
+        }
+        if (jokers.length > 0) {
+          animate();
+          if (useGameStore.getState().playCards(botId, [pileTopId, sameValue[i].id, jokers[0].id])) return;
+        }
+      }
+    }
+
+    // 4) Fallback: impossível jogar o topo — limpa a obrigação pra não travar o bot
     useGameStore.setState({ mustPlayPileTopId: null });
   }
 
@@ -415,23 +443,29 @@ export function useBotAI() {
         const normalCards = seq.filter(c => !c.isJoker);
         if (normalCards.length > 0 && (difficulty === 'hard' || difficulty === 'medium')) {
           const isTrinca = normalCards.every(c => c.value === normalCards[0].value);
+          const value = normalCards[0].value;
+          const suit = normalCards[0].suit;
+          const teamGames = s.teams[bot.teamId].games;
 
-          if (!isTrinca) {
-            const suit = normalCards[0].suit;
-            const teamGames = s.teams[bot.teamId].games;
-            const hasGameSameSuit = teamGames.some(g => {
-              const gNormal = g.filter(c => !c.isJoker);
+          const hasDuplicateGame = teamGames.some(g => {
+            const gNormal = g.filter(c => !c.isJoker);
+            if (gNormal.length === 0) return false;
+            
+            if (isTrinca) {
               const gIsTrinca = gNormal.length > 0 && gNormal.every(c => c.value === gNormal[0].value);
-              return !gIsTrinca && gNormal.length > 0 && gNormal[0].suit === suit;
-            });
-
-            // Se for pra bater ou ir pro morto (0 ou 1 carta restando), ignora a regra de não matar a canastra
-            const remainingCards = bot.hand.length - seq.length;
-            const goingToBaterOrDead = remainingCards <= 1;
-
-            if (hasGameSameSuit && seq.length < 6 && !goingToBaterOrDead) {
-              continue; // Retém as cartas, não "mata" a canastra!
+              return gIsTrinca && gNormal[0].value === value;
+            } else {
+              const gIsTrinca = gNormal.length > 0 && gNormal.every(c => c.value === gNormal[0].value);
+              return !gIsTrinca && gNormal[0].suit === suit;
             }
+          });
+
+          // Se for pra bater ou ir pro morto (0 ou 1 carta restando), ignora a regra de não dar duplicate
+          const remainingCards = bot.hand.length - seq.length;
+          const goingToBaterOrDead = remainingCards <= 1;
+
+          if (hasDuplicateGame && seq.length < 6 && !goingToBaterOrDead) {
+            continue; // Retém as cartas, não "mata" a canastra ou cria jogo duplicado!
           }
         }
 

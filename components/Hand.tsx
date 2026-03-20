@@ -26,9 +26,6 @@ export const Hand: React.FC<HandProps> = ({
 
   return (
     <View style={styles.container}>
-      <View style={styles.cardCount}>
-        <Text style={styles.cardCountText}>{cards.length}</Text>
-      </View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -71,7 +68,7 @@ export const Hand: React.FC<HandProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: 44,
+    height: 100,
     width: '100%',
     overflow: 'visible',
   },
@@ -103,20 +100,5 @@ const styles = StyleSheet.create({
     color: '#1B5E20',
     fontSize: 9,
     fontWeight: '900',
-  },
-  cardCount: {
-    position: 'absolute',
-    top: 26,
-    left: 12,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderRadius: 10,
-    paddingHorizontal: 7,
-    paddingVertical: 1,
-    zIndex: 30,
-  },
-  cardCountText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
   },
 });

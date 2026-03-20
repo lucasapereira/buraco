@@ -91,10 +91,15 @@ const styles = StyleSheet.create({
     paddingRight: 5,
   },
   selectedCard: {
-    transform: [{ translateY: -42 }],
     borderColor: '#FFD600',
-    borderWidth: 2.5,
+    borderWidth: 3,
     backgroundColor: '#FFFFF0',
+    shadowColor: '#FFD600',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 8,
+    transform: [{ scale: 1.05 }],
   },
   hiddenCard: {
     backgroundColor: '#1565C0',
