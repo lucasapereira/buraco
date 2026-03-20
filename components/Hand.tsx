@@ -1,9 +1,7 @@
 import React from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useWindowDimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card as CardType } from '../game/deck';
 import { Card } from './Card';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 interface HandProps {
   cards: CardType[];
@@ -13,9 +11,10 @@ interface HandProps {
   highlightCardId?: string | null; // Última carta comprada
 }
 
-export const Hand: React.FC<HandProps> = ({
+export const Hand = ({
   cards, selectedCards, onToggleCard, isHidden = false, highlightCardId
-}) => {
+}: HandProps) => {
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
   const cardWidth = 60;
   const availableWidth = SCREEN_WIDTH - 40;
   const totalCardsWidth = cards.length * cardWidth;

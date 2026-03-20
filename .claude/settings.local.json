@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const p = require\\(''./node_modules/@react-native-async-storage/async-storage/package.json''\\); console.log\\(p.version\\)\")"
+    ]
+  }
+}

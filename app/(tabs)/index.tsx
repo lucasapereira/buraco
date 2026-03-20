@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { BotDifficulty, GameMode } from '../../game/engine';
 import { Platform } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
-import { useEffect } from 'react';
+import Constants from 'expo-constants';
+
+const APP_VERSION = Constants.expoConfig?.version ?? '?';
+
 
 const { width: SW } = Dimensions.get('window');
 
@@ -37,13 +40,37 @@ const TARGETS = [1500, 3000, 5000];
 
 export default function HomeScreen() {
   const router = useRouter();
-  const startNewGame = useGameStore(s => s.startNewGame);
+  const { startNewGame, startLayoutTest, players, gameLog } = useGameStore();
   const [difficulty, setDifficulty] = useState<BotDifficulty>('hard');
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
 
+  // Verifica se há um jogo em andamento (qualquer evento no log ou se o jogador já mudou a mão)
+  const isGameInProgress = gameLog.length > 0 || players.some(p => p.hand.length !== 11);
+
+  // Aguarda a hidratação do AsyncStorage completar antes de decidir onde navegar.
+  // Sem isso, o estado inicial (jogo zerado) é lido antes de carregar o save,
+  // e o redirect nunca acontece ao girar o tablet ou reabrir o app.
+  const storePersist = (useGameStore as any).persist;
+  const [hydrated, setHydrated] = useState(() => storePersist.hasHydrated() as boolean);
+  useEffect(() => {
+    const unsub = storePersist.onFinishHydration(() => setHydrated(true));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (isGameInProgress) {
+      router.replace('/(tabs)/explore' as any);
+    }
+  }, [hydrated]);
+
   const handleStart = () => {
     startNewGame(targetScore, difficulty, gameMode);
+    router.replace('/(tabs)/explore' as any);
+  };
+
+  const handleContinue = () => {
     router.replace('/(tabs)/explore' as any);
   };
 
@@ -126,10 +153,30 @@ export default function HomeScreen() {
         ))}
       </View>
 
-      {/* Botão Jogar */}
+      {/* Botão Continuar/Jogar */}
+      {isGameInProgress && (
+        <TouchableOpacity 
+          style={[styles.playBtn, { backgroundColor: '#4CAF50', marginBottom: 12, shadowColor: '#4CAF50' }]} 
+          onPress={handleContinue} 
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.playText, { color: '#fff' }]}>◀ CONTINUAR</Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity style={styles.playBtn} onPress={handleStart} activeOpacity={0.85}>
-        <Text style={styles.playText}>🃏 JOGAR</Text>
+        <Text style={styles.playText}>{isGameInProgress ? '🆕 REINICIAR' : '🃏 JOGAR'}</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.layoutBtn}
+        onPress={() => { startLayoutTest(); router.replace('/(tabs)/explore' as any); }}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.layoutBtnText}>Layout</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.version}>v{APP_VERSION}</Text>
     </View>
   );
 }
@@ -273,5 +320,31 @@ const styles = StyleSheet.create({
     fontSize: 23,
     fontWeight: '900',
     letterSpacing: 2,
+  },
+  layoutBtn: {
+    position: 'absolute',
+    bottom: 14,
+    left: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  layoutBtnText: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  version: {
+    position: 'absolute',
+    bottom: 16,
+    right: 20,
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1,
   },
 });

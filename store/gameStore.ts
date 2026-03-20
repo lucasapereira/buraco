@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Card, cardLabel } from '../game/deck';
 import {
   BotDifficulty,
@@ -18,6 +19,7 @@ type TurnPhase = 'draw' | 'play' | 'discard';
 interface GameActions {
   startNewGame: (targetScore?: number, difficulty?: BotDifficulty, gameMode?: GameMode) => void;
   startNewRound: () => void;
+  startLayoutTest: () => void;
   drawFromDeck: (playerId: PlayerId) => void;
   drawFromPile: (playerId: PlayerId) => boolean; // false = não pode pegar (regra)
   discard: (playerId: PlayerId, cardId: string) => void;
@@ -146,17 +148,7 @@ function wouldStrandPlayer(
 
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-const persistentStorage = createJSONStorage(() => {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    return window.localStorage;
-  }
-  // Fallback to memory storage if no persistent storage is available
-  return {
-    getItem: (name: string) => null,
-    setItem: (name: string, value: string) => {},
-    removeItem: (name: string) => {},
-  };
-});
+const persistentStorage = createJSONStorage(() => AsyncStorage);
 
 export const useGameStore = create<GameState & GameActions>()(
   persist(
@@ -176,6 +168,98 @@ export const useGameStore = create<GameState & GameActions>()(
       matchScores: state.matchScores,
       botDifficulty: state.botDifficulty,
       gameMode: state.gameMode,
+    });
+  },
+
+  startLayoutTest: () => {
+    eventCounter = 0;
+    // Helper para criar carta
+    const c = (deck: 1|2, suit: 'spades'|'hearts'|'diamonds'|'clubs', value: number): Card => ({
+      id: `${deck}-${suit}-${value}`,
+      deck, suit,
+      value: value as Card['value'],
+      isJoker: value === 2,
+    });
+
+    // Jogos do time-1 (nós)
+    const myGames: Card[][] = [
+      // Canastra limpa: 3-4-5-6-7-8-9 de espadas
+      [c(1,'spades',3),c(1,'spades',4),c(1,'spades',5),c(1,'spades',6),c(1,'spades',7),c(1,'spades',8),c(1,'spades',9)],
+      // Canastra suja: 3-4-[joker]-6-7-8-9 de copas
+      [c(1,'hearts',3),c(1,'hearts',4),c(1,'hearts',2),c(1,'hearts',6),c(1,'hearts',7),c(1,'hearts',8),c(1,'hearts',9)],
+      // Jogo médio (5 cartas): 5-6-7-8-9 de ouros
+      [c(1,'diamonds',5),c(1,'diamonds',6),c(1,'diamonds',7),c(1,'diamonds',8),c(1,'diamonds',9)],
+      // Jogo curto (3 cartas): 10-J-Q de paus
+      [c(1,'clubs',10),c(1,'clubs',11),c(1,'clubs',12)],
+      // Jogo de 4: K-A-... wait, let me do J-Q-K-A de ouros
+      [c(1,'diamonds',11),c(1,'diamonds',12),c(1,'diamonds',13),c(1,'diamonds',14)],
+    ];
+
+    // Jogos do time-2 (adversários)
+    const opGames: Card[][] = [
+      // Canastra suja: 5-6-[joker]-8-9-10-J de espadas
+      [c(2,'spades',5),c(2,'spades',6),c(2,'spades',2),c(2,'spades',8),c(2,'spades',9),c(2,'spades',10),c(2,'spades',11)],
+      // Jogo médio (4): 9-10-J-Q de paus
+      [c(2,'clubs',9),c(2,'clubs',10),c(2,'clubs',11),c(2,'clubs',12)],
+      // Jogo curto (3): 3-4-5 de ouros
+      [c(2,'diamonds',3),c(2,'diamonds',4),c(2,'diamonds',5)],
+      // Jogo longo (6): 6-7-8-9-10-J de copas
+      [c(2,'hearts',6),c(2,'hearts',7),c(2,'hearts',8),c(2,'hearts',9),c(2,'hearts',10),c(2,'hearts',11)],
+      // Jogo extra (3): 3-4-5 de espadas
+      [c(2,'spades',3),c(2,'spades',4),c(2,'spades',5)],
+    ];
+
+    // Mão do usuário (10 cartas interessantes)
+    const userHand: Card[] = [
+      c(2,'diamonds',7), c(2,'diamonds',8), c(2,'diamonds',9), c(2,'diamonds',10), // pode estender nosso jogo de ouros
+      c(2,'clubs',13), c(2,'clubs',14),                                             // K-A de paus
+      c(2,'hearts',12), c(2,'hearts',13),                                           // Q-K de copas
+      c(1,'diamonds',2),                                                            // curinga
+      c(2,'spades',12),                                                             // Q de espadas
+    ];
+
+    // Mãos dos bots (5 cartas cada)
+    const bot1Hand: Card[] = [c(1,'spades',10),c(1,'spades',11),c(1,'spades',12),c(1,'spades',13),c(1,'spades',14)];
+    const bot2Hand: Card[] = [c(1,'hearts',10),c(1,'hearts',11),c(1,'hearts',12),c(1,'hearts',13),c(1,'hearts',14)];
+    const bot3Hand: Card[] = [c(1,'clubs',3),c(1,'clubs',4),c(1,'clubs',5),c(1,'clubs',6),c(1,'clubs',7)];
+
+    // Monte residual
+    const deckCards: Card[] = [c(1,'clubs',8),c(1,'clubs',9),c(1,'clubs',13),c(1,'clubs',14),
+      c(2,'clubs',3),c(2,'clubs',4),c(2,'clubs',5),c(2,'clubs',6),c(2,'clubs',7),c(2,'clubs',8),
+      c(2,'hearts',3),c(2,'hearts',4),c(2,'hearts',5),c(2,'hearts',12),c(2,'hearts',13),c(2,'hearts',14),
+      c(2,'diamonds',6),c(2,'diamonds',11),c(2,'diamonds',12),c(2,'diamonds',13),c(2,'diamonds',14),
+      c(2,'spades',13),c(2,'spades',14),c(1,'diamonds',3),c(1,'diamonds',4),c(1,'diamonds',10),
+    ];
+
+    // Lixo (5 cartas, topo = 7 de espadas deck 2)
+    const pileCards: Card[] = [c(2,'spades',7),c(2,'clubs',2),c(1,'hearts',5),c(1,'diamonds',2),c(2,'spades',6)];
+
+    set({
+      ...createInitialGameState(1500, 'hard', 'classic'),
+      players: [
+        { id: 'user', teamId: 'team-1', name: 'Você', hand: sortCardsBySuitAndValue(userHand), hasGottenDead: true },
+        { id: 'bot-1', teamId: 'team-2', name: 'Adv 1', hand: sortCardsBySuitAndValue(bot1Hand), hasGottenDead: true },
+        { id: 'bot-2', teamId: 'team-1', name: 'Parceiro', hand: sortCardsBySuitAndValue(bot2Hand), hasGottenDead: true },
+        { id: 'bot-3', teamId: 'team-2', name: 'Adv 2', hand: sortCardsBySuitAndValue(bot3Hand), hasGottenDead: true },
+      ],
+      teams: {
+        'team-1': { id: 'team-1', games: myGames, score: 0, hasGottenDead: true },
+        'team-2': { id: 'team-2', games: opGames, score: 0, hasGottenDead: true },
+      },
+      deck: deckCards,
+      pile: pileCards,
+      deads: [],
+      currentTurnPlayerId: 'user',
+      turnPhase: 'play',
+      matchScores: { 'team-1': 450, 'team-2': 300 },
+      roundOver: false,
+      winnerTeamId: null,
+      lastDrawnCardId: null,
+      mustPlayPileTopId: null,
+      gameLog: [{ id: 1, playerId: 'user', playerName: 'SYS', type: 'draw_deck', message: '🔧 Modo Layout', timestamp: Date.now() }],
+      discardedCardHistory: [],
+      deckReshuffleCount: 0,
+      turnHistory: [],
     });
   },
 
@@ -659,4 +743,16 @@ export const useGameStore = create<GameState & GameActions>()(
 }), {
   name: 'buraco-game-storage',
   storage: persistentStorage,
+  // Exclui estado transitório de animação — não faz sentido persistir
+  partialize: (state) => {
+    const { animatingDrawPlayerId, animatingDiscard, ...rest } = state as any;
+    return rest;
+  },
+  // Limpa qualquer animação travada ao reabrir o app
+  onRehydrateStorage: () => (state) => {
+    if (state) {
+      (state as any).animatingDrawPlayerId = null;
+      (state as any).animatingDiscard = null;
+    }
+  },
 }));

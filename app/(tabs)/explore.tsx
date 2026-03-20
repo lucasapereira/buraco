@@ -198,7 +198,7 @@ export default function GameScreen() {
     if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
       const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
       const label = topCard ? cardLabel(topCard) : 'comprada';
-      Alert.alert('⚠️ Regra do Lixo', `Sua primeira jogada DEVE ser com o ${label} (topo do lixo) para formar um NOVO jogo de pelo menos 3 cartas.`);
+      Alert.alert('⚠️ Regra do Lixo', `Sua primeira jogada DEVE incluir o ${label} (topo do lixo).\n\nVocê pode:\n• Tocar num jogo seu já na mesa (selecionando o ${label} + cartas para completar)\n• Ou baixar um novo jogo com 3+ cartas`);
       return;
     }
     if (selectedCards.length < 3) {
