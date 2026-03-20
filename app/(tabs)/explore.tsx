@@ -12,7 +12,8 @@ import {
   StatusBar,
   StyleSheet,
   Text, TouchableOpacity,
-  View
+  View,
+  useWindowDimensions
 } from 'react-native';
 import { Card } from '../../components/Card';
 import { EventBanner } from '../../components/EventBanner';
@@ -24,9 +25,9 @@ import { useGameSounds } from '../../hooks/useGameSounds';
 import { useGameStore } from '../../store/gameStore';
 import { cardLabel } from '../../game/deck';
 
-const { width: SW } = Dimensions.get('window');
 
 export default function GameScreen() {
+  const { width: SW } = useWindowDimensions();
   const {
     players, deck, pile, deads, teams, currentTurnPlayerId,
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
@@ -1272,7 +1273,7 @@ const styles = StyleSheet.create({
   },
   modalBox: {
     backgroundColor: '#1B5E20', borderRadius: 16, padding: 24,
-    width: SW * 0.85, alignItems: 'center',
+    width: '85%', maxWidth: 500, alignItems: 'center',
     borderWidth: 2, borderColor: '#FFD600',
   },
   modalTitle: { color: '#FFD600', fontSize: 25, fontWeight: '900', textAlign: 'center', marginBottom: 16 },

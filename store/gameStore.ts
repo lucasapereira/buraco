@@ -144,8 +144,24 @@ function wouldStrandPlayer(
   return !teamHasCleanCanasta(state, teamId, extraGame);
 }
 
-export const useGameStore = create<GameState & GameActions>((set, get) => ({
-  ...createInitialGameState(),
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+const persistentStorage = createJSONStorage(() => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+  // Fallback to memory storage if no persistent storage is available
+  return {
+    getItem: (name: string) => null,
+    setItem: (name: string, value: string) => {},
+    removeItem: (name: string) => {},
+  };
+});
+
+export const useGameStore = create<GameState & GameActions>()(
+  persist(
+    (set, get) => ({
+      ...createInitialGameState(),
 
   startNewGame: (targetScore = 3000, difficulty = 'medium' as BotDifficulty, gameMode = 'classic' as GameMode) => {
     eventCounter = 0;
@@ -640,4 +656,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     }));
     return true;
   },
+}), {
+  name: 'buraco-game-storage',
+  storage: persistentStorage,
 }));
