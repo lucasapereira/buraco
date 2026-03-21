@@ -313,6 +313,10 @@ export const useGameStore = create<GameState & GameActions>()(
             roundOver: true,
             winnerTeamId,
             matchScores: newMatchScores,
+            teams: {
+              'team-1': { ...state.teams['team-1'], score: t1Score },
+              'team-2': { ...state.teams['team-2'], score: t2Score },
+            },
             gameLog: addLog(state.gameLog, makeEvent(
               playerId, name, 'round_end', '⏹️ Baralho esgotado 3x — rodada encerrada!'
             )),
@@ -353,6 +357,10 @@ export const useGameStore = create<GameState & GameActions>()(
         roundOver: true,
         winnerTeamId,
         matchScores: newMatchScores,
+        teams: {
+          'team-1': { ...state.teams['team-1'], score: t1Score },
+          'team-2': { ...state.teams['team-2'], score: t2Score },
+        },
         gameLog: addLog(state.gameLog, makeEvent(
           playerId, name, 'round_end', '🃏 Tudo esgotado — rodada encerrada!'
         )),

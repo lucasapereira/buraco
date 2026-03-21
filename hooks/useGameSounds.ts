@@ -20,6 +20,7 @@ export function useGameSounds() {
     let _canastra: Audio.Sound | null = null;
     let _bater: Audio.Sound | null = null;
     let _turno: Audio.Sound | null = null;
+    let mounted = true;
 
     async function loadSounds() {
       try {
@@ -31,25 +32,25 @@ export function useGameSounds() {
           require('../assets/sounds/morto.mp3')
         );
         _morto = mSound;
-        setMortoSound(mSound);
+        if (mounted) setMortoSound(mSound);
 
         const { sound: cSound } = await Audio.Sound.createAsync(
           require('../assets/sounds/canastra.mp3')
         );
         _canastra = cSound;
-        setCanastraSound(cSound);
+        if (mounted) setCanastraSound(cSound);
 
         const { sound: bSound } = await Audio.Sound.createAsync(
           require('../assets/sounds/bater.mp3')
         );
         _bater = bSound;
-        setBaterSound(bSound);
+        if (mounted) setBaterSound(bSound);
 
         const { sound: tSound } = await Audio.Sound.createAsync(
           require('../assets/sounds/turno.mp3')
         );
         _turno = tSound;
-        setTurnoSound(tSound);
+        if (mounted) setTurnoSound(tSound);
       } catch (e) {
         console.warn('Erro ao carregar os sons:', e);
       }
@@ -58,10 +59,11 @@ export function useGameSounds() {
     loadSounds();
 
     return () => {
-      _morto?.unloadAsync();
-      _canastra?.unloadAsync();
-      _bater?.unloadAsync();
-      _turno?.unloadAsync();
+      mounted = false;
+      const sounds = [_morto, _canastra, _bater, _turno];
+      setTimeout(() => {
+        sounds.forEach(s => s?.unloadAsync().catch(() => {}));
+      }, 200);
     };
   }, []);
 

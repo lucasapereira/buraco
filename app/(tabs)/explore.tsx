@@ -7,7 +7,6 @@ import {
   LayoutAnimation,
   Modal,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -15,6 +14,7 @@ import {
   View,
   useWindowDimensions
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card } from '../../components/Card';
 import { EventBanner } from '../../components/EventBanner';
 import { Hand } from '../../components/Hand';
@@ -27,7 +27,9 @@ import { cardLabel } from '../../game/deck';
 
 
 export default function GameScreen() {
-  const { width: SW } = useWindowDimensions();
+  const { width: SW, height: SH } = useWindowDimensions();
+  const isLandscape = SW > SH;
+  const tabletScale = SW >= 600 ? Math.min(SW / 600, SH / 750, 1.4) : 1.0;
   const {
     players, deck, pile, deads, teams, currentTurnPlayerId,
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
@@ -84,8 +86,8 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (Platform.OS === 'android') {
-      NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('inset-touch');
+      NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+      NavigationBar.setBehaviorAsync('inset-touch').catch(() => {});
     }
   }, []);
 
@@ -368,7 +370,8 @@ export default function GameScreen() {
 
   // Informações da batida para exibição no breakdown
   const lastRoundEndEvent = gameLog.slice().reverse().find(e => e.type === 'round_end');
-  const hitterId = lastRoundEndEvent?.playerId;
+  const isRealBatida = lastRoundEndEvent?.message?.includes('BATEU') ?? false;
+  const hitterId = isRealBatida ? lastRoundEndEvent?.playerId : undefined;
   const hitterTeamId = players.find(p => p.id === hitterId)?.teamId;
 
   // Score total atual = acumulado + jogos na mesa esta rodada
@@ -436,10 +439,15 @@ export default function GameScreen() {
           >
             {(() => {
               const totalGames = (myTeamGames || []).length + (opTeamGames || []).length;
-              const denseLevel = totalGames > 15 ? 2 : totalGames > 10 ? 1 : 0;
+              const denseLevel = isLandscape ? 2 : totalGames > 15 ? 2 : totalGames > 10 ? 1 : 0;
               const denseMode = denseLevel > 0;
               const tightMode = denseLevel > 1;
-              const scale = 1;
+              const scale = tabletScale;
+              const smallCardW = Math.round(50 * scale);
+              const landscapeFactor = isLandscape ? 0.78 : 1;
+              const clipH = Math.round((tightMode ? 64 : denseMode ? 68 : 72) * scale * landscapeFactor);
+              const lastClipW = scale > 1 ? smallCardW : (tightMode ? 30 : 34);
+              const wrapMinH = Math.round((tightMode ? 76 : denseMode ? 80 : 84) * scale * landscapeFactor);
 
               return (
                 <>
@@ -456,19 +464,19 @@ export default function GameScreen() {
                       const isTrinca = gameCards.length >= 3 && gameCards.filter(c => !c.isJoker).every((c, _, arr) => c.value === arr[0].value);
                       const isCanasta = canasta !== 'none';
 
-                      let cardMargin = -28;
-                      const obscuredMargin = -46;
+                      let cardMargin = Math.round(-28 * scale);
+                      const obscuredMargin = Math.round(-46 * scale);
                       if (visibleCards.length > 1) {
                         const containerWidth = (SW - 90) / 3;
                         const numObscured = visibleCards.filter((c: any) => c._isObscured).length;
                         const numNormalNotFirst = visibleCards.length - 1 - numObscured;
-                        
-                        let normalMargin = isCanasta ? -30 : -28;
+
+                        let normalMargin = isCanasta ? Math.round(-30 * scale) : Math.round(-28 * scale);
                         if (numNormalNotFirst > 0) {
-                           const obscuredWidth = numObscured * (50 + obscuredMargin);
-                           const spaceForNormal = containerWidth - 50 - obscuredWidth + 16; // 16px gained by clipping last card
-                           const calcMargin = Math.floor(spaceForNormal / numNormalNotFirst) - 50;
-                           normalMargin = Math.max(-34, Math.min(normalMargin, calcMargin));
+                           const obscuredWidth = numObscured * (smallCardW + obscuredMargin);
+                           const spaceForNormal = containerWidth - smallCardW - obscuredWidth + Math.round(16 * scale);
+                           const calcMargin = Math.floor(spaceForNormal / numNormalNotFirst) - smallCardW;
+                           normalMargin = Math.max(Math.round(-34 * scale), Math.min(normalMargin, calcMargin));
                         }
                         cardMargin = normalMargin;
                       }
@@ -482,16 +490,15 @@ export default function GameScreen() {
                             styles.gameCard,
                             denseMode && styles.gameCardDense,
                             tightMode && styles.gameCardTight,
+                            isLandscape && styles.gameCardLandscape,
                             styles.opponentGame,
                             canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
-                            { transform: [{ scale }] }
                           ]}
                         >
                           <View pointerEvents="none" style={styles.gameCardInner}>
                             <View style={[
                               styles.gameCardsWrap,
-                              denseMode && styles.gameCardsWrapCompact,
-                              tightMode && styles.gameCardsWrapTight,
+                              { minHeight: wrapMinH },
                             ]}>
                               <View style={[
                                 styles.gameCards,
@@ -503,9 +510,8 @@ export default function GameScreen() {
                                     <View key={c.id} style={ci > 0 ? { marginLeft: isPrevObscured ? obscuredMargin : cardMargin } : undefined}>
                                       <View style={[
                                         styles.cardClip,
-                                        denseMode && styles.cardClipCompact,
-                                        tightMode && styles.cardClipTight,
-                                        ci === visibleCards.length - 1 && styles.cardClipLast,
+                                        { height: clipH },
+                                        ci === visibleCards.length - 1 && { width: lastClipW },
                                       ]}>
                                         <Card card={c} small />
                                       </View>
@@ -551,9 +557,9 @@ export default function GameScreen() {
 
                         return (
                           <View key={p.id}>
-                            <View style={[styles.statusItem, p.id === 'user' && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
-                              <Text style={styles.statusName}>{shortName}</Text>
-                              <Text style={styles.statusCards}>
+                            <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale) }, p.id === 'user' && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
+                              <Text style={[styles.statusName, { fontSize: Math.round(11 * scale) }]}>{shortName}</Text>
+                              <Text style={[styles.statusCards, { fontSize: Math.round(13 * scale) }]}>
                                 {p.hand.length} 🎴 {teams[p.teamId].hasGottenDead ? '💀' : ''}
                               </Text>
                             </View>
@@ -573,12 +579,12 @@ export default function GameScreen() {
                         );
                       })}
                       <View style={[
-                        styles.statusItem, 
-                        { backgroundColor: 'rgba(255,214,0,0.1)' },
+                        styles.statusItem,
+                        { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale), backgroundColor: 'rgba(255,214,0,0.1)' },
                         deads.length === 0 && { borderColor: '#FF5252', borderWidth: 1 }
                       ]}>
-                        <Text style={styles.statusName}>Mortos</Text>
-                        <Text style={[styles.statusCards, { color: deads.length === 0 ? '#FF5252' : '#FFD600' }]}>
+                        <Text style={[styles.statusName, { fontSize: Math.round(11 * scale) }]}>Mortos</Text>
+                        <Text style={[styles.statusCards, { fontSize: Math.round(13 * scale), color: deads.length === 0 ? '#FF5252' : '#FFD600' }]}>
                           {deads.length} {deads.length === 0 ? '🚫' : '📦'}
                         </Text>
                       </View>
@@ -599,19 +605,19 @@ export default function GameScreen() {
                       const isTrinca = gameCards.length >= 3 && gameCards.filter(c => !c.isJoker).every((c, _, arr) => c.value === arr[0].value);
                       const isCanasta = canasta !== 'none';
 
-                      let cardMargin = -28;
-                      const obscuredMargin = -46;
+                      let cardMargin = Math.round(-28 * scale);
+                      const obscuredMargin = Math.round(-46 * scale);
                       if (visibleCards.length > 1) {
                         const containerWidth = (SW - 90) / 3;
                         const numObscured = visibleCards.filter((c: any) => c._isObscured).length;
                         const numNormalNotFirst = visibleCards.length - 1 - numObscured;
-                        
-                        let normalMargin = isCanasta ? -30 : -28;
+
+                        let normalMargin = isCanasta ? Math.round(-30 * scale) : Math.round(-28 * scale);
                         if (numNormalNotFirst > 0) {
-                           const obscuredWidth = numObscured * (50 + obscuredMargin);
-                           const spaceForNormal = containerWidth - 50 - obscuredWidth + 16;
-                           const calcMargin = Math.floor(spaceForNormal / numNormalNotFirst) - 50;
-                           normalMargin = Math.max(-34, Math.min(normalMargin, calcMargin));
+                           const obscuredWidth = numObscured * (smallCardW + obscuredMargin);
+                           const spaceForNormal = containerWidth - smallCardW - obscuredWidth + Math.round(16 * scale);
+                           const calcMargin = Math.floor(spaceForNormal / numNormalNotFirst) - smallCardW;
+                           normalMargin = Math.max(Math.round(-34 * scale), Math.min(normalMargin, calcMargin));
                         }
                         cardMargin = normalMargin;
                       }
@@ -639,9 +645,9 @@ export default function GameScreen() {
                             styles.gameCard,
                             denseMode && styles.gameCardDense,
                             tightMode && styles.gameCardTight,
+                            isLandscape && styles.gameCardLandscape,
                             canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
                             canAdd && styles.gameCardHighlight,
-                            { transform: [{ scale }] }
                           ]}
                           onPress={() => handleAddToGame(idx)}
                           activeOpacity={0.6}
@@ -649,8 +655,7 @@ export default function GameScreen() {
                           <View pointerEvents="none" style={styles.gameCardInner}>
                             <View style={[
                               styles.gameCardsWrap,
-                              denseMode && styles.gameCardsWrapCompact,
-                              tightMode && styles.gameCardsWrapTight,
+                              { minHeight: wrapMinH },
                             ]}>
                               <View style={[
                                 styles.gameCards,
@@ -662,9 +667,8 @@ export default function GameScreen() {
                                     <View key={c.id} style={ci > 0 ? { marginLeft: isPrevObscured ? obscuredMargin : cardMargin } : undefined}>
                                       <View style={[
                                         styles.cardClip,
-                                        denseMode && styles.cardClipCompact,
-                                        tightMode && styles.cardClipTight,
-                                        ci === visibleCards.length - 1 && styles.cardClipLast,
+                                        { height: clipH },
+                                        ci === visibleCards.length - 1 && { width: lastClipW },
                                       ]}>
                                         <Card card={c} small />
                                       </View>
@@ -767,7 +771,7 @@ export default function GameScreen() {
       </View>
 
       {/* MÃO DO JOGADOR */}
-      <View style={styles.handArea}>
+      <View style={[styles.handArea, { height: Math.round((isLandscape ? 72 : 93) * tabletScale) }]}>
         <Hand
           cards={user.hand}
           selectedCards={selectedCards}
@@ -909,7 +913,7 @@ export default function GameScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1B5E20', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0 },
+  container: { flex: 1, backgroundColor: '#1B5E20' },
   emptyText: { color: '#fff', textAlign: 'center', marginTop: 100, fontSize: 20 },
 
   // HEADER
@@ -1020,6 +1024,10 @@ const styles = StyleSheet.create({
   gameCardDense: {
     paddingVertical: 3,
     paddingHorizontal: 3,
+  },
+  gameCardLandscape: {
+    flexBasis: '23%',
+    minWidth: '23%',
   },
   gameCardTight: {
     paddingVertical: 2,

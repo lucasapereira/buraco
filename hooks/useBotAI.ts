@@ -568,7 +568,19 @@ export function useBotAI() {
     const difficulty = s.botDifficulty;
 
     const teamGames = s.teams[bot.teamId].games;
-    for (let gi = 0; gi < teamGames.length; gi++) {
+
+    // Prioriza jogos cujo naipe coincide com o naipe natural dos curingas na mão.
+    // Ex: 2♠ prefere o jogo de espadas ao invés do de copas.
+    const jokerSuits = new Set(bot.hand.filter(c => c.isJoker).map(c => c.suit));
+    const sortedIndices = Array.from({ length: teamGames.length }, (_, i) => i).sort((a, b) => {
+      const aNormal = teamGames[a].filter(c => !c.isJoker);
+      const bNormal = teamGames[b].filter(c => !c.isJoker);
+      const aMatch = aNormal.length > 0 && jokerSuits.has(aNormal[0].suit) ? 1 : 0;
+      const bMatch = bNormal.length > 0 && jokerSuits.has(bNormal[0].suit) ? 1 : 0;
+      return bMatch - aMatch;
+    });
+
+    for (const gi of sortedIndices) {
       const freshBot = useGameStore.getState().players.find(p => p.id === botId);
       if (!freshBot) return;
 
@@ -581,15 +593,20 @@ export function useBotAI() {
           if (game.some(c => c.isJoker)) continue; // Já tem curinga
           if (difficulty === 'easy') continue; // Fácil nunca suja
 
+          if (checkCanasta(game) === 'clean') {
+            // Sujar uma canastra limpa perde +200 de bônus — só é aceitável no Buraco Mole
+            // quando o bot vai bater em seguida (canastra suja ainda permite bater).
+            const goingOutNext = freshState.gameMode === 'araujo_pereira' && freshBot.hand.length <= 2;
+            if (!goingOutNext) continue;
+          }
+
           if (freshState.gameMode === 'classic') {
-            // No clássico, sujar é arriscado: sem canastra limpa separada, você pode ficar travado.
-            // Só suja se o time já tem uma canastra limpa em OUTRO jogo (garantia de poder bater),
-            // ou se esse jogo está a 1 carta de virar canastra (6+ → curinga fecha os 7).
+            // No clássico, sujar é arriscado: sem canastra limpa separada, você não pode bater.
+            // Só suja se o time já tem uma canastra limpa em OUTRO jogo,
+            // ou se esse jogo está exatamente a 1 carta de virar canastra (6 → curinga fecha 7).
             const otherGames = freshState.teams[bot.teamId].games.filter((_, i) => i !== gi);
-            const hasCleanCanastaElsewhere = otherGames.some(
-              g => g.length >= 7 && checkCanasta(g) === 'clean'
-            );
-            const closingCanasta = game.length >= 6; // curinga fecha os 7
+            const hasCleanCanastaElsewhere = otherGames.some(g => checkCanasta(g) === 'clean');
+            const closingCanasta = game.length === 6;
             if (!hasCleanCanastaElsewhere && !closingCanasta) continue;
           } else {
             // Araujo Pereira: qualquer canastra conta → pode sujar mais livremente

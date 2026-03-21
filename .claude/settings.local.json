@@ -3,7 +3,8 @@
     "allow": [
       "Bash(node -e \"const p = require\\(''./node_modules/@react-native-async-storage/async-storage/package.json''\\); console.log\\(p.version\\)\")",
       "Bash(xargs ls:*)",
-      "Bash(find /Users/lucasaraujopereira/buraco -type f -name *.ts -o -name *.tsx)"
+      "Bash(find /Users/lucasaraujopereira/buraco -type f -name *.ts -o -name *.tsx)",
+      "Bash(npx expo:*)"
     ]
   }
 }

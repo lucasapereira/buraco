@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { BotDifficulty, GameMode } from '../../game/engine';
 import { Platform } from 'react-native';
@@ -45,30 +45,14 @@ export default function HomeScreen() {
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
 
-  const storePersist = (useGameStore as any).persist;
-  const [hydrated, setHydrated] = useState(() => storePersist.hasHydrated() as boolean);
-  const [ready, setReady] = useState(false);
-
-  // Todos os hooks ANTES de qualquer return condicional
-  useEffect(() => {
-    const unsub = storePersist.onFinishHydration(() => setHydrated(true));
-    return unsub;
-  }, []);
-
-  // ready=true só após o primeiro render completo, garantindo que o navigator montou
-  useEffect(() => { setReady(true); }, []);
-
   useEffect(() => {
     if (Platform.OS === 'android') {
-      NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('inset-touch');
+      NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+      NavigationBar.setBehaviorAsync('inset-touch').catch(() => {});
     }
   }, []);
 
   const isGameInProgress = gameLog.length > 0 || players.some(p => p.hand.length !== 11);
-
-  if (!ready || !hydrated) return null;
-  if (isGameInProgress) return <Redirect href="/(tabs)/explore" />;
 
   const handleStart = () => {
     startNewGame(targetScore, difficulty, gameMode);

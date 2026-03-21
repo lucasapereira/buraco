@@ -14,8 +14,10 @@ interface HandProps {
 export const Hand = ({
   cards, selectedCards, onToggleCard, isHidden = false, highlightCardId
 }: HandProps) => {
-  const { width: SCREEN_WIDTH } = useWindowDimensions();
-  const cardWidth = 60;
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const cardScale = SCREEN_WIDTH >= 600 ? Math.min(SCREEN_WIDTH / 600, SCREEN_HEIGHT / 750, 1.4) : 1.0;
+  const cardWidth = Math.round(60 * cardScale);
+  const containerHeight = Math.round(93 * cardScale);
   const availableWidth = SCREEN_WIDTH - 40;
   const totalCardsWidth = cards.length * cardWidth;
   const overlap = cards.length > 1
@@ -24,7 +26,7 @@ export const Hand = ({
   const needsScroll = totalCardsWidth + overlap * (cards.length - 1) > availableWidth;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { height: containerHeight }]}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}

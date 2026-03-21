@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Card as CardType } from '../game/deck';
 
 interface CardProps {
@@ -12,8 +12,15 @@ interface CardProps {
 }
 
 export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = false, small = false, style }) => {
-  const w = small ? 50 : 60;
-  const h = small ? 72 : 86;
+  const { width, height } = useWindowDimensions();
+  // Limita pelo menor entre largura e altura para não crescer demais em landscape
+  const cardScale = width >= 600 ? Math.min(width / 600, height / 750, 1.4) : 1.0;
+  const w = Math.round((small ? 50 : 60) * cardScale);
+  const h = Math.round((small ? 72 : 86) * cardScale);
+  const valFontSize = Math.round((small ? 22 : 26) * cardScale);
+  const suitSmFontSize = Math.round((small ? 14 : 12) * cardScale);
+  const suitBigFontSize = Math.round((small ? 28 : 33) * cardScale);
+  const suitSmMargin = -Math.round(5 * cardScale);
 
   if (isHidden) {
     return (
@@ -22,7 +29,7 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
         onPress={onPress}
         style={[styles.card, styles.hiddenCard, { width: w, height: h }]}
       >
-        <Text style={[styles.hiddenText, small && { fontSize: 13 }]}>🂠</Text>
+        <Text style={[styles.hiddenText, { fontSize: Math.round(26 * cardScale) }]}>🂠</Text>
       </TouchableOpacity>
     );
   }
@@ -63,17 +70,17 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
         </View>
       )}
       <View style={styles.topCorner}>
-        <Text style={[styles.value, { color }, small && { fontSize: 22 }]}>{getDisplayValue()}</Text>
-        <Text style={[styles.suitSmall, { color }, small && { fontSize: 14, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.value, { color, fontSize: valFontSize }]}>{getDisplayValue()}</Text>
+        <Text style={[styles.suitSmall, { color, fontSize: suitSmFontSize, marginTop: suitSmMargin }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
       <View style={styles.centerBox}>
-        <Text style={[styles.suitBig, { color }, small && { fontSize: 28 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.suitBig, { color, fontSize: suitBigFontSize }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
       <View style={styles.bottomCorner}>
-        <Text style={[styles.value, { color }, small && { fontSize: 22 }]}>{getDisplayValue()}</Text>
-        <Text style={[styles.suitSmall, { color }, small && { fontSize: 14, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
+        <Text style={[styles.value, { color, fontSize: valFontSize }]}>{getDisplayValue()}</Text>
+        <Text style={[styles.suitSmall, { color, fontSize: suitSmFontSize, marginTop: suitSmMargin }]}>{suitSymbols[card.suit]}</Text>
       </View>
     </TouchableOpacity>
   );
