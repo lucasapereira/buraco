@@ -579,13 +579,25 @@ export function useBotAI() {
 
         if (card.isJoker) {
           if (game.some(c => c.isJoker)) continue; // Já tem curinga
-          if (difficulty === 'easy') continue; // Fácil não usa curinga pra estender
-          if (difficulty === 'hard') {
-            // Em araujo_pereira, trincas aceitam curinga a partir de 3 cartas (qualquer jogo válido)
-            // pois qualquer naipe serve — mais fácil completar canastra
+          if (difficulty === 'easy') continue; // Fácil nunca suja
+
+          if (freshState.gameMode === 'classic') {
+            // No clássico, sujar é arriscado: sem canastra limpa separada, você pode ficar travado.
+            // Só suja se o time já tem uma canastra limpa em OUTRO jogo (garantia de poder bater),
+            // ou se esse jogo está a 1 carta de virar canastra (6+ → curinga fecha os 7).
+            const otherGames = freshState.teams[bot.teamId].games.filter((_, i) => i !== gi);
+            const hasCleanCanastaElsewhere = otherGames.some(
+              g => g.length >= 7 && checkCanasta(g) === 'clean'
+            );
+            const closingCanasta = game.length >= 6; // curinga fecha os 7
+            if (!hasCleanCanastaElsewhere && !closingCanasta) continue;
+          } else {
+            // Araujo Pereira: qualquer canastra conta → pode sujar mais livremente
             const gNormal = game.filter(c => !c.isJoker);
-            const isTrinca = freshState.gameMode === 'araujo_pereira' && gNormal.length > 0 && gNormal.every(c => c.value === gNormal[0].value);
-            const minLen = isTrinca ? 3 : 4;
+            const isTrinca = gNormal.length > 0 && gNormal.every(c => c.value === gNormal[0].value);
+            const minLen = isTrinca
+              ? (difficulty === 'hard' ? 3 : 4)
+              : (difficulty === 'hard' ? 4 : 5);
             if (game.length < minLen) continue;
           }
         }

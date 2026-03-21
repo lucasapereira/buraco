@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { BotDifficulty, GameMode } from '../../game/engine';
 import { Platform } from 'react-native';
@@ -45,25 +45,30 @@ export default function HomeScreen() {
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
 
-  // Verifica se há um jogo em andamento (qualquer evento no log ou se o jogador já mudou a mão)
-  const isGameInProgress = gameLog.length > 0 || players.some(p => p.hand.length !== 11);
-
-  // Aguarda a hidratação do AsyncStorage completar antes de decidir onde navegar.
-  // Sem isso, o estado inicial (jogo zerado) é lido antes de carregar o save,
-  // e o redirect nunca acontece ao girar o tablet ou reabrir o app.
   const storePersist = (useGameStore as any).persist;
   const [hydrated, setHydrated] = useState(() => storePersist.hasHydrated() as boolean);
+  const [ready, setReady] = useState(false);
+
+  // Todos os hooks ANTES de qualquer return condicional
   useEffect(() => {
     const unsub = storePersist.onFinishHydration(() => setHydrated(true));
     return unsub;
   }, []);
 
+  // ready=true só após o primeiro render completo, garantindo que o navigator montou
+  useEffect(() => { setReady(true); }, []);
+
   useEffect(() => {
-    if (!hydrated) return;
-    if (isGameInProgress) {
-      router.replace('/(tabs)/explore' as any);
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('inset-touch');
     }
-  }, [hydrated]);
+  }, []);
+
+  const isGameInProgress = gameLog.length > 0 || players.some(p => p.hand.length !== 11);
+
+  if (!ready || !hydrated) return null;
+  if (isGameInProgress) return <Redirect href="/(tabs)/explore" />;
 
   const handleStart = () => {
     startNewGame(targetScore, difficulty, gameMode);
@@ -73,13 +78,6 @@ export default function HomeScreen() {
   const handleContinue = () => {
     router.replace('/(tabs)/explore' as any);
   };
-
-  useEffect(() => {
-    if (Platform.OS === 'android') {
-      NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('inset-touch');
-    }
-  }, []);
 
   return (
     <View style={styles.container}>

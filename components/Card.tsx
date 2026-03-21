@@ -57,6 +57,11 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
         style,
       ]}
     >
+      {selected && (
+        <View style={styles.selectedBadge}>
+          <Text style={styles.selectedBadgeText}>✓</Text>
+        </View>
+      )}
       <View style={styles.topCorner}>
         <Text style={[styles.value, { color }, small && { fontSize: 22 }]}>{getDisplayValue()}</Text>
         <Text style={[styles.suitSmall, { color }, small && { fontSize: 14, marginTop: -4 }]}>{suitSymbols[card.suit]}</Text>
@@ -93,14 +98,35 @@ const styles = StyleSheet.create({
   },
   selectedCard: {
     borderColor: '#FFD600',
-    borderWidth: 3,
-    backgroundColor: '#FFFFF0',
-    shadowColor: '#FFD600',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 8,
-    transform: [{ scale: 1.05 }],
+    borderWidth: 4,
+    backgroundColor: '#FFFDE7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 16,
+    transform: [{ scale: 1.1 }, { translateY: -10 }],
+  },
+  selectedBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#1565C0',
+    borderRadius: 12,
+    width: 22,
+    height: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+    borderWidth: 2,
+    borderColor: '#fff',
+    elevation: 20,
+  },
+  selectedBadgeText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 15,
   },
   hiddenCard: {
     backgroundColor: '#1565C0',
