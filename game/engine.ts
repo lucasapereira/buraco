@@ -26,7 +26,7 @@ export interface GameEvent {
   id: number;
   playerId: PlayerId;
   playerName: string;
-  type: 'draw_deck' | 'draw_pile' | 'discard' | 'play_cards' | 'add_to_game' | 'got_dead' | 'morto_to_deck' | 'round_end';
+  type: 'draw_deck' | 'draw_pile' | 'discard' | 'play_cards' | 'add_to_game' | 'got_dead' | 'morto_to_deck' | 'round_end' | 'player_left';
   message: string;
   cardLabel?: string; // ex: "7♠" para discard
   timestamp: number;

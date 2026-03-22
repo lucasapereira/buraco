@@ -26,6 +26,7 @@ interface GameActions {
   playCards: (playerId: PlayerId, cardIds: string[]) => boolean;
   addToExistingGame: (playerId: PlayerId, cardIds: string[], gameIndex: number) => boolean;
   undoLastPlay: (playerId: PlayerId) => boolean;
+  applyRemoteState: (remoteState: Record<string, unknown>) => void;
 }
 
 let eventCounter = 0;
@@ -158,6 +159,34 @@ export const useGameStore = create<GameState & GameActions>()(
   startNewGame: (targetScore = 3000, difficulty = 'medium' as BotDifficulty, gameMode = 'classic' as GameMode) => {
     eventCounter = 0;
     set(createInitialGameState(targetScore, difficulty, gameMode));
+  },
+
+  // Usado pelo modo online: aplica estado recebido do Firebase
+  applyRemoteState: (remoteState: Record<string, unknown>) => {
+    const { animatingDrawPlayerId, animatingDiscard, _writerUid, ...rest } = remoteState as any;
+    // Firebase converte arrays vazios em null — restaura os campos críticos
+    if (rest.teams) {
+      for (const teamId of ['team-1', 'team-2']) {
+        if (rest.teams[teamId]) {
+          const t = rest.teams[teamId];
+          t.games = Array.isArray(t.games) ? t.games.map((g: any) => g ?? []) : [];
+        }
+      }
+    }
+    if (Array.isArray(rest.players)) {
+      rest.players = rest.players.map((p: any) => ({ ...p, hand: p?.hand ?? [] }));
+    }
+    rest.discardPile      = rest.discardPile      ?? [];
+    rest.deck             = rest.deck             ?? [];
+    rest.gameLog          = rest.gameLog          ?? [];
+    rest.turnHistory      = rest.turnHistory      ?? [];
+    rest.discardedCardHistory = rest.discardedCardHistory ?? [];
+    if (Array.isArray(rest.deads)) {
+      rest.deads = rest.deads.map((d: any) => d ?? []);
+    } else {
+      rest.deads = [[], []];
+    }
+    set(rest);
   },
 
   startNewRound: () => {

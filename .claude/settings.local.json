@@ -4,7 +4,15 @@
       "Bash(node -e \"const p = require\\(''./node_modules/@react-native-async-storage/async-storage/package.json''\\); console.log\\(p.version\\)\")",
       "Bash(xargs ls:*)",
       "Bash(find /Users/lucasaraujopereira/buraco -type f -name *.ts -o -name *.tsx)",
-      "Bash(npx expo:*)"
+      "Bash(npx expo:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"const f = require\\(''''./node_modules/firebase/auth''''\\); console.log\\(Object.keys\\(f\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''''persist''''\\) || k.toLowerCase\\(\\).includes\\(''''native''''\\)\\)\\)\")",
+      "Bash(file:*)",
+      "Bash(ffmpeg -version)",
+      "Bash(python3:*)",
+      "Bash(./gradlew clean:*)",
+      "Bash(./gradlew assembleDebug)"
     ]
   }
 }

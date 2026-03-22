@@ -18,11 +18,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card } from '../../components/Card';
 import { EventBanner } from '../../components/EventBanner';
 import { Hand } from '../../components/Hand';
+import { AchievementToast } from '../../components/AchievementToast';
 import { calculateCardPoints, calculateLiveScore } from '../../game/engine';
 import { canTakePile, checkCanasta, validateSequence } from '../../game/rules';
+import { ACHIEVEMENTS } from '../../game/achievements';
 import { useBotAI } from '../../hooks/useBotAI';
 import { useGameSounds } from '../../hooks/useGameSounds';
+import { useOnlineSync } from '../../hooks/useOnlineSync';
 import { useGameStore } from '../../store/gameStore';
+import { useStatsStore } from '../../store/statsStore';
+import { useOnlineStore, SEAT_PLAYER_IDS, TEAM_OF_SEAT } from '../../store/onlineStore';
 import { cardLabel } from '../../game/deck';
 
 
@@ -40,11 +45,67 @@ export default function GameScreen() {
     turnHistory, undoLastPlay
   } = useGameStore();
 
+  // ── Modo Online ────────────────────────────────────────────────────────────
+  const { mySeat, roomStatus, seats } = useOnlineStore();
+  const isOnlineMode = roomStatus === 'playing';
+  // Em modo offline sempre sou 'user' (seat 0); online, uso o assento atribuído
+  const myPlayerId = isOnlineMode && mySeat !== null ? SEAT_PLAYER_IDS[mySeat] : 'user';
+  const myTeamId   = isOnlineMode && mySeat !== null ? TEAM_OF_SEAT[mySeat] : 'team-1';
+  const opTeamId   = myTeamId === 'team-1' ? 'team-2' : 'team-1';
+  // Bot AI: offline = sempre. Online = só o host (seat 0) roda os bots.
+  const botAIDisabled = isOnlineMode && mySeat !== 0;
+  // IDs de jogadores humanos (não devem ser controlados pelo bot AI)
+  // Se seats ainda não foi populado (tudo null), usa fallback ['user'] para não correr o bot pelo humano
+  const humanPlayerIds = isOnlineMode && seats.some(s => s !== null)
+    ? seats.map((s, idx) => s !== null ? SEAT_PLAYER_IDS[idx] : null).filter(Boolean) as string[]
+    : ['user'];
+
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [showMenu, setShowMenu] = useState(false);
   const [tempOpenGame, setTempOpenGame] = useState<{ teamId: string; index: number } | null>(null);
   const router = useRouter();
   const { playSound } = useGameSounds();
+  const { recordRound, newlyUnlocked, shiftNewlyUnlocked } = useStatsStore();
+  const roundRecorded = useRef(false);
+  const prevSeatsRef = useRef(seats);
+
+  // Sincronização Firebase ↔ gameStore (não faz nada em modo offline)
+  useOnlineSync();
+
+  // Detecta jogador que saiu no meio do jogo online
+  useEffect(() => {
+    if (!isOnlineMode) return;
+    const prevSeats = prevSeatsRef.current;
+    seats.forEach((seat, idx) => {
+      if (prevSeats[idx] !== null && seat === null) {
+        const playerId = SEAT_PLAYER_IDS[idx];
+        const playerName = prevSeats[idx]?.name ?? playerId;
+        const botName = `Bot ${idx + 1}`;
+        useGameStore.setState(state => ({
+          players: state.players.map(p =>
+            p.id === playerId ? { ...p, name: botName } : p
+          ),
+          gameLog: [
+            ...state.gameLog.slice(-19),
+            {
+              id: Date.now(),
+              playerId,
+              playerName,
+              type: 'player_left' as const,
+              message: `${playerName} saiu. ${botName} assumiu.`,
+              timestamp: Date.now(),
+            },
+          ],
+        }));
+      }
+    });
+    prevSeatsRef.current = seats;
+  }, [seats, isOnlineMode]);
+
+  // Toast de conquistas
+  const currentToastAchievement = newlyUnlocked.length > 0
+    ? ACHIEVEMENTS.find(a => a.id === newlyUnlocked[0]) ?? null
+    : null;
 
   // === EFEITOS SONOROS ===
   const prevDeadsLength = useRef(2);
@@ -76,13 +137,54 @@ export default function GameScreen() {
 
   const prevTurnPlayer = useRef<string | null>(null);
   useEffect(() => {
-    if (currentTurnPlayerId === 'user' && currentTurnPlayerId !== prevTurnPlayer.current) {
+    if (currentTurnPlayerId === myPlayerId && currentTurnPlayerId !== prevTurnPlayer.current) {
       playSound('turno');
     }
     prevTurnPlayer.current = currentTurnPlayerId;
   }, [currentTurnPlayerId, playSound]);
 
-  useBotAI();
+  // ── Registrar estatísticas quando a rodada termina ──────────────────────
+  useEffect(() => {
+    if (!roundOver) {
+      roundRecorded.current = false;
+      return;
+    }
+    if (roundRecorded.current) return;
+    roundRecorded.current = true;
+
+    // Canastas do meu time nesta rodada
+    let cleanCanastas = 0, dirtyCanastas = 0, canastas500 = 0, canastas1000 = 0;
+    for (const game of teams[myTeamId].games) {
+      const ct = checkCanasta(game);
+      if (ct === 'clean') {
+        if (game.length >= 14) canastas1000++;
+        else if (game.length >= 13) canastas500++;
+        else cleanCanastas++;
+      } else if (ct === 'dirty') {
+        dirtyCanastas++;
+      }
+    }
+
+    // O meu jogador foi quem bateu?
+    const lastRoundEnd = gameLog.slice().reverse().find(e => e.type === 'round_end');
+    const userBated = (lastRoundEnd?.playerId === myPlayerId) && (lastRoundEnd?.message?.includes('BATEU') ?? false);
+
+    recordRound({
+      matchEnded: winnerTeamId !== null,
+      matchWon: winnerTeamId === myTeamId,
+      myRoundScore: teams[myTeamId].score,
+      myMatchScore: matchScores[myTeamId],
+      theirMatchScore: matchScores[opTeamId],
+      cleanCanastas,
+      dirtyCanastas,
+      canastas500,
+      canastas1000,
+      userBated,
+      difficulty: botDifficulty,
+    });
+  }, [roundOver]);
+
+  useBotAI({ disabled: botAIDisabled, humanPlayerIds });
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -91,7 +193,7 @@ export default function GameScreen() {
     }
   }, []);
 
-  const user = players.find(p => p.id === 'user');
+  const user = players.find(p => p.id === myPlayerId);
   if (!user) {
     return (
       <View style={styles.container}>
@@ -100,9 +202,9 @@ export default function GameScreen() {
     );
   }
 
-  const isMyTurn = currentTurnPlayerId === 'user';
-  const myTeamGames = teams['team-1'].games;
-  const opTeamGames = teams['team-2'].games;
+  const isMyTurn = currentTurnPlayerId === myPlayerId;
+  const myTeamGames = teams[myTeamId].games;
+  const opTeamGames = teams[opTeamId].games;
 
   // === HANDLERS ===
   const handleToggleCard = (cardId: string) => {
@@ -122,7 +224,7 @@ export default function GameScreen() {
       return;
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    drawFromDeck('user');
+    drawFromDeck(myPlayerId);
   };
 
   const handlePileClick = () => {
@@ -149,7 +251,7 @@ export default function GameScreen() {
       return;
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    drawFromPile('user');
+    drawFromPile(myPlayerId);
   };
 
   const handleDiscard = () => {
@@ -174,7 +276,7 @@ export default function GameScreen() {
 
     // Validação UX: Não permite descartar a última sem canastra/morto
     if (user.hand.length === 1) {
-      const team = teams['team-1'];
+      const team = teams[myTeamId];
       const willGetDead = !team.hasGottenDead && deads.length > 0;
       const hasCanasta = myTeamGames.some(g => {
         const type = checkCanasta(g);
@@ -191,7 +293,7 @@ export default function GameScreen() {
     }
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    discard('user', selectedCards[0]);
+    discard(myPlayerId, selectedCards[0]);
     setSelectedCards([]);
   };
 
@@ -207,7 +309,7 @@ export default function GameScreen() {
       Alert.alert('Mínimo 3 cartas', 'Selecione no mínimo 3 cartas para baixar um jogo STBL.');
       return;
     }
-    const success = playCards('user', selectedCards);
+    const success = playCards(myPlayerId, selectedCards);
     if (success) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
@@ -232,16 +334,16 @@ export default function GameScreen() {
 
     // Se NÃO tem cartas selecionadas, o objetivo é apenas ver o jogo (ZOOM)
     if (!hasSelection) {
-      setTempOpenGame({ teamId: 'team-1', index: gameIndex });
+      setTempOpenGame({ teamId: myTeamId, index: gameIndex });
       setTimeout(() => {
-        setTempOpenGame(prev => (prev?.teamId === 'team-1' && prev?.index === gameIndex) ? null : prev);
+        setTempOpenGame(prev => (prev?.teamId === myTeamId && prev?.index === gameIndex) ? null : prev);
       }, 8000);
       return;
     }
 
     // Se tem cartas selecionadas mas não é a vez do jogador, abre o ZOOM
     if (!canPlay) {
-      setTempOpenGame({ teamId: 'team-1', index: gameIndex });
+      setTempOpenGame({ teamId: myTeamId, index: gameIndex });
       return;
     }
 
@@ -254,22 +356,22 @@ export default function GameScreen() {
     }
 
     // Tenta adicionar
-    const success = addToExistingGame('user', selectedCards, gameIndex);
+    const success = addToExistingGame(myPlayerId, selectedCards, gameIndex);
     if (success) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
       // SUCESSO: Não abre o modal, para o jogador ver a carta entrando no jogo
     } else {
       // Se falhou, verifica o motivo para dar um feedback melhor
-      const player = players.find(p => p.id === 'user');
+      const player = players.find(p => p.id === myPlayerId);
       if (player) {
         const selCards = player.hand.filter(c => selectedCards.includes(c.id));
-        const combined = [...teams['team-1'].games[gameIndex], ...selCards];
+        const combined = [...myTeamGames[gameIndex], ...selCards];
         const fits = validateSequence(combined, gameMode);
-        
+
         if (!fits) {
           // Se falhou por regra do jogo, abre o ZOOM para o jogador conferir o jogo e entender o erro
-          setTempOpenGame({ teamId: 'team-1', index: gameIndex });
+          setTempOpenGame({ teamId: myTeamId, index: gameIndex });
           Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
         } else {
           // Encaixa, mas o store recusou (provavelmente "wouldStrandPlayer")
@@ -281,9 +383,9 @@ export default function GameScreen() {
 
   const handleOpenOpponentGame = (idx: number) => {
     // Abre qualquer jogo do adversário para ver melhor
-    setTempOpenGame({ teamId: 'team-2', index: idx });
+    setTempOpenGame({ teamId: opTeamId, index: idx });
     setTimeout(() => {
-      setTempOpenGame(prev => (prev?.teamId === 'team-2' && prev?.index === idx) ? null : prev);
+      setTempOpenGame(prev => (prev?.teamId === opTeamId && prev?.index === idx) ? null : prev);
     }, 8000);
   };
 
@@ -354,18 +456,18 @@ export default function GameScreen() {
   const phaseLabel = turnPhase === 'draw' ? '🃏 COMPRE' : '🎴 JOGUE/DESCARTE';
   const phaseColor = turnPhase === 'draw' ? '#FF9800' : '#4CAF50';
 
-  // Placar acumulado
-  const myAccum = matchScores['team-1'];
-  const opAccum = matchScores['team-2'];
+  // Placar acumulado (relativo ao meu time)
+  const myAccum = matchScores[myTeamId];
+  const opAccum = matchScores[opTeamId];
   // Pontos vivos da rodada (jogos já na mesa)
-  const myLive = calculateLiveScore(teams['team-1']);
-  const opLive = calculateLiveScore(teams['team-2']);
+  const myLive = calculateLiveScore(teams[myTeamId]);
+  const opLive = calculateLiveScore(teams[opTeamId]);
   // Penalidade estimada das cartas na mão
   const myHandPenalty = players
-    .filter(p => p.teamId === 'team-1')
+    .filter(p => p.teamId === myTeamId)
     .reduce((sum, p) => sum + p.hand.reduce((s, c) => s + calculateCardPoints(c), 0), 0);
   const opHandPenalty = players
-    .filter(p => p.teamId === 'team-2')
+    .filter(p => p.teamId === opTeamId)
     .reduce((sum, p) => sum + p.hand.reduce((s, c) => s + calculateCardPoints(c), 0), 0);
 
   // Informações da batida para exibição no breakdown
@@ -378,8 +480,8 @@ export default function GameScreen() {
   // Se a rodada acabou, matchScores já contém o total atualizado, não precisa somar o live
   const myTotal = roundOver ? myAccum : myAccum + myLive;
   const opTotal = roundOver ? opAccum : opAccum + opLive;
-  const myRodadaDisplay = roundOver ? teams['team-1'].score : myLive;
-  const opRodadaDisplay = roundOver ? teams['team-2'].score : opLive;
+  const myRodadaDisplay = roundOver ? teams[myTeamId].score : myLive;
+  const opRodadaDisplay = roundOver ? teams[opTeamId].score : opLive;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -388,7 +490,11 @@ export default function GameScreen() {
       <View style={styles.header}>
         {/* ☰ + NÓS lado esquerdo */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuBtn}>
+          <TouchableOpacity
+            onPress={() => setShowMenu(true)}
+            style={styles.menuBtn}
+            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          >
             <Text style={styles.menuBtnText}>☰</Text>
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
@@ -549,15 +655,11 @@ export default function GameScreen() {
                     {/* STATUS BAR DOS JOGADORES */}
                     <View style={styles.statusBar}>
                       {players.map(p => {
-                        let shortName = p.name;
-                        if (p.id === 'bot-1') shortName = 'Adv 1';
-                        if (p.id === 'bot-2') shortName = 'Parc';
-                        if (p.id === 'bot-3') shortName = 'Adv 2';
-                        if (p.id === 'user') shortName = 'Você';
+                        const shortName = p.name.length > 7 ? p.name.slice(0, 7) + '.' : p.name;
 
                         return (
                           <View key={p.id}>
-                            <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale) }, p.id === 'user' && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
+                            <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale) }, p.id === myPlayerId && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
                               <Text style={[styles.statusName, { fontSize: Math.round(11 * scale) }]}>{shortName}</Text>
                               <Text style={[styles.statusCards, { fontSize: Math.round(13 * scale) }]}>
                                 {p.hand.length} 🎴 {teams[p.teamId].hasGottenDead ? '💀' : ''}
@@ -723,7 +825,7 @@ export default function GameScreen() {
                 style={styles.undoButtonInline}
                 onPress={() => {
                   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                  undoLastPlay('user');
+                  undoLastPlay(myPlayerId);
                   setSelectedCards([]);
                 }}
                 activeOpacity={0.7}
@@ -829,11 +931,11 @@ export default function GameScreen() {
         <TouchableOpacity style={styles.expandedOverlay} activeOpacity={1} onPress={() => setTempOpenGame(null)}>
           <View style={styles.expandedBox}>
             <Text style={styles.expandedTitle}>
-              {tempOpenGame?.teamId === 'team-1' ? 'Nosso Jogo' : 'Jogo Adversário'}
+              {tempOpenGame?.teamId === myTeamId ? 'Nosso Jogo' : 'Jogo Adversário'}
             </Text>
             <View style={styles.expandedContent}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.expandedCardsScroll}>
-                {tempOpenGame && (tempOpenGame.teamId === 'team-1' ? teams['team-1'].games : teams['team-2'].games)[tempOpenGame.index].map((c) => (
+                {tempOpenGame && (teams[tempOpenGame.teamId as 'team-1' | 'team-2']?.games ?? [])[tempOpenGame.index]?.map((c) => (
                   <View key={c.id} style={styles.expandedCardWrapper}>
                     <Card card={c} />
                   </View>
@@ -852,7 +954,7 @@ export default function GameScreen() {
             {/* Título */}
             <Text style={styles.modalTitle}>
               {winnerTeamId
-                ? (winnerTeamId === 'team-1' ? '🏆 VOCÊ VENCEU A PARTIDA!' : '😢 Adversários venceram!')
+                ? (winnerTeamId === myTeamId ? '🏆 VOCÊ VENCEU A PARTIDA!' : '😢 Adversários venceram!')
                 : 'Rodada Encerrada'
               }
             </Text>
@@ -867,31 +969,31 @@ export default function GameScreen() {
             {/* Breakdown Nós */}
             <View style={styles.modalTeamBlock}>
               <Text style={styles.modalTeamTitle}>🟢 Nossa equipe</Text>
-              <Text style={styles.modalScoreRow}>Jogos na mesa: +{calculateLiveScore(teams['team-1'])}</Text>
+              <Text style={styles.modalScoreRow}>Jogos na mesa: +{calculateLiveScore(teams[myTeamId])}</Text>
               <Text style={styles.modalScoreRow}>Penalidade mão: -{myHandPenalty}</Text>
-              {hitterTeamId === 'team-1' && (
+              {hitterTeamId === myTeamId && (
                 <Text style={[styles.modalScoreRow, { color: '#B9F6CA' }]}>Batida: +100</Text>
               )}
-              {!teams['team-1'].hasGottenDead && (
+              {!teams[myTeamId].hasGottenDead && (
                 <Text style={[styles.modalScoreRow, { color: '#FF8A80' }]}>Não pegou morto: -100</Text>
               )}
-              <Text style={styles.modalScoreRow}>Esta rodada: {teams['team-1'].score}</Text>
-              <Text style={styles.modalScoreTotal}>Total: {matchScores['team-1']}</Text>
+              <Text style={styles.modalScoreRow}>Esta rodada: {teams[myTeamId].score}</Text>
+              <Text style={styles.modalScoreTotal}>Total: {matchScores[myTeamId]}</Text>
             </View>
 
             {/* Breakdown Eles */}
             <View style={styles.modalTeamBlock}>
               <Text style={styles.modalTeamTitle}>🔴 Equipe adversária</Text>
-              <Text style={styles.modalScoreRow}>Jogos na mesa: +{calculateLiveScore(teams['team-2'])}</Text>
+              <Text style={styles.modalScoreRow}>Jogos na mesa: +{calculateLiveScore(teams[opTeamId])}</Text>
               <Text style={styles.modalScoreRow}>Penalidade mão: -{opHandPenalty}</Text>
-              {hitterTeamId === 'team-2' && (
+              {hitterTeamId === opTeamId && (
                 <Text style={[styles.modalScoreRow, { color: '#B9F6CA' }]}>Batida: +100</Text>
               )}
-              {!teams['team-2'].hasGottenDead && (
+              {!teams[opTeamId].hasGottenDead && (
                 <Text style={[styles.modalScoreRow, { color: '#FF8A80' }]}>Não pegou morto: -100</Text>
               )}
-              <Text style={styles.modalScoreRow}>Esta rodada: {teams['team-2'].score}</Text>
-              <Text style={styles.modalScoreTotal}>Total: {matchScores['team-2']}</Text>
+              <Text style={styles.modalScoreRow}>Esta rodada: {teams[opTeamId].score}</Text>
+              <Text style={styles.modalScoreTotal}>Total: {matchScores[opTeamId]}</Text>
             </View>
 
             <Text style={styles.modalTarget}>Meta: {targetScore} pontos</Text>
@@ -908,6 +1010,12 @@ export default function GameScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Toast de conquista */}
+      <AchievementToast
+        achievement={currentToastAchievement}
+        onDismiss={shiftNewlyUnlocked}
+      />
     </SafeAreaView>
   );
 }
@@ -1269,7 +1377,7 @@ const styles = StyleSheet.create({
   pileLabel: { color: '#E8F5E9', fontSize: 12, fontWeight: '700', marginBottom: 1 },
 
   // MENU ☰
-  menuBtn: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+  menuBtn: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   menuBtnText: { fontSize: 16, color: '#fff' },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-start', alignItems: 'flex-end', paddingTop: 80, paddingRight: 12 },
   menuBox: { backgroundColor: '#1B4A28', borderRadius: 12, padding: 8, minWidth: 200, elevation: 10 },

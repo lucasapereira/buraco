@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
+import { useStatsStore, DailyRewardInfo } from '../../store/statsStore';
+import { useOnlineStore } from '../../store/onlineStore';
 import { BotDifficulty, GameMode } from '../../game/engine';
-import { Platform } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
 import Constants from 'expo-constants';
 
 const APP_VERSION = Constants.expoConfig?.version ?? '?';
-
-
-const { width: SW } = Dimensions.get('window');
 
 const DIFFICULTIES: { key: BotDifficulty; label: string; emoji: string; desc: string; color: string }[] = [
   {
@@ -41,9 +39,12 @@ const TARGETS = [1500, 3000, 5000];
 export default function HomeScreen() {
   const router = useRouter();
   const { startNewGame, startLayoutTest, players, gameLog } = useGameStore();
+  const { level, checkDailyReward, claimDailyReward } = useStatsStore();
+  const { resetRoom, roomStatus } = useOnlineStore();
   const [difficulty, setDifficulty] = useState<BotDifficulty>('hard');
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
+  const [dailyReward, setDailyReward] = useState<DailyRewardInfo | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -52,19 +53,62 @@ export default function HomeScreen() {
     }
   }, []);
 
+  useEffect(() => {
+    const reward = checkDailyReward();
+    if (reward.available) setDailyReward(reward);
+  }, []);
+
   const isGameInProgress = gameLog.length > 0 || players.some(p => p.hand.length !== 11);
 
   const handleStart = () => {
+    if (roomStatus !== 'idle') resetRoom();
     startNewGame(targetScore, difficulty, gameMode);
     router.replace('/(tabs)/explore' as any);
   };
 
   const handleContinue = () => {
+    if (roomStatus !== 'idle') resetRoom();
     router.replace('/(tabs)/explore' as any);
   };
 
   return (
     <View style={styles.container}>
+      {/* Modal Recompensa Diária */}
+      <Modal visible={!!dailyReward} transparent animationType="fade">
+        <View style={styles.dailyOverlay}>
+          <View style={styles.dailyBox}>
+            <Text style={styles.dailyEmoji}>🎁</Text>
+            <Text style={styles.dailyTitle}>Recompensa Diária!</Text>
+            <Text style={styles.dailyStreak}>
+              {dailyReward && dailyReward.streakDays > 1
+                ? `🔥 ${dailyReward.streakDays} dias seguidos!`
+                : 'Bem-vindo de volta!'}
+            </Text>
+            <View style={styles.dailyXPBadge}>
+              <Text style={styles.dailyXPText}>+{dailyReward?.xp ?? 0}</Text>
+              <Text style={styles.dailyXPLabel}>XP</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.dailyBtn}
+              onPress={() => { claimDailyReward(); setDailyReward(null); }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.dailyBtnText}>RESGATAR</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Botão de Perfil */}
+      <TouchableOpacity
+        style={styles.profileBtn}
+        onPress={() => router.replace('/(tabs)/stats' as any)}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.profileBtnLevel}>Nv {level}</Text>
+        <Text style={styles.profileBtnIcon}>👤</Text>
+      </TouchableOpacity>
+
       {/* Título */}
       <View style={styles.titleBox}>
         <Text style={styles.title}>♠ BURACO ♠</Text>
@@ -148,6 +192,14 @@ export default function HomeScreen() {
 
       <TouchableOpacity style={styles.playBtn} onPress={handleStart} activeOpacity={0.85}>
         <Text style={styles.playText}>{isGameInProgress ? '🆕 REINICIAR' : '🃏 JOGAR'}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.playBtn, { backgroundColor: 'transparent', borderWidth: 2, borderColor: '#FFD600', marginTop: 12 }]}
+        onPress={() => router.replace('/(tabs)/online' as any)}
+        activeOpacity={0.85}
+      >
+        <Text style={[styles.playText, { color: '#FFD600' }]}>🌐 JOGAR ONLINE</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -328,5 +380,98 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1,
+  },
+
+  // Botão de perfil
+  profileBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,214,0,0.15)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,214,0,0.4)',
+  },
+  profileBtnLevel: {
+    color: '#FFD600',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  profileBtnIcon: {
+    fontSize: 16,
+  },
+
+  // Modal diário
+  dailyOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyBox: {
+    backgroundColor: '#1B5E20',
+    borderRadius: 24,
+    padding: 30,
+    alignItems: 'center',
+    width: '80%',
+    borderWidth: 2,
+    borderColor: '#FFD600',
+    shadowColor: '#FFD600',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  dailyEmoji: { fontSize: 56, marginBottom: 8 },
+  dailyTitle: {
+    color: '#FFD600',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  dailyStreak: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 15,
+    marginBottom: 20,
+  },
+  dailyXPBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,214,0,0.15)',
+    borderRadius: 16,
+    paddingHorizontal: 28,
+    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderColor: '#FFD600',
+    marginBottom: 24,
+  },
+  dailyXPText: {
+    color: '#FFD600',
+    fontSize: 40,
+    fontWeight: '900',
+    lineHeight: 44,
+  },
+  dailyXPLabel: {
+    color: '#FFD600',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
+  dailyBtn: {
+    backgroundColor: '#FFD600',
+    paddingVertical: 14,
+    paddingHorizontal: 48,
+    borderRadius: 28,
+  },
+  dailyBtnText: {
+    color: '#1B5E20',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
 });

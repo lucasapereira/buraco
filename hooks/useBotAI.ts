@@ -300,13 +300,15 @@ function shouldTakePile(
 // HOOK PRINCIPAL
 // ──────────────────────────────────────
 
-export function useBotAI() {
+export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[] } = {}) {
   const roundOver = useGameStore(s => s.roundOver);
 
   useEffect(() => {
+    if (options.disabled) return;
     const s = useGameStore.getState();
     const botId = s.currentTurnPlayerId;
-    if (botId === 'user' || roundOver) return;
+    const humanIds = options.humanPlayerIds ?? ['user'];
+    if (humanIds.includes(botId) || roundOver) return;
 
     const timer = setTimeout(() => {
       runBotTurnAsync(botId);
@@ -336,7 +338,11 @@ export function useBotAI() {
 
         animate(); // Animação de compra
         if (takePile) {
-          useGameStore.getState().drawFromPile(botId);
+          const tookPile = useGameStore.getState().drawFromPile(botId);
+          if (!tookPile) {
+            // Lixo não pôde ser pego (condição mudou) — compra do monte como fallback
+            useGameStore.getState().drawFromDeck(botId);
+          }
         } else {
           useGameStore.getState().drawFromDeck(botId);
         }
@@ -347,6 +353,9 @@ export function useBotAI() {
       }
 
       if (s.turnPhase === 'play') {
+        // Se mustPlayPileTopId está setado, a instância que fez o drawFromPile já está
+        // processando o turno (aguardando o delay de 800ms). Evita dupla execução.
+        if (useGameStore.getState().mustPlayPileTopId !== null) return;
         await doBotPlayAsync(botId);
       }
     } catch (e: any) {
@@ -489,6 +498,8 @@ export function useBotAI() {
     // 4) Fallback: impossível jogar o topo — limpa a obrigação pra não travar o bot
     useGameStore.setState({ mustPlayPileTopId: null });
   }
+
+
 
   async function doBotPlaySequencesAsync(botId: PlayerId, difficulty: BotDifficulty) {
     let playedSomething = true;
@@ -635,6 +646,11 @@ export function useBotAI() {
       return;
     }
 
+    // Garante que mustPlayPileTopId não bloqueia o descarte
+    if (s.mustPlayPileTopId !== null) {
+      useGameStore.setState({ mustPlayPileTopId: null });
+    }
+
     const bot = s.players.find(p => p.id === botId);
     if (!bot || bot.hand.length === 0) {
       // Safety net: forçar passe de turno
@@ -650,5 +666,16 @@ export function useBotAI() {
     const card = chooseBestDiscard(bot.hand, s.discardedCardHistory, s.botDifficulty, s.lastDrawnCardId, s.gameMode, teamGames, pileTopId);
     animate(); // anim do lixo
     s.discard(botId, card.id);
+
+    // Safety net: se o discard foi bloqueado (estado não mudou), força passe de turno
+    const after = useGameStore.getState();
+    if (after.currentTurnPlayerId === botId && after.turnPhase === 'play' && !after.roundOver) {
+      const { getNextPlayer } = require('../game/engine');
+      useGameStore.setState({
+        currentTurnPlayerId: getNextPlayer(botId),
+        turnPhase: 'draw' as const,
+        mustPlayPileTopId: null,
+      });
+    }
   }
 }

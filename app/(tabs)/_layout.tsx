@@ -51,6 +51,20 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: 'Stats',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="star.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="online"
+        options={{
+          title: 'Online',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="wifi" color={color} />,
+        }}
+      />
     </Tabs>
   );
 }

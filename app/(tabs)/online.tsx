@@ -1,0 +1,519 @@
+import * as NavigationBar from 'expo-navigation-bar';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { onValue, ref } from 'firebase/database';
+import { db } from '../../config/firebase';
+import { BotDifficulty, GameMode, createInitialGameState } from '../../game/engine';
+import { useGameStore } from '../../store/gameStore';
+import { useOnlineStore, SEAT_PLAYER_IDS, SeatInfo } from '../../store/onlineStore';
+
+const TEAM_LABEL: Record<number, string> = { 0: 'Time 1', 1: 'Time 2', 2: 'Time 1', 3: 'Time 2' };
+const TEAM_COLOR: Record<number, string> = { 0: '#4CAF50', 1: '#FF5252', 2: '#4CAF50', 3: '#FF5252' };
+
+export default function OnlineScreen() {
+  const router = useRouter();
+  const store = useOnlineStore();
+  const { startNewGame } = useGameStore();
+
+  const [step, setStep] = useState<'name' | 'home' | 'create' | 'lobby'>('name');
+  const [joinCode, setJoinCode] = useState('');
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const nameInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+    }
+    // Se já tem nome, vai direto para home
+    if (store.displayName.trim().length > 0) setStep('home');
+  }, []);
+
+  // Quando a sala muda para 'playing', navega para o jogo
+  useEffect(() => {
+    if (store.roomStatus === 'playing') {
+      router.replace('/(tabs)/explore' as any);
+    }
+  }, [store.roomStatus]);
+
+  // Escuta assentos e meta do Firebase enquanto estiver no lobby
+  useEffect(() => {
+    const roomCode = store.roomCode;
+    if (!roomCode || step !== 'lobby') return;
+
+    const unsubSeats = onValue(ref(db, `rooms/${roomCode}/seats`), (snap) => {
+      const raw = snap.val() ?? {};
+      const seats: (SeatInfo | null)[] = [0, 1, 2, 3].map(i => raw[i] ?? null);
+      const { applyRoomSnapshot, roomStatus, roomMode, roomTarget, roomDifficulty } = useOnlineStore.getState();
+      applyRoomSnapshot({ status: roomStatus, seats, mode: roomMode, target: roomTarget, difficulty: roomDifficulty });
+    });
+
+    const unsubMeta = onValue(ref(db, `rooms/${roomCode}/meta`), (snap) => {
+      const meta = snap.val();
+      if (!meta) return;
+      const { applyRoomSnapshot, roomMode, roomTarget, roomDifficulty, seats } = useOnlineStore.getState();
+      applyRoomSnapshot({ status: meta.status, seats, mode: meta.mode ?? roomMode, target: meta.targetScore ?? roomTarget, difficulty: meta.difficulty ?? roomDifficulty });
+    });
+
+    return () => { unsubSeats(); unsubMeta(); };
+  }, [store.roomCode, step]);
+
+  const handleSaveName = () => {
+    if (store.displayName.trim().length < 2) {
+      store.setError('Nome muito curto (mínimo 2 letras)');
+      return;
+    }
+    store.setError(null);
+    setStep('home');
+  };
+
+  const handleCreate = async () => {
+    try {
+      await store.createRoom();
+      setStep('lobby');
+    } catch (_) {}
+  };
+
+  const handleJoin = async () => {
+    if (joinCode.trim().length < 4) {
+      store.setError('Código inválido');
+      return;
+    }
+    try {
+      await store.joinRoom(joinCode.trim());
+      setStep('lobby');
+    } catch (_) {}
+  };
+
+  const handleLeave = async () => {
+    await store.leaveRoom();
+    setStep('home');
+  };
+
+  const handleStartGame = async () => {
+    // Host: cria o estado inicial e envia pro Firebase
+    const { roomMode, roomTarget, roomDifficulty, seats } = store;
+    const initialState = createInitialGameState(roomTarget, roomDifficulty, roomMode);
+
+    // Substitui os nomes dos players pelos nomes reais das pessoas na sala
+    initialState.players = initialState.players.map((p, idx) => {
+      const seat = seats[idx];
+      return { ...p, name: seat?.name ?? p.name };
+    });
+
+    // Aplica localmente com nomes reais (bots recebem nome genérico)
+    startNewGame(roomTarget, roomDifficulty, roomMode);
+    const playersWithNames = useGameStore.getState().players.map((p, idx) => {
+      const seat = seats[idx];
+      return { ...p, name: seat?.name ?? `Bot ${idx + 1}` };
+    });
+    useGameStore.setState({ players: playersWithNames });
+
+    const currentState = useGameStore.getState();
+
+    // Extrai só campos de dados (exclui funções do Zustand)
+    const {
+      startNewGame: _a, startNewRound: _b, startLayoutTest: _c,
+      drawFromDeck: _d, drawFromPile: _e, discard: _f, playCards: _g,
+      addToExistingGame: _h, undoLastPlay: _i, applyRemoteState: _j,
+      animatingDrawPlayerId: _k, animatingDiscard: _l,
+      ...gameStateFields
+    } = currentState as any;
+
+    await store.startGame({ ...gameStateFields });
+  };
+
+  const filledSeats = store.seats.filter(Boolean).length;
+
+  // ── STEP: NOME ────────────────────────────────────────────────────────────
+  if (step === 'name') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centered}>
+          <Text style={styles.title}>Como você se chama?</Text>
+          <Text style={styles.subtitle}>Aparecerá para os outros jogadores</Text>
+          <TextInput
+            ref={nameInputRef}
+            style={styles.nameInput}
+            value={store.displayName}
+            onChangeText={store.setDisplayName}
+            placeholder="Seu nome"
+            placeholderTextColor="rgba(255,255,255,0.3)"
+            maxLength={16}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={handleSaveName}
+          />
+          {store.error && <Text style={styles.errorText}>{store.error}</Text>}
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveName} activeOpacity={0.85}>
+            <Text style={styles.primaryBtnText}>CONTINUAR →</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.backLink} onPress={() => router.replace('/(tabs)' as any)}>
+            <Text style={styles.backLinkText}>← Voltar</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── STEP: HOME ────────────────────────────────────────────────────────────
+  if (step === 'home') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centered}>
+          <Text style={styles.title}>Jogar Online</Text>
+          <Text style={styles.playerName}>👤 {store.displayName}</Text>
+          <TouchableOpacity
+            style={styles.nameEditBtn}
+            onPress={() => setStep('name')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.nameEditText}>Mudar nome</Text>
+          </TouchableOpacity>
+
+          <View style={styles.homeButtons}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => setStep('create')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.primaryBtnText}>🏠 CRIAR SALA</Text>
+            </TouchableOpacity>
+
+            <View style={styles.joinRow}>
+              <TextInput
+                style={styles.joinInput}
+                value={joinCode}
+                onChangeText={v => setJoinCode(v.toUpperCase())}
+                placeholder="Código da sala"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                maxLength={6}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                style={[styles.joinBtn, store.isLoading && styles.btnDisabled]}
+                onPress={handleJoin}
+                disabled={store.isLoading}
+                activeOpacity={0.85}
+              >
+                {store.isLoading
+                  ? <ActivityIndicator color="#1B5E20" />
+                  : <Text style={styles.joinBtnText}>ENTRAR</Text>}
+              </TouchableOpacity>
+            </View>
+
+            {store.error && <Text style={styles.errorText}>{store.error}</Text>}
+          </View>
+
+          <TouchableOpacity style={styles.backLink} onPress={() => router.replace('/(tabs)' as any)}>
+            <Text style={styles.backLinkText}>← Menu principal</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── STEP: CONFIGURAR SALA (host) ──────────────────────────────────────────
+  if (step === 'create') {
+    const { roomMode, roomTarget, roomDifficulty } = store;
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <Text style={styles.title}>Configurar Sala</Text>
+
+          <Text style={styles.sectionLabel}>Modo de Jogo</Text>
+          <View style={styles.optionRow}>
+            {(['classic', 'araujo_pereira'] as GameMode[]).map(m => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.optionBtn, roomMode === m && styles.optionBtnActive]}
+                onPress={() => store.setRoomSettings(m, roomTarget, roomDifficulty)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.optionText, roomMode === m && styles.optionTextActive]}>
+                  {m === 'classic' ? 'Clássico' : 'Buraco Mole'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.sectionLabel}>Meta de Pontos</Text>
+          <View style={styles.optionRow}>
+            {[1500, 3000, 5000].map(t => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.optionBtn, roomTarget === t && styles.optionBtnActive]}
+                onPress={() => store.setRoomSettings(roomMode, t, roomDifficulty)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.optionText, roomTarget === t && styles.optionTextActive]}>
+                  {t.toLocaleString()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.sectionLabel}>Dificuldade dos Bots</Text>
+          <View style={styles.optionRow}>
+            {(['easy', 'medium', 'hard'] as BotDifficulty[]).map(d => (
+              <TouchableOpacity
+                key={d}
+                style={[styles.optionBtn, roomDifficulty === d && styles.optionBtnActive]}
+                onPress={() => store.setRoomSettings(roomMode, roomTarget, d)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.optionText, roomDifficulty === d && styles.optionTextActive]}>
+                  {d === 'easy' ? 'Fácil' : d === 'medium' ? 'Médio' : 'Difícil'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {store.error && <Text style={styles.errorText}>{store.error}</Text>}
+
+          <TouchableOpacity
+            style={[styles.primaryBtn, store.isLoading && styles.btnDisabled]}
+            onPress={handleCreate}
+            disabled={store.isLoading}
+            activeOpacity={0.85}
+          >
+            {store.isLoading
+              ? <ActivityIndicator color="#1B5E20" />
+              : <Text style={styles.primaryBtnText}>CRIAR SALA →</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.backLink} onPress={() => setStep('home')}>
+            <Text style={styles.backLinkText}>← Voltar</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── STEP: LOBBY (aguardando jogadores) ────────────────────────────────────
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.centered}>
+        {/* Código da sala */}
+        <Text style={styles.sectionLabel}>Código da Sala</Text>
+        <TouchableOpacity
+          style={styles.codeBox}
+          onPress={() => {
+            // No futuro: Clipboard.setString(store.roomCode ?? '')
+            setCopyFeedback(true);
+            setTimeout(() => setCopyFeedback(false), 1500);
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.codeText}>{store.roomCode}</Text>
+          <Text style={styles.codeCopy}>{copyFeedback ? '✓ Copiado!' : 'Toque para copiar'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.shareHint}>Compartilhe este código com seus amigos</Text>
+
+        {/* Assentos */}
+        <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Jogadores ({filledSeats}/4)</Text>
+        <View style={styles.seatsList}>
+          {[0, 1, 2, 3].map(seatIdx => {
+            const seat = store.seats[seatIdx];
+            const isMe = seatIdx === store.mySeat;
+            return (
+              <View key={seatIdx} style={[styles.seatRow, isMe && styles.seatRowMe]}>
+                <View style={[styles.seatTeamDot, { backgroundColor: TEAM_COLOR[seatIdx] }]} />
+                <View style={styles.seatInfo}>
+                  <Text style={styles.seatName}>
+                    {seat ? seat.name : SEAT_PLAYER_IDS[seatIdx].startsWith('bot') ? '🤖 Bot' : '...aguardando'}
+                    {isMe ? ' (você)' : ''}
+                  </Text>
+                  <Text style={styles.seatTeamLabel}>{TEAM_LABEL[seatIdx]}</Text>
+                </View>
+                {seat && <Text style={styles.seatConnected}>●</Text>}
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Botão Iniciar (só host) */}
+        {store.isHost && (
+          <TouchableOpacity
+            style={[styles.primaryBtn, { marginTop: 24 }, store.isLoading && styles.btnDisabled]}
+            onPress={handleStartGame}
+            disabled={store.isLoading}
+            activeOpacity={0.85}
+          >
+            {store.isLoading
+              ? <ActivityIndicator color="#1B5E20" />
+              : <Text style={styles.primaryBtnText}>
+                  {filledSeats < 2 ? 'Aguardando jogadores...' : '▶ INICIAR JOGO'}
+                </Text>}
+          </TouchableOpacity>
+        )}
+
+        {!store.isHost && (
+          <View style={styles.waitingBox}>
+            <ActivityIndicator color="#FFD600" style={{ marginRight: 10 }} />
+            <Text style={styles.waitingText}>Aguardando o host iniciar...</Text>
+          </View>
+        )}
+
+        {store.error && <Text style={styles.errorText}>{store.error}</Text>}
+
+        <TouchableOpacity style={styles.backLink} onPress={handleLeave}>
+          <Text style={styles.backLinkText}>← Sair da sala</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#1B5E20' },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  scrollContent: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 40, paddingBottom: 40 },
+
+  title: { color: '#FFD600', fontSize: 28, fontWeight: '900', letterSpacing: 2, marginBottom: 8 },
+  subtitle: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginBottom: 24 },
+  playerName: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 4 },
+
+  nameEditBtn: { marginBottom: 32 },
+  nameEditText: { color: 'rgba(255,214,0,0.7)', fontSize: 13, fontWeight: '600' },
+
+  nameInput: {
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    textAlign: 'center',
+  },
+
+  homeButtons: { width: '100%', gap: 12, marginBottom: 8 },
+
+  primaryBtn: {
+    backgroundColor: '#FFD600',
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    alignItems: 'center',
+    shadowColor: '#FFD600',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+    width: '100%',
+  },
+  primaryBtnText: { color: '#1B5E20', fontSize: 18, fontWeight: '900', letterSpacing: 2 },
+  btnDisabled: { opacity: 0.5 },
+
+  joinRow: { flexDirection: 'row', gap: 8 },
+  joinInput: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    letterSpacing: 4,
+    textAlign: 'center',
+  },
+  joinBtn: {
+    backgroundColor: '#FFD600',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    justifyContent: 'center',
+  },
+  joinBtnText: { color: '#1B5E20', fontSize: 15, fontWeight: '900' },
+
+  sectionLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  optionRow: { flexDirection: 'row', gap: 8, width: '100%', marginBottom: 20 },
+  optionBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  optionBtnActive: { backgroundColor: '#FFD600', borderColor: '#FFD600' },
+  optionText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '700' },
+  optionTextActive: { color: '#1B5E20', fontWeight: '900' },
+
+  // Lobby
+  codeBox: {
+    backgroundColor: 'rgba(255,214,0,0.12)',
+    borderRadius: 18,
+    paddingHorizontal: 32,
+    paddingVertical: 18,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFD600',
+    marginBottom: 6,
+  },
+  codeText: { color: '#FFD600', fontSize: 40, fontWeight: '900', letterSpacing: 8 },
+  codeCopy: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 },
+  shareHint: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginBottom: 4 },
+
+  seatsList: { width: '100%', gap: 8 },
+  seatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    gap: 10,
+  },
+  seatRowMe: { borderColor: 'rgba(255,214,0,0.4)', backgroundColor: 'rgba(255,214,0,0.08)' },
+  seatTeamDot: { width: 10, height: 10, borderRadius: 5 },
+  seatInfo: { flex: 1 },
+  seatName: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  seatTeamLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 1 },
+  seatConnected: { color: '#4CAF50', fontSize: 16 },
+
+  waitingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  waitingText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
+
+  errorText: { color: '#FF8A80', fontSize: 13, marginTop: 8, textAlign: 'center' },
+  backLink: { marginTop: 20 },
+  backLinkText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
+});
