@@ -31,6 +31,17 @@ import { useOnlineStore, SEAT_PLAYER_IDS, TEAM_OF_SEAT } from '../../store/onlin
 import { cardLabel } from '../../game/deck';
 
 
+/** Retorna label, emoji e chave de estilo para uma canastra */
+function getCanastaInfo(canasta: 'clean' | 'dirty' | 'none', length: number) {
+  if (canasta === 'dirty') return { label: '+100', emoji: '★', tier: 'dirty' as const };
+  if (canasta === 'clean') {
+    if (length >= 14) return { label: '+1000', emoji: '🌟', tier: 'c1000' as const };
+    if (length >= 13) return { label: '+500',  emoji: '💫', tier: 'c500'  as const };
+    return             { label: '+200',  emoji: '✨', tier: 'c200'  as const };
+  }
+  return { label: '', emoji: '', tier: 'none' as const };
+}
+
 export default function GameScreen() {
   const { width: SW, height: SH } = useWindowDimensions();
   const isLandscape = SW > SH;
@@ -598,7 +609,7 @@ export default function GameScreen() {
                             tightMode && styles.gameCardTight,
                             isLandscape && styles.gameCardLandscape,
                             styles.opponentGame,
-                            canasta !== 'none' && (canasta === 'clean' ? styles.cleanCanasta : styles.dirtyCanasta),
+                            canasta !== 'none' && styles.canastaByTier[getCanastaInfo(canasta, gameCards.length).tier],
                           ]}
                         >
                           <View pointerEvents="none" style={styles.gameCardInner}>
@@ -625,18 +636,21 @@ export default function GameScreen() {
                                   );
                                 })}
                               </View>
-                              {isCanasta && (
-                                <View pointerEvents="none" style={[styles.canastaRibbon, canasta === 'clean' ? styles.ribbonClean : styles.ribbonDirty]}>
-                                  <Text style={styles.ribbonText}>{canasta === 'clean' ? 'LIMPA' : 'SUJA'}</Text>
-                                </View>
-                              )}
+                              {isCanasta && (() => {
+                                const ci = getCanastaInfo(canasta, gameCards.length);
+                                return (
+                                  <View pointerEvents="none" style={[styles.canastaRibbon, styles.ribbonByTier[ci.tier]]}>
+                                    <Text style={styles.ribbonText}>{ci.label}</Text>
+                                  </View>
+                                );
+                              })()}
                               <View style={styles.gameCardOverlay}>
                                 <View style={[
                                   styles.counterBadgeOverlay,
-                                  isCanasta && (canasta === 'clean' ? styles.badgeClean : styles.badgeDirty)
+                                  isCanasta && styles.badgeByTier[getCanastaInfo(canasta, gameCards.length).tier]
                                 ]}>
                                   <Text style={styles.counterTextOverlay}>
-                                    {isCanasta && (canasta === 'clean' ? '✨ ' : '★ ')}
+                                    {isCanasta && (getCanastaInfo(canasta, gameCards.length).emoji + ' ')}
                                     {gameCards.length}
                                   </Text>
                                 </View>
@@ -778,18 +792,21 @@ export default function GameScreen() {
                                   );
                                 })}
                               </View>
-                              {isCanasta && (
-                                <View pointerEvents="none" style={[styles.canastaRibbon, canasta === 'clean' ? styles.ribbonClean : styles.ribbonDirty]}>
-                                  <Text style={styles.ribbonText}>{canasta === 'clean' ? 'LIMPA' : 'SUJA'}</Text>
-                                </View>
-                              )}
+                              {isCanasta && (() => {
+                                const ci = getCanastaInfo(canasta, gameCards.length);
+                                return (
+                                  <View pointerEvents="none" style={[styles.canastaRibbon, styles.ribbonByTier[ci.tier]]}>
+                                    <Text style={styles.ribbonText}>{ci.label}</Text>
+                                  </View>
+                                );
+                              })()}
                               <View style={styles.gameCardOverlay}>
                                 <View style={[
                                   styles.counterBadgeOverlay,
-                                  isCanasta && (canasta === 'clean' ? styles.badgeClean : styles.badgeDirty)
+                                  isCanasta && styles.badgeByTier[getCanastaInfo(canasta, gameCards.length).tier]
                                 ]}>
                                   <Text style={styles.counterTextOverlay}>
-                                    {isCanasta && (canasta === 'clean' ? '✨ ' : '★ ')}
+                                    {isCanasta && (getCanastaInfo(canasta, gameCards.length).emoji + ' ')}
                                     {gameCards.length}
                                   </Text>
                                 </View>
@@ -1269,6 +1286,14 @@ const styles = StyleSheet.create({
   opponentGame: { backgroundColor: 'rgba(255,0,0,0.08)' },
   cleanCanasta: { borderLeftWidth: 3, borderLeftColor: '#FFD600' },
   dirtyCanasta: { borderLeftWidth: 3, borderLeftColor: '#FF9800' },
+  // Lookup maps por tier
+  canastaByTier: {
+    dirty: { borderLeftWidth: 3, borderLeftColor: '#FF9800' },
+    c200:  { borderLeftWidth: 3, borderLeftColor: '#4CAF50' },
+    c500:  { borderLeftWidth: 3, borderLeftColor: '#29B6F6' },
+    c1000: { borderLeftWidth: 3, borderLeftColor: '#CE93D8' },
+    none:  {},
+  } as Record<string, any>,
   gameCards: { flexDirection: 'row', flex: 1, overflow: 'visible', paddingLeft: 2, paddingRight: 6 },
   gameCardsDense: { paddingLeft: 4, paddingRight: 4 },
   cardClip: {
@@ -1305,7 +1330,7 @@ const styles = StyleSheet.create({
     borderColor: '#C8E6C9',
   },
   ribbonDirty: {
-    backgroundColor: '#E65100', // Laranja escuro para Suja
+    backgroundColor: '#E65100',
     borderWidth: 1.5,
     borderColor: '#FFD180',
   },
@@ -1323,6 +1348,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#E65100',
     borderColor: '#FFD180',
   },
+  // Lookup maps por tier
+  ribbonByTier: {
+    dirty: { backgroundColor: '#E65100', borderWidth: 1.5, borderColor: '#FFD180' },
+    c200:  { backgroundColor: '#2E7D32', borderWidth: 1,   borderColor: '#A5D6A7' },
+    c500:  { backgroundColor: '#0277BD', borderWidth: 1,   borderColor: '#81D4FA' },
+    c1000: { backgroundColor: '#6A1B9A', borderWidth: 1.5, borderColor: '#CE93D8' },
+    none:  {},
+  } as Record<string, any>,
+  badgeByTier: {
+    dirty: { backgroundColor: '#E65100', borderColor: '#FFD180' },
+    c200:  { backgroundColor: '#388E3C', borderColor: '#A5D6A7' },
+    c500:  { backgroundColor: '#0277BD', borderColor: '#81D4FA' },
+    c1000: { backgroundColor: '#6A1B9A', borderColor: '#CE93D8' },
+    none:  {},
+  } as Record<string, any>,
 
   // PILES
   actionBar: {

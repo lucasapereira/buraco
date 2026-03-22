@@ -12,7 +12,22 @@
       "Bash(ffmpeg -version)",
       "Bash(python3:*)",
       "Bash(./gradlew clean:*)",
-      "Bash(./gradlew assembleDebug)"
+      "Bash(./gradlew assembleDebug)",
+      "Bash(grep -E \"\\\\.mp3$|\\\\.keystore$|\\\\.jks$|google-services\")",
+      "Bash(sips:*)",
+      "Bash(convert --version)",
+      "Bash(pip3 install:*)",
+      "Bash(keytool:*)",
+      "Bash(/Users/lucasaraujopereira/buraco/android/gradle.properties:*)",
+      "Bash(./gradlew bundleRelease)",
+      "Bash(git filter-repo:*)",
+      "Bash(git stash:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(firebase --version)"
     ]
   }
 }
