@@ -256,11 +256,14 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
 
       fetchPublicRooms: async () => {
         try {
+          await get().ensureAuth();
           const snap = await dbGet(ref(db, 'rooms'));
+          console.log('[fetchPublicRooms] snap exists:', snap.exists(), 'val:', JSON.stringify(snap.val())?.slice(0, 200));
           if (!snap.exists()) return [];
           const rooms: PublicRoomInfo[] = [];
           snap.forEach(child => {
             const val = child.val();
+            console.log('[fetchPublicRooms] room', child.key, 'status:', val?.meta?.status, 'isPublic:', val?.meta?.isPublic);
             if (!val?.meta || val.meta.status !== 'lobby' || !val.meta.isPublic) return;
             const seats: (SeatInfo | null)[] = [0, 1, 2, 3].map(i => val.seats?.[i] ?? null);
             rooms.push({
@@ -272,7 +275,9 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
             });
           });
           return rooms.sort((a, b) => b.createdAt - a.createdAt);
-        } catch {
+        } catch (e) {
+          console.error('[fetchPublicRooms] erro:', e);
+          set({ error: 'Erro ao buscar salas: ' + (e as any)?.message });
           return [];
         }
       },
