@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signInAnonymously, updateProfile } from 'firebase/auth';
-import { equalTo, get as dbGet, onValue, ref, remove, set as dbSet, update, query, orderByChild, endAt } from 'firebase/database';
+import { get as dbGet, onValue, ref, remove, set as dbSet, update, query, orderByChild, endAt } from 'firebase/database';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { auth, db } from '../config/firebase';
@@ -256,12 +256,12 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
 
       fetchPublicRooms: async () => {
         try {
-          const snap = await dbGet(query(ref(db, 'rooms'), orderByChild('meta/isPublic'), equalTo(true)));
+          const snap = await dbGet(ref(db, 'rooms'));
           if (!snap.exists()) return [];
           const rooms: PublicRoomInfo[] = [];
           snap.forEach(child => {
             const val = child.val();
-            if (!val?.meta || val.meta.status !== 'lobby') return;
+            if (!val?.meta || val.meta.status !== 'lobby' || !val.meta.isPublic) return;
             const seats: (SeatInfo | null)[] = [0, 1, 2, 3].map(i => val.seats?.[i] ?? null);
             rooms.push({
               code: child.key as string,
