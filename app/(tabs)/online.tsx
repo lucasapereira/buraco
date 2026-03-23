@@ -427,8 +427,15 @@ export default function OnlineScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.centered}>
+        {/* Badge público/privado */}
+        <View style={[styles.visibilityBadge, store.roomIsPublic ? styles.visibilityBadgePublic : styles.visibilityBadgePrivate]}>
+          <Text style={styles.visibilityBadgeText}>
+            {store.roomIsPublic ? '🌐 Sala Pública' : '🔒 Sala Privada'}
+          </Text>
+        </View>
+
         {/* Código da sala */}
-        <Text style={styles.sectionLabel}>Código da Sala</Text>
+        <Text style={[styles.sectionLabel, { marginTop: 12 }]}>Código da Sala</Text>
         <TouchableOpacity
           style={styles.codeBox}
           onPress={async () => {
@@ -726,4 +733,22 @@ const styles = StyleSheet.create({
 
   emptyText: { color: 'rgba(255,255,255,0.7)', fontSize: 16, fontWeight: '700', marginBottom: 8 },
   emptySubText: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
+
+  visibilityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  visibilityBadgePublic: {
+    backgroundColor: 'rgba(76,175,80,0.15)',
+    borderColor: 'rgba(76,175,80,0.5)',
+  },
+  visibilityBadgePrivate: {
+    backgroundColor: 'rgba(255,193,7,0.15)',
+    borderColor: 'rgba(255,193,7,0.4)',
+  },
+  visibilityBadgeText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });

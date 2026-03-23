@@ -56,6 +56,7 @@ interface OnlineState {
   roomMode: GameMode;
   roomTarget: number;
   roomDifficulty: BotDifficulty;
+  roomIsPublic: boolean;
 
   error: string | null;
   isLoading: boolean;
@@ -108,6 +109,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
       roomMode: 'classic',
       roomTarget: 1500,
       roomDifficulty: 'hard',
+      roomIsPublic: true,
       ...ROOM_DEFAULTS,
 
       setDisplayName: (name) => set({ displayName: name.trim() }),
@@ -147,6 +149,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
               snap.forEach(child => { remove(child.ref).catch(() => {}); });
             }).catch(() => {});
 
+          const now = Date.now();
           await dbSet(ref(db, `rooms/${code}`), {
             meta: {
               status: 'lobby',
@@ -155,7 +158,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
               targetScore: roomTarget,
               difficulty: roomDifficulty,
               isPublic,
-              createdAt: Date.now(),
+              createdAt: now,
             },
             seats: {
               0: { uid, name: displayName || 'Host' },
@@ -166,12 +169,23 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
             gameState: null,
           });
 
+          // Índice de salas públicas (caminho separado com regras permissivas)
+          if (isPublic) {
+            await dbSet(ref(db, `publicRooms/${code}`), {
+              mode: roomMode,
+              targetScore: roomTarget,
+              playerCount: 1,
+              createdAt: now,
+            });
+          }
+
           set({
             roomCode: code,
             roomStatus: 'lobby',
             isHost: true,
             mySeat: 0,
             seats: [{ uid, name: displayName || 'Host' }, null, null, null],
+            roomIsPublic: isPublic,
             isLoading: false,
           });
 
@@ -204,6 +218,12 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
             [freeSeat]: { uid, name: displayName || 'Jogador' },
           });
 
+          // Atualiza contador no índice público
+          const newCount = seats.filter(Boolean).length + 1;
+          dbGet(ref(db, `publicRooms/${upperCode}`)).then(s => {
+            if (s.exists()) update(ref(db, `publicRooms/${upperCode}`), { playerCount: newCount }).catch(() => {});
+          }).catch(() => {});
+
           const updatedSeats = [...seats];
           updatedSeats[freeSeat] = { uid, name: displayName || 'Jogador' };
 
@@ -216,6 +236,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
             roomMode: room.meta.mode,
             roomTarget: room.meta.targetScore,
             roomDifficulty: room.meta.difficulty,
+            roomIsPublic: room.meta.isPublic ?? false,
             isLoading: false,
           });
         } catch (e: any) {
@@ -229,8 +250,8 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
         if (!roomCode) return;
         try {
           if (isHost) {
-            // Host sai → remove a sala toda
             await remove(ref(db, `rooms/${roomCode}`));
+            remove(ref(db, `publicRooms/${roomCode}`)).catch(() => {});
           } else if (mySeat !== null) {
             await dbSet(ref(db, `rooms/${roomCode}/seats/${mySeat}`), null);
           }
@@ -248,6 +269,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
             'meta/status': 'playing',
             gameState: cleanState,
           });
+          remove(ref(db, `publicRooms/${roomCode}`)).catch(() => {});
           set({ roomStatus: 'playing' });
         } catch (e: any) {
           set({ error: e.message ?? 'Erro ao iniciar jogo' });
@@ -257,26 +279,22 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
       fetchPublicRooms: async () => {
         try {
           await get().ensureAuth();
-          const snap = await dbGet(ref(db, 'rooms'));
-          console.log('[fetchPublicRooms] snap exists:', snap.exists(), 'val:', JSON.stringify(snap.val())?.slice(0, 200));
+          const snap = await dbGet(ref(db, 'publicRooms'));
           if (!snap.exists()) return [];
           const rooms: PublicRoomInfo[] = [];
           snap.forEach(child => {
             const val = child.val();
-            console.log('[fetchPublicRooms] room', child.key, 'status:', val?.meta?.status, 'isPublic:', val?.meta?.isPublic);
-            if (!val?.meta || val.meta.status !== 'lobby' || !val.meta.isPublic) return;
-            const seats: (SeatInfo | null)[] = [0, 1, 2, 3].map(i => val.seats?.[i] ?? null);
+            if (!val) return;
             rooms.push({
               code: child.key as string,
-              mode: val.meta.mode,
-              targetScore: val.meta.targetScore,
-              playerCount: seats.filter(Boolean).length,
-              createdAt: val.meta.createdAt,
+              mode: val.mode,
+              targetScore: val.targetScore,
+              playerCount: val.playerCount ?? 1,
+              createdAt: val.createdAt,
             });
           });
           return rooms.sort((a, b) => b.createdAt - a.createdAt);
         } catch (e) {
-          console.error('[fetchPublicRooms] erro:', e);
           set({ error: 'Erro ao buscar salas: ' + (e as any)?.message });
           return [];
         }
