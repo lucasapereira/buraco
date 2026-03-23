@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signInAnonymously, updateProfile } from 'firebase/auth';
-import { get as dbGet, onValue, ref, remove, set as dbSet, update, query, orderByChild, endAt } from 'firebase/database';
+import { equalTo, get as dbGet, onValue, ref, remove, set as dbSet, update, query, orderByChild, endAt } from 'firebase/database';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { auth, db } from '../config/firebase';
@@ -20,6 +20,14 @@ export const TEAM_OF_SEAT: Record<number, 'team-1' | 'team-2'> = {
 export interface SeatInfo {
   uid: string;
   name: string;
+}
+
+export interface PublicRoomInfo {
+  code: string;
+  mode: GameMode;
+  targetScore: number;
+  playerCount: number;
+  createdAt: number;
 }
 
 // Gera código de sala: 4 letras maiúsculas + 2 dígitos (ex: "BURA42")
@@ -63,8 +71,9 @@ interface OnlineActions {
   ensureAuth: () => Promise<string>; // retorna uid
 
   // Sala
-  createRoom: () => Promise<string>; // retorna código da sala
+  createRoom: (isPublic: boolean) => Promise<string>; // retorna código da sala
   joinRoom: (code: string) => Promise<void>;
+  fetchPublicRooms: () => Promise<PublicRoomInfo[]>;
   leaveRoom: () => Promise<void>;
   startGame: (initialGameState: object) => Promise<void>; // host inicia o jogo
 
@@ -124,7 +133,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
         return uid;
       },
 
-      createRoom: async () => {
+      createRoom: async (isPublic: boolean) => {
         set({ isLoading: true, error: null });
         try {
           const uid = await get().ensureAuth();
@@ -145,6 +154,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
               mode: roomMode,
               targetScore: roomTarget,
               difficulty: roomDifficulty,
+              isPublic,
               createdAt: Date.now(),
             },
             seats: {
@@ -241,6 +251,29 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           set({ roomStatus: 'playing' });
         } catch (e: any) {
           set({ error: e.message ?? 'Erro ao iniciar jogo' });
+        }
+      },
+
+      fetchPublicRooms: async () => {
+        try {
+          const snap = await dbGet(query(ref(db, 'rooms'), orderByChild('meta/isPublic'), equalTo(true)));
+          if (!snap.exists()) return [];
+          const rooms: PublicRoomInfo[] = [];
+          snap.forEach(child => {
+            const val = child.val();
+            if (!val?.meta || val.meta.status !== 'lobby') return;
+            const seats: (SeatInfo | null)[] = [0, 1, 2, 3].map(i => val.seats?.[i] ?? null);
+            rooms.push({
+              code: child.key as string,
+              mode: val.meta.mode,
+              targetScore: val.meta.targetScore,
+              playerCount: seats.filter(Boolean).length,
+              createdAt: val.meta.createdAt,
+            });
+          });
+          return rooms.sort((a, b) => b.createdAt - a.createdAt);
+        } catch {
+          return [];
         }
       },
 

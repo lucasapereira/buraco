@@ -19,7 +19,7 @@ import { onValue, ref } from 'firebase/database';
 import { db } from '../../config/firebase';
 import { BotDifficulty, GameMode, createInitialGameState } from '../../game/engine';
 import { useGameStore } from '../../store/gameStore';
-import { useOnlineStore, SEAT_PLAYER_IDS, SeatInfo } from '../../store/onlineStore';
+import { useOnlineStore, SEAT_PLAYER_IDS, SeatInfo, PublicRoomInfo } from '../../store/onlineStore';
 
 const TEAM_LABEL: Record<number, string> = { 0: 'Time 1', 1: 'Time 2', 2: 'Time 1', 3: 'Time 2' };
 const TEAM_COLOR: Record<number, string> = { 0: '#4CAF50', 1: '#FF5252', 2: '#4CAF50', 3: '#FF5252' };
@@ -29,9 +29,12 @@ export default function OnlineScreen() {
   const store = useOnlineStore();
   const { startNewGame } = useGameStore();
 
-  const [step, setStep] = useState<'name' | 'home' | 'create' | 'lobby'>('name');
+  const [step, setStep] = useState<'name' | 'home' | 'create' | 'lobby' | 'browse'>('name');
   const [joinCode, setJoinCode] = useState('');
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
+  const [publicRooms, setPublicRooms] = useState<PublicRoomInfo[]>([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
   const nameInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -82,7 +85,22 @@ export default function OnlineScreen() {
 
   const handleCreate = async () => {
     try {
-      await store.createRoom();
+      await store.createRoom(isPublic);
+      setStep('lobby');
+    } catch (_) {}
+  };
+
+  const handleBrowse = async () => {
+    setStep('browse');
+    setBrowseLoading(true);
+    const rooms = await store.fetchPublicRooms();
+    setPublicRooms(rooms);
+    setBrowseLoading(false);
+  };
+
+  const handleJoinPublic = async (code: string) => {
+    try {
+      await store.joinRoom(code);
       setStep('lobby');
     } catch (_) {}
   };
@@ -193,6 +211,14 @@ export default function OnlineScreen() {
               <Text style={styles.primaryBtnText}>🏠 CRIAR SALA</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={handleBrowse}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.secondaryBtnText}>🌐 VER SALAS PÚBLICAS</Text>
+            </TouchableOpacity>
+
             <View style={styles.joinRow}>
               <TextInput
                 style={styles.joinInput}
@@ -282,6 +308,27 @@ export default function OnlineScreen() {
             ))}
           </View>
 
+          <Text style={styles.sectionLabel}>Visibilidade da Sala</Text>
+          <View style={styles.optionRow}>
+            {([{ value: true, label: '🌐 Pública' }, { value: false, label: '🔒 Privada' }]).map(opt => (
+              <TouchableOpacity
+                key={String(opt.value)}
+                style={[styles.optionBtn, isPublic === opt.value && styles.optionBtnActive]}
+                onPress={() => setIsPublic(opt.value)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.optionText, isPublic === opt.value && styles.optionTextActive]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.visibilityHint}>
+            {isPublic
+              ? 'Qualquer jogador pode encontrar e entrar nesta sala'
+              : 'Somente quem tiver o código pode entrar'}
+          </Text>
+
           {store.error && <Text style={styles.errorText}>{store.error}</Text>}
 
           <TouchableOpacity
@@ -299,6 +346,79 @@ export default function OnlineScreen() {
             <Text style={styles.backLinkText}>← Voltar</Text>
           </TouchableOpacity>
         </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── STEP: SALAS PÚBLICAS ──────────────────────────────────────────────────
+  if (step === 'browse') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.browseHeader}>
+          <Text style={styles.title}>Salas Públicas</Text>
+          <TouchableOpacity
+            onPress={async () => {
+              setBrowseLoading(true);
+              const rooms = await store.fetchPublicRooms();
+              setPublicRooms(rooms);
+              setBrowseLoading(false);
+            }}
+            activeOpacity={0.7}
+            style={styles.refreshBtn}
+          >
+            <Text style={styles.refreshBtnText}>↻ Atualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        {store.error && <Text style={[styles.errorText, { paddingHorizontal: 24 }]}>{store.error}</Text>}
+
+        {browseLoading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator color="#FFD600" size="large" />
+            <Text style={[styles.waitingText, { marginTop: 12 }]}>Buscando salas...</Text>
+          </View>
+        ) : publicRooms.length === 0 ? (
+          <View style={styles.centered}>
+            <Text style={styles.emptyText}>Nenhuma sala pública disponível</Text>
+            <Text style={styles.emptySubText}>Crie uma sala pública para começar!</Text>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.browseList}>
+            {publicRooms.map(room => (
+              <View key={room.code} style={styles.roomCard}>
+                <View style={styles.roomCardLeft}>
+                  <Text style={styles.roomCode}>{room.code}</Text>
+                  <Text style={styles.roomMeta}>
+                    {room.mode === 'classic' ? 'Clássico' : 'Buraco Mole'} · {room.targetScore.toLocaleString()} pts
+                  </Text>
+                  <View style={styles.roomPlayers}>
+                    {[0, 1, 2, 3].map(i => (
+                      <View
+                        key={i}
+                        style={[styles.playerDot, i < room.playerCount ? styles.playerDotFilled : styles.playerDotEmpty]}
+                      />
+                    ))}
+                    <Text style={styles.playerCountText}>{room.playerCount}/4 jogadores</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[styles.joinRoomBtn, (room.playerCount >= 4 || store.isLoading) && styles.btnDisabled]}
+                  onPress={() => handleJoinPublic(room.code)}
+                  disabled={room.playerCount >= 4 || store.isLoading}
+                  activeOpacity={0.85}
+                >
+                  {store.isLoading
+                    ? <ActivityIndicator color="#1B5E20" size="small" />
+                    : <Text style={styles.joinRoomBtnText}>{room.playerCount >= 4 ? 'Cheia' : 'ENTRAR'}</Text>}
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        <TouchableOpacity style={[styles.backLink, { alignSelf: 'center', marginBottom: 16 }]} onPress={() => setStep('home')}>
+          <Text style={styles.backLinkText}>← Voltar</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   }
@@ -540,4 +660,70 @@ const styles = StyleSheet.create({
   errorText: { color: '#FF8A80', fontSize: 13, marginTop: 8, textAlign: 'center' },
   backLink: { marginTop: 20 },
   backLinkText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
+
+  secondaryBtn: {
+    backgroundColor: 'rgba(255,214,0,0.15)',
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,214,0,0.5)',
+    width: '100%',
+  },
+  secondaryBtnText: { color: '#FFD600', fontSize: 15, fontWeight: '800', letterSpacing: 1 },
+
+  visibilityHint: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: -12,
+    marginBottom: 20,
+    paddingHorizontal: 8,
+  },
+
+  browseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  refreshBtn: { padding: 8 },
+  refreshBtnText: { color: '#FFD600', fontSize: 14, fontWeight: '700' },
+
+  browseList: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24, gap: 10 },
+
+  roomCard: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  roomCardLeft: { flex: 1 },
+  roomCode: { color: '#FFD600', fontSize: 20, fontWeight: '900', letterSpacing: 3, marginBottom: 2 },
+  roomMeta: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginBottom: 8 },
+  roomPlayers: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  playerDot: { width: 10, height: 10, borderRadius: 5 },
+  playerDotFilled: { backgroundColor: '#4CAF50' },
+  playerDotEmpty: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  playerCountText: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginLeft: 4 },
+
+  joinRoomBtn: {
+    backgroundColor: '#FFD600',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    alignItems: 'center',
+    minWidth: 70,
+  },
+  joinRoomBtnText: { color: '#1B5E20', fontSize: 13, fontWeight: '900' },
+
+  emptyText: { color: 'rgba(255,255,255,0.7)', fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  emptySubText: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
 });
