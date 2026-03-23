@@ -16,6 +16,10 @@ import { useEffect, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useOnlineStore, SEAT_PLAYER_IDS } from '../store/onlineStore';
 
+// ID único por instância do app — estável durante toda a sessão,
+// independente do estado de auth (evita bug quando auth.currentUser é null)
+const INSTANCE_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
 export function useOnlineSync() {
   const { roomCode, mySeat, seats, roomStatus } = useOnlineStore();
   const isOnline = roomStatus === 'playing' && roomCode !== null;
@@ -48,13 +52,20 @@ export function useOnlineSync() {
       const remoteState = snapshot.val();
       if (!remoteState) return;
 
-      // Ignora atualizações que eu mesmo escrevi
+      // Ignora atualizações que eu mesmo escrevi (usa instance ID estável,
+      // não auth.currentUser que pode ser undefined durante refresh de token)
+      if (remoteState._writerInstanceId === INSTANCE_ID) return;
+
+      // Fallback: também verifica _writerUid se disponível (compatibilidade)
       const myUid = auth.currentUser?.uid;
-      if (remoteState._writerUid === myUid) return;
+      if (myUid && remoteState._writerUid === myUid) return;
 
       applyingRemote.current = true;
-      useGameStore.getState().applyRemoteState(remoteState);
-      applyingRemote.current = false;
+      try {
+        useGameStore.getState().applyRemoteState(remoteState);
+      } finally {
+        applyingRemote.current = false;
+      }
     });
 
     return () => unsubscribeGame();
@@ -105,38 +116,42 @@ export function useOnlineSync() {
   useEffect(() => {
     if (!isOnline || !roomCode || myPlayerIds.length === 0) return;
 
-    let prevLogLength = useGameStore.getState().gameLog.length;
+    // Usa referência do array (não .length) para detectar mudanças —
+    // gameLog é capped em 20 entradas, então .length para de crescer e
+    // a comparação por tamanho deixa de funcionar após ~10 turnos.
+    let prevGameLog = useGameStore.getState().gameLog;
 
     const unsubscribe = useGameStore.subscribe((state) => {
       const gameLog = state.gameLog;
       if (applyingRemote.current) return;
-      if (gameLog.length <= prevLogLength) { prevLogLength = gameLog.length; return; }
-      prevLogLength = gameLog.length;
+      if (gameLog === prevGameLog) return; // mesma referência = nenhum log novo
+      prevGameLog = gameLog;
 
       // Verifica se a última ação foi minha (ou de um bot que controlo)
       const lastEvent = gameLog[gameLog.length - 1];
-      if (!myPlayerIds.includes(lastEvent.playerId)) return;
+      if (!lastEvent || !myPlayerIds.includes(lastEvent.playerId)) return;
 
-        const myUid = auth.currentUser?.uid;
-        const currentState = useGameStore.getState();
+      const myUid = auth.currentUser?.uid;
+      const currentState = useGameStore.getState();
 
-        // Extrai só os campos do GameState (exclui funções e animações transientes)
-        const {
-          animatingDrawPlayerId, animatingDiscard, // excluir
-          startNewGame, startNewRound, startLayoutTest, // funções — excluir
-          drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
-          undoLastPlay, applyRemoteState,
-          ...gameStateFields
-        } = currentState as any;
+      // Extrai só os campos do GameState (exclui funções, animações e estado visual local)
+      const {
+        animatingDrawPlayerId, animatingDiscard, // excluir — animações transientes
+        lastDrawnCardId, // excluir — puramente visual/local, não deve sobrescrever o badge "N" de outro device
+        startNewGame, startNewRound, startLayoutTest, // funções — excluir
+        drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
+        undoLastPlay, applyRemoteState,
+        ...gameStateFields
+      } = currentState as any;
 
-        // JSON round-trip remove undefined (Firebase não aceita undefined)
-        const payload = JSON.parse(JSON.stringify({
-          ...gameStateFields,
-          _writerUid: myUid,
-        }));
-        dbSet(ref(db, `rooms/${roomCode}/gameState`), payload).catch(() => {});
-      },
-    );
+      // JSON round-trip remove undefined (Firebase não aceita undefined)
+      const payload = JSON.parse(JSON.stringify({
+        ...gameStateFields,
+        _writerUid: myUid,
+        _writerInstanceId: INSTANCE_ID,
+      }));
+      dbSet(ref(db, `rooms/${roomCode}/gameState`), payload).catch(() => {});
+    });
 
     return () => unsubscribe();
   }, [isOnline, roomCode, myPlayerIds.join(',')]);

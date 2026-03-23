@@ -163,7 +163,7 @@ export const useGameStore = create<GameState & GameActions>()(
 
   // Usado pelo modo online: aplica estado recebido do Firebase
   applyRemoteState: (remoteState: Record<string, unknown>) => {
-    const { animatingDrawPlayerId, animatingDiscard, _writerUid, ...rest } = remoteState as any;
+    const { animatingDrawPlayerId, animatingDiscard, lastDrawnCardId: _ld, _writerUid, _writerInstanceId, ...rest } = remoteState as any;
     // Firebase converte arrays vazios em null — restaura os campos críticos
     if (rest.teams) {
       for (const teamId of ['team-1', 'team-2']) {
@@ -176,15 +176,21 @@ export const useGameStore = create<GameState & GameActions>()(
     if (Array.isArray(rest.players)) {
       rest.players = rest.players.map((p: any) => ({ ...p, hand: p?.hand ?? [] }));
     }
-    rest.discardPile      = rest.discardPile      ?? [];
-    rest.deck             = rest.deck             ?? [];
+    rest.pile             = Array.isArray(rest.pile)  ? rest.pile  : [];
+    rest.deck             = Array.isArray(rest.deck)  ? rest.deck  : [];
     rest.gameLog          = rest.gameLog          ?? [];
     rest.turnHistory      = rest.turnHistory      ?? [];
     rest.discardedCardHistory = rest.discardedCardHistory ?? [];
+    // Firebase armazena arrays vazios como null.
+    // - deads = null  → ambos os mortos foram pegos → []
+    // - deads = [null, pack] → um morto era array vazio (bug) → filtra
+    // NUNCA restaurar para [[], []] pois isso cria mortos fantasmas
     if (Array.isArray(rest.deads)) {
-      rest.deads = rest.deads.map((d: any) => d ?? []);
+      rest.deads = rest.deads
+        .map((d: any) => (Array.isArray(d) ? d : null))
+        .filter((d: any) => d !== null && d.length > 0);
     } else {
-      rest.deads = [[], []];
+      rest.deads = []; // null do Firebase = sem mortos restantes
     }
     set(rest);
   },
@@ -192,11 +198,23 @@ export const useGameStore = create<GameState & GameActions>()(
   startNewRound: () => {
     const state = get();
     const fresh = createInitialGameState(state.targetScore, state.botDifficulty, state.gameMode);
+    // Preserva os nomes reais dos jogadores (definidos pelo modo online ou pelo usuário)
+    const freshPlayers = fresh.players.map((fp, i) => ({
+      ...fp,
+      name: state.players[i]?.name ?? fp.name,
+    }));
+    // Adiciona um evento de início de rodada para que a sincronização online
+    // detecte a mudança (o subscribe compara referência do gameLog — sem este
+    // evento o gameLog ficaria vazio e o subscriber nunca dispararia o sync).
+    const roundStartEvent = makeEvent('user', 'Sistema', 'round_end', '▶ Nova rodada iniciada');
     set({
       ...fresh,
+      players: freshPlayers,
+      gameLog: [roundStartEvent],
       matchScores: state.matchScores,
       botDifficulty: state.botDifficulty,
       gameMode: state.gameMode,
+      gameId: state.gameId, // preserva o ID da partida entre rodadas
     });
   },
 

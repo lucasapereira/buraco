@@ -27,7 +27,10 @@
       "Bash(git remote:*)",
       "Bash(git push:*)",
       "Bash(git check-ignore:*)",
-      "Bash(firebase --version)"
+      "Bash(firebase --version)",
+      "Bash(./gradlew assembleRelease)",
+      "Bash(npx tsx:*)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

@@ -65,6 +65,7 @@ export default function GameScreen() {
   const opTeamId   = myTeamId === 'team-1' ? 'team-2' : 'team-1';
   // Bot AI: offline = sempre. Online = só o host (seat 0) roda os bots.
   const botAIDisabled = isOnlineMode && mySeat !== 0;
+  const isHost = !isOnlineMode || mySeat === 0;
   // IDs de jogadores humanos (não devem ser controlados pelo bot AI)
   // Se seats ainda não foi populado (tudo null), usa fallback ['user'] para não correr o bot pelo humano
   const humanPlayerIds = isOnlineMode && seats.some(s => s !== null)
@@ -1016,13 +1017,27 @@ export default function GameScreen() {
             <Text style={styles.modalTarget}>Meta: {targetScore} pontos</Text>
 
             {winnerTeamId ? (
-              <TouchableOpacity style={styles.modalBtn} onPress={() => { startNewGame(targetScore, botDifficulty, gameMode); router.replace('/(tabs)' as any); }}>
-                <Text style={styles.modalBtnText}>Novo Jogo</Text>
-              </TouchableOpacity>
+              isHost ? (
+                <TouchableOpacity style={styles.modalBtn} onPress={() => { startNewGame(targetScore, botDifficulty, gameMode); router.replace('/(tabs)' as any); }}>
+                  <Text style={styles.modalBtnText}>Novo Jogo</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.modalBtn} onPress={async () => {
+                  const { leaveRoom } = useOnlineStore.getState();
+                  await leaveRoom();
+                  router.replace('/(tabs)' as any);
+                }}>
+                  <Text style={styles.modalBtnText}>Voltar ao Menu</Text>
+                </TouchableOpacity>
+              )
             ) : (
-              <TouchableOpacity style={styles.modalBtn} onPress={() => { startNewRound(); setSelectedCards([]); }}>
-                <Text style={styles.modalBtnText}>Próxima Rodada ▶</Text>
-              </TouchableOpacity>
+              isHost ? (
+                <TouchableOpacity style={styles.modalBtn} onPress={() => { startNewRound(); setSelectedCards([]); }}>
+                  <Text style={styles.modalBtnText}>Próxima Rodada ▶</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.modalWaiting}>Aguardando o host iniciar próxima rodada...</Text>
+              )
             )}
           </View>
         </View>
@@ -1455,6 +1470,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 18 },
+  modalWaiting: { color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center', marginTop: 8 },
 
   undoButtonText: {
     color: '#FFD600',

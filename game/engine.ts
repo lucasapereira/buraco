@@ -59,6 +59,7 @@ export interface GameState {
   discardedCardHistory: string[];
   mustPlayPileTopId: string | null; // ID da carta do topo do lixo que deve ser baixada
   deckReshuffleCount: number;        // Quantas vezes o lixo foi reembaralhado como novo monte
+  gameId: string;                    // ID único da partida (para sincronização online)
   animatingDiscard?: { playerId: PlayerId; card: Card } | null;
   animatingDrawPlayerId?: PlayerId | null;
   turnHistory: UndoState[]; // Histórico de jogadas do turno atual para a funcionalidade de Desfazer
@@ -116,6 +117,7 @@ export function createInitialGameState(targetScore: number = 1500, botDifficulty
     mustPlayPileTopId: null,
     deckReshuffleCount: 0,
     turnHistory: [],
+    gameId: Math.random().toString(36).substring(2, 10),
   };
 }
 

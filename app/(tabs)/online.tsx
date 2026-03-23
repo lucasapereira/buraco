@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -12,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { onValue, ref } from 'firebase/database';
 import { db } from '../../config/firebase';
@@ -309,8 +311,8 @@ export default function OnlineScreen() {
         <Text style={styles.sectionLabel}>Código da Sala</Text>
         <TouchableOpacity
           style={styles.codeBox}
-          onPress={() => {
-            // No futuro: Clipboard.setString(store.roomCode ?? '')
+          onPress={async () => {
+            await Clipboard.setStringAsync(store.roomCode ?? '');
             setCopyFeedback(true);
             setTimeout(() => setCopyFeedback(false), 1500);
           }}
@@ -319,7 +321,18 @@ export default function OnlineScreen() {
           <Text style={styles.codeText}>{store.roomCode}</Text>
           <Text style={styles.codeCopy}>{copyFeedback ? '✓ Copiado!' : 'Toque para copiar'}</Text>
         </TouchableOpacity>
-        <Text style={styles.shareHint}>Compartilhe este código com seus amigos</Text>
+
+        <TouchableOpacity
+          style={styles.whatsappBtn}
+          onPress={() => {
+            const msg = `Bora jogar Buraco? 🃏\nEntra na sala e digita o código:\n\n${store.roomCode}`;
+            const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
+            Linking.openURL(url).catch(() => {});
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.whatsappBtnText}>Compartilhar no WhatsApp</Text>
+        </TouchableOpacity>
 
         {/* Assentos */}
         <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Jogadores ({filledSeats}/4)</Text>
@@ -481,7 +494,18 @@ const styles = StyleSheet.create({
   },
   codeText: { color: '#FFD600', fontSize: 40, fontWeight: '900', letterSpacing: 8 },
   codeCopy: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 },
-  shareHint: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginBottom: 4 },
+  whatsappBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#25D366',
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  whatsappBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   seatsList: { width: '100%', gap: 8 },
   seatRow: {

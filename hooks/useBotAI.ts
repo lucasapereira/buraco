@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { LayoutAnimation, Platform, UIManager } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { AppState, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Card } from '../game/deck';
 import { BotDifficulty, GameMode, PlayerId } from '../game/engine';
 import { canTakePile, sortCardsBySuitAndValue, validateSequence, checkCanasta } from '../game/rules';
@@ -302,7 +302,9 @@ function shouldTakePile(
 
 export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[] } = {}) {
   const roundOver = useGameStore(s => s.roundOver);
+  const botRunningRef = useRef(false);
 
+  // ── Efeito principal: dispara o bot quando muda o jogador/fase ──
   useEffect(() => {
     if (options.disabled) return;
     const s = useGameStore.getState();
@@ -311,11 +313,45 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     if (humanIds.includes(botId) || roundOver) return;
 
     const timer = setTimeout(() => {
-      runBotTurnAsync(botId);
+      if (botRunningRef.current) return; // Mesmo bot já rodando (re-fire do turnPhase change)
+      botRunningRef.current = true;
+      runBotTurnAsync(botId).finally(() => { botRunningRef.current = false; });
     }, 500);
 
     return () => clearTimeout(timer);
   }, [useGameStore(s => s.currentTurnPlayerId), useGameStore(s => s.turnPhase), roundOver]);
+
+  // ── Watchdog: detecta bot travado e reinicia (cobre app voltando do background, etc) ──
+  useEffect(() => {
+    if (options.disabled) return;
+
+    const checkStuckBot = () => {
+      const s = useGameStore.getState();
+      if (s.roundOver) return;
+      const humanIds = options.humanPlayerIds ?? ['user'];
+      if (humanIds.includes(s.currentTurnPlayerId)) return;
+      // É turno de um bot — se ninguém está rodando, dispara
+      if (!botRunningRef.current) {
+        botRunningRef.current = true;
+        runBotTurnAsync(s.currentTurnPlayerId).finally(() => { botRunningRef.current = false; });
+      }
+    };
+
+    // Verifica a cada 4 segundos se o bot está travado
+    const watchdog = setInterval(checkStuckBot, 4000);
+
+    // Quando o app volta do background, verifica imediatamente
+    const appStateListener = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        setTimeout(checkStuckBot, 500);
+      }
+    });
+
+    return () => {
+      clearInterval(watchdog);
+      appStateListener.remove();
+    };
+  }, [options.disabled, options.humanPlayerIds?.join(','), roundOver]);
 
   async function runBotTurnAsync(botId: PlayerId) {
     const s = useGameStore.getState();
@@ -332,9 +368,17 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       if (s.turnPhase === 'draw') {
         await delay(1500); // Tempo para o bot "pensar" na mesa
 
-        const pile = s.pile;
-        const teamGames = s.teams[bot.teamId].games;
-        const takePile = shouldTakePile(pile, bot.hand, difficulty, teamGames, s.gameMode);
+        // Re-valida com estado fresco (pode ter mudado durante o delay via applyRemoteState)
+        const fresh = useGameStore.getState();
+        if (fresh.currentTurnPlayerId !== botId || fresh.turnPhase !== 'draw' || fresh.roundOver) {
+          return; // Estado mudou — o useEffect vai tratar o novo estado
+        }
+
+        const freshBot = fresh.players.find(p => p.id === botId);
+        if (!freshBot) return;
+        const pile = fresh.pile;
+        const teamGames = fresh.teams[freshBot.teamId].games;
+        const takePile = shouldTakePile(pile, freshBot.hand, difficulty, teamGames, fresh.gameMode);
 
         animate(); // Animação de compra
         if (takePile) {
@@ -347,15 +391,37 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           useGameStore.getState().drawFromDeck(botId);
         }
 
+        // Verifica se a compra realmente avançou a fase (pode falhar silenciosamente em modo online)
+        const afterDraw = useGameStore.getState();
+        if (afterDraw.currentTurnPlayerId === botId && afterDraw.turnPhase === 'draw' && !afterDraw.roundOver) {
+          // Compra falhou — força avanço de turno para não travar
+          const { getNextPlayer } = require('../game/engine');
+          const botName = afterDraw.players.find(p => p.id === botId)?.name ?? botId;
+          useGameStore.setState(prev => ({
+            currentTurnPlayerId: getNextPlayer(botId),
+            turnPhase: 'draw' as const,
+            mustPlayPileTopId: null,
+            gameLog: [...prev.gameLog.slice(-19), {
+              id: Date.now(),
+              playerId: botId,
+              playerName: botName,
+              type: 'draw_deck' as const,
+              message: `${botName} passou o turno (sync)`,
+              timestamp: Date.now(),
+            }],
+          }));
+          return;
+        }
+
         await delay(800); // Pausa depois curinha para olhar a mão
         await doBotPlayAsync(botId);
         return;
       }
 
       if (s.turnPhase === 'play') {
-        // Se mustPlayPileTopId está setado, a instância que fez o drawFromPile já está
-        // processando o turno (aguardando o delay de 800ms). Evita dupla execução.
-        if (useGameStore.getState().mustPlayPileTopId !== null) return;
+        // Com o botRunningRef, a dupla execução já é prevenida.
+        // Se chegou aqui com mustPlayPileTopId setado, significa que a instância
+        // original (draw phase) falhou. Processa normalmente para recuperar.
         await doBotPlayAsync(botId);
       }
     } catch (e: any) {
@@ -371,7 +437,8 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           timestamp: Date.now()
         }],
         currentTurnPlayerId: require('../game/engine').getNextPlayer(botId),
-        turnPhase: 'draw' as const
+        turnPhase: 'draw' as const,
+        mustPlayPileTopId: null, // Limpa obrigação para não travar turnos futuros
       }));
     }
   }
@@ -512,6 +579,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       iterations++;
 
       const s = useGameStore.getState();
+      if (s.currentTurnPlayerId !== botId || s.turnPhase !== 'play' || s.roundOver) return;
       const bot = s.players.find(p => p.id === botId);
       if (!bot || bot.hand.length === 0) return;
 
@@ -574,6 +642,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
 
   async function doBotAddToGamesAsync(botId: PlayerId) {
     const s = useGameStore.getState();
+    if (s.currentTurnPlayerId !== botId || s.turnPhase !== 'play' || s.roundOver) return;
     const bot = s.players.find(p => p.id === botId);
     if (!bot) return;
     const difficulty = s.botDifficulty;
@@ -641,6 +710,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
   }
 
   function doBotDiscard(botId: PlayerId, pileTopId: string | null = null) {
+    // Sempre lê estado fresco (pode ter mudado durante os delays assíncronos)
     const s = useGameStore.getState();
     if (s.currentTurnPlayerId !== botId || s.turnPhase !== 'play' || s.roundOver) {
       return;
@@ -651,21 +721,24 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       useGameStore.setState({ mustPlayPileTopId: null });
     }
 
-    const bot = s.players.find(p => p.id === botId);
+    // Re-lê estado fresco APÓS limpar mustPlayPileTopId
+    const fresh = useGameStore.getState();
+    const bot = fresh.players.find(p => p.id === botId);
     if (!bot || bot.hand.length === 0) {
       // Safety net: forçar passe de turno
       const { getNextPlayer } = require('../game/engine');
       useGameStore.setState({
         currentTurnPlayerId: getNextPlayer(botId),
         turnPhase: 'draw' as const,
+        mustPlayPileTopId: null,
       });
       return;
     }
 
-    const teamGames = s.teams[bot.teamId].games;
-    const card = chooseBestDiscard(bot.hand, s.discardedCardHistory, s.botDifficulty, s.lastDrawnCardId, s.gameMode, teamGames, pileTopId);
+    const teamGames = fresh.teams[bot.teamId].games;
+    const card = chooseBestDiscard(bot.hand, fresh.discardedCardHistory, fresh.botDifficulty, fresh.lastDrawnCardId, fresh.gameMode, teamGames, pileTopId);
     animate(); // anim do lixo
-    s.discard(botId, card.id);
+    useGameStore.getState().discard(botId, card.id);
 
     // Safety net: se o discard foi bloqueado (estado não mudou), força passe de turno
     const after = useGameStore.getState();
