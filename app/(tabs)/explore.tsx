@@ -69,7 +69,7 @@ export default function GameScreen() {
     const anim = Animated.timing(timerAnim, {
       toValue: 0,
       duration: 30000,
-      useNativeDriver: false,
+      useNativeDriver: true,
     });
     anim.start();
     return () => anim.stop();
@@ -696,9 +696,9 @@ export default function GameScreen() {
                             <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale), overflow: 'hidden' }, p.id === myPlayerId && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
                               {p.id === currentTurnPlayerId && (
                                 <Animated.View style={{
-                                  position: 'absolute', bottom: 0, left: 0, height: 2,
+                                  position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,
                                   backgroundColor: '#FFD600',
-                                  width: timerAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] })
+                                  transform: [{ scaleX: timerAnim }]
                                 }} />
                               )}
                               <Text style={[styles.statusName, { fontSize: Math.round(11 * scale) }]}>{shortName}</Text>
