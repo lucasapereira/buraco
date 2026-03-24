@@ -300,9 +300,16 @@ function shouldTakePile(
 // HOOK PRINCIPAL
 // ──────────────────────────────────────
 
-export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[] } = {}) {
+export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[]; isOnline?: boolean } = {}) {
   const roundOver = useGameStore(s => s.roundOver);
   const botRunningRef = useRef(false);
+  const lastActionTimeRef = useRef<number>(Date.now());
+
+  // Atualiza o timer de AFK a cada nova ação registrada no jogo
+  const lastEventId = useGameStore(s => s.gameLog[s.gameLog.length - 1]?.id);
+  useEffect(() => {
+    lastActionTimeRef.current = Date.now();
+  }, [lastEventId]);
 
   // ── Efeito principal: dispara o bot quando muda o jogador/fase ──
   useEffect(() => {
@@ -329,7 +336,20 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const s = useGameStore.getState();
       if (s.roundOver) return;
       const humanIds = options.humanPlayerIds ?? ['user'];
-      if (humanIds.includes(s.currentTurnPlayerId)) return;
+      const isHuman = humanIds.includes(s.currentTurnPlayerId);
+      
+      if (isHuman) {
+        // AFK Timeout: Se o humano não jogar por 30 segundos, o bot assume o resto do turno dele.
+        // Apenas válido para o modo online! Em modo offline, os humanos têm tempo ilimitado.
+        if (options.isOnline && Date.now() - lastActionTimeRef.current > 30000) {
+          if (!botRunningRef.current) {
+            botRunningRef.current = true;
+            runBotTurnAsync(s.currentTurnPlayerId).finally(() => { botRunningRef.current = false; });
+          }
+        }
+        return;
+      }
+
       // É turno de um bot — se ninguém está rodando, dispara
       if (!botRunningRef.current) {
         botRunningRef.current = true;
@@ -337,8 +357,8 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       }
     };
 
-    // Verifica a cada 4 segundos se o bot está travado
-    const watchdog = setInterval(checkStuckBot, 4000);
+    // Verifica a cada 2 segundos o status da mesa
+    const watchdog = setInterval(checkStuckBot, 2000);
 
     // Quando o app volta do background, verifica imediatamente
     const appStateListener = AppState.addEventListener('change', (nextState) => {
@@ -678,6 +698,14 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
             // quando o bot vai bater em seguida (canastra suja ainda permite bater).
             const goingOutNext = freshState.gameMode === 'araujo_pereira' && freshBot.hand.length <= 2;
             if (!goingOutNext) continue;
+            // Mesmo indo bater: só suja a canastra real se não houver outro jogo que aceite o curinga
+            const hasAlternativeGame = freshState.teams[bot.teamId].games.some((g, altIdx) => {
+              if (altIdx === gi) return false;        // Pula o jogo atual
+              if (g.some(c => c.isJoker)) return false; // Já tem curinga nesse jogo
+              if (checkCanasta(g) === 'clean') return false; // Não queremos sujar outra canastra real
+              return validateSequence([...g, card], freshState.gameMode);
+            });
+            if (hasAlternativeGame) continue;
           }
 
           if (freshState.gameMode === 'classic') {

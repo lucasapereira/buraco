@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { useStatsStore, DailyRewardInfo } from '../../store/statsStore';
@@ -66,13 +66,23 @@ export default function HomeScreen() {
     router.replace('/(tabs)/explore' as any);
   };
 
+  const handleRestart = () => {
+    Alert.alert('Reiniciar', 'Tem certeza que deseja apagar a partida atual?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Sim, Apagar', style: 'destructive', onPress: () => {
+          if (roomStatus !== 'idle') resetRoom();
+          startNewGame(targetScore, difficulty, gameMode);
+      }}
+    ]);
+  };
+
   const handleContinue = () => {
     if (roomStatus !== 'idle') resetRoom();
     router.replace('/(tabs)/explore' as any);
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={{ flex: 1, backgroundColor: '#1B5E20' }} contentContainerStyle={styles.container} bounces={false}>
       {/* Modal Recompensa Diária */}
       <Modal visible={!!dailyReward} transparent animationType="fade">
         <View style={styles.dailyOverlay}>
@@ -112,7 +122,6 @@ export default function HomeScreen() {
       {/* Título */}
       <View style={styles.titleBox}>
         <Text style={styles.title}>♠ BURACO ♠</Text>
-        <Text style={styles.subtitle}>STBL — Contra Robôs</Text>
       </View>
 
       {/* Seletor de Modo de Jogo */}
@@ -186,12 +195,12 @@ export default function HomeScreen() {
           onPress={handleContinue} 
           activeOpacity={0.85}
         >
-          <Text style={[styles.playText, { color: '#fff' }]}>◀ CONTINUAR</Text>
+          <Text style={[styles.playText, { color: '#fff' }]}>CONTINUAR JOGO</Text>
         </TouchableOpacity>
       )}
 
-      <TouchableOpacity style={styles.playBtn} onPress={handleStart} activeOpacity={0.85}>
-        <Text style={styles.playText}>{isGameInProgress ? '🆕 REINICIAR' : '🃏 JOGAR'}</Text>
+      <TouchableOpacity style={styles.playBtn} onPress={isGameInProgress ? handleRestart : handleStart} activeOpacity={0.85}>
+        <Text style={styles.playText}>{isGameInProgress ? 'REINICIAR' : '🃏 JOGAR'}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -211,21 +220,22 @@ export default function HomeScreen() {
       </TouchableOpacity>
 
       <Text style={styles.version}>v{APP_VERSION}</Text>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: '#1B5E20',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+    paddingVertical: 50,
   },
   titleBox: {
     alignItems: 'center',
-    marginBottom: 36,
+    marginBottom: 24,
   },
   title: {
     fontSize: 45,
@@ -340,8 +350,8 @@ const styles = StyleSheet.create({
   },
   playBtn: {
     backgroundColor: '#FFD600',
-    paddingVertical: 16,
-    paddingHorizontal: 60,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
     borderRadius: 30,
     shadowColor: '#FFD600',
     shadowOffset: { width: 0, height: 4 },
@@ -351,9 +361,9 @@ const styles = StyleSheet.create({
   },
   playText: {
     color: '#1B5E20',
-    fontSize: 23,
+    fontSize: 18,
     fontWeight: '900',
-    letterSpacing: 2,
+    letterSpacing: 1.5,
   },
   layoutBtn: {
     position: 'absolute',

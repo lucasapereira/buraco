@@ -164,17 +164,45 @@ export const useGameStore = create<GameState & GameActions>()(
   // Usado pelo modo online: aplica estado recebido do Firebase
   applyRemoteState: (remoteState: Record<string, unknown>) => {
     const { animatingDrawPlayerId, animatingDiscard, lastDrawnCardId: _ld, _writerUid, _writerInstanceId, ...rest } = remoteState as any;
+    
+    // Firebase exclui propriedades que são atribuídas como `null`.
+    // Restauramos esses campos explicitamente para `null` caso não existam no payload.
+    rest.mustPlayPileTopId = rest.mustPlayPileTopId !== undefined ? rest.mustPlayPileTopId : null;
+    rest.winnerTeamId = rest.winnerTeamId !== undefined ? rest.winnerTeamId : null;
+    
     // Firebase converte arrays vazios em null — restaura os campos críticos
+    const localState = get();
+
+    // Verifica se a notificação do Firebase pertence à MESMA rodada (ou nova).
+    // Se for da MESMA rodada, a trava de hasGottenDead não permite reverter pra false.
+    const isSameRound = (rest.roundNumber ?? 1) === localState.roundNumber;
+
     if (rest.teams) {
-      for (const teamId of ['team-1', 'team-2']) {
+      for (const teamId of ['team-1', 'team-2'] as const) {
         if (rest.teams[teamId]) {
           const t = rest.teams[teamId];
           t.games = Array.isArray(t.games) ? t.games.map((g: any) => g ?? []) : [];
+          if (t.hasGottenDead === undefined) t.hasGottenDead = false;
+          
+          if (isSameRound && localState.teams[teamId]?.hasGottenDead) {
+            t.hasGottenDead = true;
+          }
         }
       }
     }
     if (Array.isArray(rest.players)) {
-      rest.players = rest.players.map((p: any) => ({ ...p, hand: p?.hand ?? [] }));
+      rest.players = rest.players.map((p: any, i: number) => {
+        const localPlayer = localState.players[i];
+        let hgd = p?.hasGottenDead || false;
+        if (isSameRound && localPlayer?.hasGottenDead) {
+          hgd = true;
+        }
+        return {
+          ...p,
+          hand: p?.hand ?? [],
+          hasGottenDead: hgd,
+        };
+      });
     }
     rest.pile             = Array.isArray(rest.pile)  ? rest.pile  : [];
     rest.deck             = Array.isArray(rest.deck)  ? rest.deck  : [];
@@ -214,6 +242,7 @@ export const useGameStore = create<GameState & GameActions>()(
       matchScores: state.matchScores,
       botDifficulty: state.botDifficulty,
       gameMode: state.gameMode,
+      roundNumber: state.roundNumber + 1,
       gameId: state.gameId, // preserva o ID da partida entre rodadas
     });
   },

@@ -1,5 +1,6 @@
 import * as NavigationBar from 'expo-navigation-bar';
 import { useRouter } from 'expo-router';
+import { useKeepAwake } from 'expo-keep-awake';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -10,9 +11,11 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text, TouchableOpacity,
+  Text,
+  TouchableOpacity,
   View,
-  useWindowDimensions
+  useWindowDimensions,
+  Animated
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card } from '../../components/Card';
@@ -43,6 +46,7 @@ function getCanastaInfo(canasta: 'clean' | 'dirty' | 'none', length: number) {
 }
 
 export default function GameScreen() {
+  useKeepAwake();
   const { width: SW, height: SH } = useWindowDimensions();
   const isLandscape = SW > SH;
   const tabletScale = SW >= 600 ? Math.min(SW / 600, SH / 750, 1.4) : 1.0;
@@ -55,6 +59,21 @@ export default function GameScreen() {
     animatingDiscard, animatingDrawPlayerId,
     turnHistory, undoLastPlay
   } = useGameStore();
+
+  // Timer de AFK (30 segundos)
+  const timerAnim = useRef(new Animated.Value(1)).current;
+  const lastEventId = gameLog[gameLog.length - 1]?.id;
+  useEffect(() => {
+    timerAnim.setValue(1);
+    if (!isOnlineMode) return; // Em modo offline a barra não corre (fica invisível/parada)
+    const anim = Animated.timing(timerAnim, {
+      toValue: 0,
+      duration: 30000,
+      useNativeDriver: false,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [currentTurnPlayerId, lastEventId]);
 
   // ── Modo Online ────────────────────────────────────────────────────────────
   const { mySeat, roomStatus, seats } = useOnlineStore();
@@ -196,7 +215,7 @@ export default function GameScreen() {
     });
   }, [roundOver]);
 
-  useBotAI({ disabled: botAIDisabled, humanPlayerIds });
+  useBotAI({ disabled: botAIDisabled, humanPlayerIds, isOnline: isOnlineMode });
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -674,10 +693,17 @@ export default function GameScreen() {
 
                         return (
                           <View key={p.id}>
-                            <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale) }, p.id === myPlayerId && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
+                            <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale), overflow: 'hidden' }, p.id === myPlayerId && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
+                              {p.id === currentTurnPlayerId && (
+                                <Animated.View style={{
+                                  position: 'absolute', bottom: 0, left: 0, height: 2,
+                                  backgroundColor: '#FFD600',
+                                  width: timerAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] })
+                                }} />
+                              )}
                               <Text style={[styles.statusName, { fontSize: Math.round(11 * scale) }]}>{shortName}</Text>
                               <Text style={[styles.statusCards, { fontSize: Math.round(13 * scale) }]}>
-                                {p.hand.length} 🎴 {teams[p.teamId].hasGottenDead ? '💀' : ''}
+                                {p.hand.length} 🎴 {p.hasGottenDead ? '💀' : ''}
                               </Text>
                             </View>
                             {/* Animação Compra */}
@@ -1133,18 +1159,18 @@ const styles = StyleSheet.create({
   gamesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    rowGap: 10,
+    rowGap: 6,
     columnGap: 8,
-    marginBottom: 6,
+    marginBottom: 4,
     justifyContent: 'space-between',
     overflow: 'visible',
   },
   gamesGridDense: {
-    rowGap: 8,
+    rowGap: 4,
     columnGap: 6,
   },
   gamesGridTight: {
-    rowGap: 6,
+    rowGap: 3,
     columnGap: 6,
   },
   gameCard: {
@@ -1419,7 +1445,7 @@ const styles = StyleSheet.create({
   },
   middleDividerContainer: {
     marginTop: -8, // pull up closer to opponent games
-    marginBottom: 16,
+    marginBottom: 8,
     borderRadius: 8,
     overflow: 'visible',
     borderWidth: 1,

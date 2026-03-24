@@ -76,6 +76,7 @@ interface OnlineActions {
   joinRoom: (code: string) => Promise<void>;
   fetchPublicRooms: () => Promise<PublicRoomInfo[]>;
   leaveRoom: () => Promise<void>;
+  switchSeat: (seatIdx: number) => Promise<void>;
   startGame: (initialGameState: object) => Promise<void>; // host inicia o jogo
 
   // Chamado pelo hook de sincronização ao receber dados do Firebase
@@ -209,29 +210,36 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           const room = snapshot.val();
           if (room.meta.status !== 'lobby') throw new Error('Este jogo já começou');
 
-          // Encontra o primeiro assento livre
+          // Encontra os assentos atuais
           const seats: (SeatInfo | null)[] = [0, 1, 2, 3].map(i => room.seats?.[i] ?? null);
-          const freeSeat = seats.findIndex(s => s === null);
-          if (freeSeat === -1) throw new Error('Sala cheia (4/4)');
 
+          // Verifica se o jogador já estava na sala (ex: fechou o app sem sair)
+          let assignedSeat = seats.findIndex(s => s?.uid === uid);
+          
+          if (assignedSeat === -1) {
+            // Se não estava na sala, procura o primeiro assento livre
+            assignedSeat = seats.findIndex(s => s === null);
+            if (assignedSeat === -1) throw new Error('Sala cheia (4/4)');
+          }
+
+          // Atualiza/Reconfirma a posse do assento
           await update(ref(db, `rooms/${upperCode}/seats`), {
-            [freeSeat]: { uid, name: displayName || 'Jogador' },
+            [assignedSeat]: { uid, name: displayName || 'Jogador' },
           });
 
           // Atualiza contador no índice público
-          const newCount = seats.filter(Boolean).length + 1;
+          const updatedSeats = [...seats];
+          updatedSeats[assignedSeat] = { uid, name: displayName || 'Jogador' };
+          const newCount = updatedSeats.filter(Boolean).length;
           dbGet(ref(db, `publicRooms/${upperCode}`)).then(s => {
             if (s.exists()) update(ref(db, `publicRooms/${upperCode}`), { playerCount: newCount }).catch(() => {});
           }).catch(() => {});
-
-          const updatedSeats = [...seats];
-          updatedSeats[freeSeat] = { uid, name: displayName || 'Jogador' };
 
           set({
             roomCode: upperCode,
             roomStatus: 'lobby',
             isHost: false,
-            mySeat: freeSeat,
+            mySeat: assignedSeat,
             seats: updatedSeats,
             roomMode: room.meta.mode,
             roomTarget: room.meta.targetScore,
@@ -257,6 +265,26 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           }
         } catch (_) {}
         get().resetRoom();
+      },
+
+      switchSeat: async (targetSeatIdx: number) => {
+        const { roomCode, mySeat, seats, displayName, uid } = get();
+        if (!roomCode || mySeat === null || mySeat === targetSeatIdx || targetSeatIdx < 0 || targetSeatIdx > 3) return;
+        // Se o assento alvo já está ocupado, não faz nada
+        if (seats[targetSeatIdx] !== null) {
+          set({ error: 'Este assento já está ocupado' });
+          return;
+        }
+
+        try {
+          const updates: Record<string, any> = {};
+          updates[`seats/${mySeat}`] = null;
+          updates[`seats/${targetSeatIdx}`] = { uid, name: displayName || 'Jogador' };
+          await update(ref(db, `rooms/${roomCode}`), updates);
+          set({ mySeat: targetSeatIdx, error: null });
+        } catch (e: any) {
+          set({ error: 'Erro ao trocar de assento: ' + e?.message });
+        }
       },
 
       startGame: async (initialGameState: object) => {

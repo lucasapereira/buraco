@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { useKeepAwake } from 'expo-keep-awake';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { onValue, ref } from 'firebase/database';
 import { db } from '../../config/firebase';
@@ -25,6 +26,7 @@ const TEAM_LABEL: Record<number, string> = { 0: 'Time 1', 1: 'Time 2', 2: 'Time 
 const TEAM_COLOR: Record<number, string> = { 0: '#4CAF50', 1: '#FF5252', 2: '#4CAF50', 3: '#FF5252' };
 
 export default function OnlineScreen() {
+  useKeepAwake();
   const router = useRouter();
   const store = useOnlineStore();
   const { startNewGame } = useGameStore();
@@ -468,17 +470,28 @@ export default function OnlineScreen() {
             const seat = store.seats[seatIdx];
             const isMe = seatIdx === store.mySeat;
             return (
-              <View key={seatIdx} style={[styles.seatRow, isMe && styles.seatRowMe]}>
+              <TouchableOpacity
+                key={seatIdx}
+                style={[
+                  styles.seatRow,
+                  isMe && styles.seatRowMe,
+                  !seat && !isMe ? styles.seatRowEmpty : null
+                ]}
+                activeOpacity={(!seat && !isMe) ? 0.7 : 1}
+                onPress={() => {
+                   if (!seat && !isMe) store.switchSeat(seatIdx);
+                }}
+              >
                 <View style={[styles.seatTeamDot, { backgroundColor: TEAM_COLOR[seatIdx] }]} />
                 <View style={styles.seatInfo}>
                   <Text style={styles.seatName}>
-                    {seat ? seat.name : SEAT_PLAYER_IDS[seatIdx].startsWith('bot') ? '🤖 Bot' : '...aguardando'}
+                    {seat ? seat.name : SEAT_PLAYER_IDS[seatIdx].startsWith('bot') ? '🤖 Bot (toque para sentar)' : '...livre (toque para sentar)'}
                     {isMe ? ' (você)' : ''}
                   </Text>
                   <Text style={styles.seatTeamLabel}>{TEAM_LABEL[seatIdx]}</Text>
                 </View>
                 {seat && <Text style={styles.seatConnected}>●</Text>}
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -647,6 +660,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   seatRowMe: { borderColor: 'rgba(255,214,0,0.4)', backgroundColor: 'rgba(255,214,0,0.08)' },
+  seatRowEmpty: { borderColor: 'rgba(255,255,255,0.2)', borderStyle: 'dashed' },
   seatTeamDot: { width: 10, height: 10, borderRadius: 5 },
   seatInfo: { flex: 1 },
   seatName: { color: '#fff', fontSize: 15, fontWeight: '700' },
