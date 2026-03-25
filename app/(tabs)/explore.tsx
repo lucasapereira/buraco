@@ -541,7 +541,12 @@ export default function GameScreen() {
         {/* Centro: turno */}
         <View style={styles.turnBox}>
           <Text style={styles.turnName}>
-            {isMyTurn ? 'SUA VEZ' : players.find(p => p.id === currentTurnPlayerId)?.name}
+            {isMyTurn ? 'SUA VEZ' : (() => {
+              const tp = players.find(p => p.id === currentTurnPlayerId);
+              if (!tp) return '';
+              const si = SEAT_PLAYER_IDS.indexOf(tp.id as any);
+              return isOnlineMode && si >= 0 ? (seats[si]?.name ?? `Bot ${si + 1}`) : tp.name;
+            })()}
           </Text>
           {isMyTurn && (
             <Text style={[styles.phaseLabel, { backgroundColor: phaseColor }]}>{phaseLabel}</Text>
@@ -689,22 +694,26 @@ export default function GameScreen() {
                     {/* STATUS BAR DOS JOGADORES */}
                     <View style={styles.statusBar}>
                       {players.map(p => {
-                        const shortName = p.name.length > 7 ? p.name.slice(0, 7) + '.' : p.name;
+                        const seatIdx = SEAT_PLAYER_IDS.indexOf(p.id as any);
+                        const displayName = isOnlineMode && seatIdx >= 0
+                          ? (seats[seatIdx]?.name ?? `Bot ${seatIdx + 1}`)
+                          : p.name;
+                        const shortName = displayName.length > 7 ? displayName.slice(0, 7) + '.' : displayName;
 
                         return (
                           <View key={p.id}>
-                            <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale), overflow: 'hidden' }, p.id === myPlayerId && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
-                              {p.id === currentTurnPlayerId && (
-                                <Animated.View style={{
-                                  position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,
-                                  backgroundColor: '#FFD600',
-                                  transform: [{ scaleX: timerAnim }]
-                                }} />
-                              )}
+                            <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale) }, p.id === myPlayerId && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
                               <Text style={[styles.statusName, { fontSize: Math.round(11 * scale) }]}>{shortName}</Text>
                               <Text style={[styles.statusCards, { fontSize: Math.round(13 * scale) }]}>
                                 {p.hand.length} 🎴 {p.hasGottenDead ? '💀' : ''}
                               </Text>
+                              {p.id === currentTurnPlayerId && (
+                                <Animated.View style={{
+                                  width: '100%', height: 2, marginTop: 3,
+                                  backgroundColor: '#FFD600',
+                                  transform: [{ scaleX: timerAnim }]
+                                }} />
+                              )}
                             </View>
                             {/* Animação Compra */}
                             {animatingDrawPlayerId === p.id && (
@@ -1107,6 +1116,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   statusItem: {
+    position: 'relative',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 6,
