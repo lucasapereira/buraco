@@ -30,7 +30,15 @@
       "Bash(firebase --version)",
       "Bash(./gradlew assembleRelease)",
       "Bash(npx tsx:*)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(cat \"/Users/lucasaraujopereira/buraco/app/\\(tabs\\)/index.tsx\")",
+      "Bash(cat \"/Users/lucasaraujopereira/buraco/app/\\(tabs\\)/explore.tsx\")",
+      "Bash(cat \"/Users/lucasaraujopereira/buraco/app/\\(tabs\\)/stats.tsx\")",
+      "Bash(cat \"/Users/lucasaraujopereira/buraco/app/\\(tabs\\)/online.tsx\")",
+      "Bash(wc:*)",
+      "Bash(git fetch:*)",
+      "Skill(update-config)",
+      "mcp__claude-in-chrome__navigate"
     ]
   }
 }

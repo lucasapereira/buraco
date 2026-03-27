@@ -311,6 +311,12 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     lastActionTimeRef.current = Date.now();
   }, [lastEventId]);
 
+  // Reseta o timer de AFK quando muda o turno (evita que espera no lobby conte como AFK)
+  const currentTurnPlayerId = useGameStore(s => s.currentTurnPlayerId);
+  useEffect(() => {
+    lastActionTimeRef.current = Date.now();
+  }, [currentTurnPlayerId]);
+
   // ── Efeito principal: dispara o bot quando muda o jogador/fase ──
   useEffect(() => {
     if (options.disabled) return;
@@ -675,6 +681,11 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     const sortedIndices = Array.from({ length: teamGames.length }, (_, i) => i).sort((a, b) => {
       const aNormal = teamGames[a].filter(c => !c.isJoker);
       const bNormal = teamGames[b].filter(c => !c.isJoker);
+      // Prioridade 1: jogo de 6 cartas sem curinga → curinga fecha canastra suja (+100 bônus)
+      const aClosing = teamGames[a].length === 6 && !teamGames[a].some(c => c.isJoker) ? 1 : 0;
+      const bClosing = teamGames[b].length === 6 && !teamGames[b].some(c => c.isJoker) ? 1 : 0;
+      if (aClosing !== bClosing) return bClosing - aClosing;
+      // Prioridade 2: naipe do curinga coincide com o jogo
       const aMatch = aNormal.length > 0 && jokerSuits.has(aNormal[0].suit) ? 1 : 0;
       const bMatch = bNormal.length > 0 && jokerSuits.has(bNormal[0].suit) ? 1 : 0;
       return bMatch - aMatch;
@@ -716,14 +727,19 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
             const hasCleanCanastaElsewhere = otherGames.some(g => checkCanasta(g) === 'clean');
             const closingCanasta = game.length === 6;
             if (!hasCleanCanastaElsewhere && !closingCanasta) continue;
+            // Mesmo tendo canastra limpa em outro jogo, não suja um jogo curto:
+            // o curinga vale mais na mão do que num jogo de 3-4 cartas.
+            // hard ≥ 4 cartas, medium ≥ 5 cartas (fechar canastra sempre é permitido).
+            const minLen = difficulty === 'hard' ? 4 : 5;
+            if (!closingCanasta && game.length < minLen) continue;
           } else {
-            // Araujo Pereira: qualquer canastra conta → pode sujar mais livremente
-            const gNormal = game.filter(c => !c.isJoker);
-            const isTrinca = gNormal.length > 0 && gNormal.every(c => c.value === gNormal[0].value);
-            const minLen = isTrinca
-              ? (difficulty === 'hard' ? 3 : 4)
-              : (difficulty === 'hard' ? 4 : 5);
-            if (game.length < minLen) continue;
+            // Araujo Pereira: qualquer canastra conta → mas sujar tem custo estratégico
+            // Só suja se está fechando canastra (6 → 7 suja) ou se jogo tem cartas suficientes.
+            // Thresholds conservadores para evitar sujar jogos limpos desnecessariamente:
+            // hard ≥ 5 cartas, medium ≥ 6 cartas (fechar canastra sempre é permitido).
+            const closingCanasta = game.length === 6;
+            const minLen = difficulty === 'hard' ? 5 : 6;
+            if (!closingCanasta && game.length < minLen) continue;
           }
         }
 
