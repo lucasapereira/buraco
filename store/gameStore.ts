@@ -183,8 +183,12 @@ export const useGameStore = create<GameState & GameActions>()(
           const t = rest.teams[teamId];
           t.games = Array.isArray(t.games) ? t.games.map((g: any) => g ?? []) : [];
           if (t.hasGottenDead === undefined) t.hasGottenDead = false;
-          
-          if (isSameRound && localState.teams[teamId]?.hasGottenDead) {
+
+          // Protege contra reversão: checa tanto o team quanto qualquer player do team no estado local
+          if (isSameRound && (
+            localState.teams[teamId]?.hasGottenDead ||
+            localState.players?.some((p: any) => p.teamId === teamId && p.hasGottenDead)
+          )) {
             t.hasGottenDead = true;
           }
         }
@@ -193,8 +197,10 @@ export const useGameStore = create<GameState & GameActions>()(
     if (Array.isArray(rest.players)) {
       rest.players = rest.players.map((p: any, i: number) => {
         const localPlayer = localState.players[i];
+        const playerTeamId = p?.teamId ?? localPlayer?.teamId;
         let hgd = p?.hasGottenDead || false;
-        if (isSameRound && localPlayer?.hasGottenDead) {
+        // Protege contra reversão: checa o player local E o team local (evita dessincronização)
+        if (isSameRound && (localPlayer?.hasGottenDead || localState.teams[playerTeamId]?.hasGottenDead)) {
           hgd = true;
         }
         return {
