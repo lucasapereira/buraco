@@ -38,7 +38,7 @@ const TARGETS = [1500, 3000, 5000];
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { startNewGame, startLayoutTest, players, gameLog } = useGameStore();
+  const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId } = useGameStore();
   const { level, checkDailyReward, claimDailyReward } = useStatsStore();
   const { resetRoom, roomStatus } = useOnlineStore();
   const [difficulty, setDifficulty] = useState<BotDifficulty>('hard');
@@ -58,7 +58,7 @@ export default function HomeScreen() {
     if (reward.available) setDailyReward(reward);
   }, []);
 
-  const isGameInProgress = gameLog.length > 0 || players.some(p => p.hand.length !== 11);
+  const isGameInProgress = (gameLog.length > 0 || players.some(p => p.hand.length !== 11)) && !winnerTeamId;
 
   const handleStart = () => {
     if (roomStatus !== 'idle') resetRoom();

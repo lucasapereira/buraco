@@ -47,10 +47,13 @@ export default function OnlineScreen() {
     if (store.displayName.trim().length > 0) setStep('home');
   }, []);
 
-  // Quando a sala muda para 'playing', navega para o jogo
+  // Quando a sala muda para 'playing', navega para o jogo.
+  // Quando volta para 'idle' (ex: leaveRoom após partida), reseta o step.
   useEffect(() => {
     if (store.roomStatus === 'playing') {
       router.replace('/(tabs)/explore' as any);
+    } else if (store.roomStatus === 'idle' && (step === 'lobby' || step === 'create')) {
+      setStep(store.displayName.trim().length > 0 ? 'home' : 'name');
     }
   }, [store.roomStatus]);
 

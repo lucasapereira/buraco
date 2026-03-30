@@ -1104,7 +1104,11 @@ export default function GameScreen() {
 
             {winnerTeamId ? (
               isHost ? (
-                <TouchableOpacity style={styles.modalBtn} onPress={() => { startNewGame(targetScore, botDifficulty, gameMode); router.replace('/(tabs)' as any); }}>
+                <TouchableOpacity style={styles.modalBtn} onPress={async () => {
+                  if (isOnlineMode) { await useOnlineStore.getState().leaveRoom(); }
+                  startNewGame(targetScore, botDifficulty, gameMode);
+                  router.replace('/(tabs)' as any);
+                }}>
                   <Text style={styles.modalBtnText}>Novo Jogo</Text>
                 </TouchableOpacity>
               ) : (
