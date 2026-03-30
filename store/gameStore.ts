@@ -175,13 +175,22 @@ export const useGameStore = create<GameState & GameActions>()(
 
     // Verifica se a notificação do Firebase pertence à MESMA rodada (ou nova).
     // Se for da MESMA rodada, a trava de hasGottenDead não permite reverter pra false.
-    const isSameRound = (rest.roundNumber ?? 1) === localState.roundNumber;
+    const remoteRoundNumber = rest.roundNumber ?? 1;
+    if (remoteRoundNumber < localState.roundNumber) {
+      return; // Ignora completamente pacotes atrasados de rodadas anteriores
+    }
+    const isSameRound = remoteRoundNumber === localState.roundNumber;
 
     if (rest.teams) {
       for (const teamId of ['team-1', 'team-2'] as const) {
         if (rest.teams[teamId]) {
           const t = rest.teams[teamId];
-          t.games = Array.isArray(t.games) ? t.games.map((g: any) => g ?? []) : [];
+          // Firebase converte arrays corrompidos/encolhidos em objetos. Garantimos resiliência:
+          let rawGames = t.games;
+          if (rawGames && typeof rawGames === 'object' && !Array.isArray(rawGames)) {
+            rawGames = Object.values(rawGames);
+          }
+          t.games = Array.isArray(rawGames) ? rawGames.map((g: any) => g ?? []) : [];
           if (t.hasGottenDead === undefined) t.hasGottenDead = false;
 
           // Protege contra reversão: checa tanto o team quanto qualquer player do team no estado local
@@ -194,13 +203,57 @@ export const useGameStore = create<GameState & GameActions>()(
         }
       }
     }
+
+    // --- Processa deads ANTES dos players para garantir consistência ---
+    rest.pile             = Array.isArray(rest.pile)  ? rest.pile  : [];
+    rest.deck             = Array.isArray(rest.deck)  ? rest.deck  : [];
+    rest.gameLog          = rest.gameLog          ?? [];
+    rest.turnHistory      = rest.turnHistory      ?? [];
+    rest.discardedCardHistory = rest.discardedCardHistory ?? [];
+    // Firebase agrupa arrays afetados por pop() transformando-os em objetos
+    let rawDeads = rest.deads;
+    if (rawDeads && typeof rawDeads === 'object' && !Array.isArray(rawDeads)) {
+      rawDeads = Object.values(rawDeads);
+    }
+    if (Array.isArray(rawDeads)) {
+      rest.deads = rawDeads
+        .map((d: any) => {
+          let inner = d;
+          if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+            inner = Object.values(inner);
+          }
+          return Array.isArray(inner) ? inner : null;
+        })
+        .filter((d: any) => d !== null && d.length > 0);
+    } else {
+      rest.deads = [];
+    }
+
+    // Protege deads: nunca pode aumentar dentro da mesma rodada (morto pego não volta)
+    if (isSameRound && rest.deads.length > localState.deads.length) {
+      rest.deads = localState.deads;
+    }
+
+    // Garante consistência entre hasGottenDead e deads:
+    // Se N times pegaram morto, máximo de deads é 2 - N
+    if (rest.teams) {
+      const numTeamsWithDead = (['team-1', 'team-2'] as const).filter(
+        tid => rest.teams[tid]?.hasGottenDead
+      ).length;
+      const maxDeads = 2 - numTeamsWithDead;
+      if (rest.deads.length > maxDeads) {
+        rest.deads = rest.deads.slice(0, maxDeads);
+      }
+    }
+
     if (Array.isArray(rest.players)) {
       rest.players = rest.players.map((p: any, i: number) => {
         const localPlayer = localState.players[i];
         const playerTeamId = p?.teamId ?? localPlayer?.teamId;
         let hgd = p?.hasGottenDead || false;
-        // Protege contra reversão: checa o player local E o team local (evita dessincronização)
-        if (isSameRound && (localPlayer?.hasGottenDead || localState.teams[playerTeamId as TeamId]?.hasGottenDead)) {
+        // Protege contra reversão APENAS checando o próprio player local.
+        // Se sincronizarmos com a flag do time, daremos a caveirinha (💀) para ambos os jogadores.
+        if (isSameRound && localPlayer?.hasGottenDead) {
           hgd = true;
         }
         return {
@@ -209,22 +262,6 @@ export const useGameStore = create<GameState & GameActions>()(
           hasGottenDead: hgd,
         };
       });
-    }
-    rest.pile             = Array.isArray(rest.pile)  ? rest.pile  : [];
-    rest.deck             = Array.isArray(rest.deck)  ? rest.deck  : [];
-    rest.gameLog          = rest.gameLog          ?? [];
-    rest.turnHistory      = rest.turnHistory      ?? [];
-    rest.discardedCardHistory = rest.discardedCardHistory ?? [];
-    // Firebase armazena arrays vazios como null.
-    // - deads = null  → ambos os mortos foram pegos → []
-    // - deads = [null, pack] → um morto era array vazio (bug) → filtra
-    // NUNCA restaurar para [[], []] pois isso cria mortos fantasmas
-    if (Array.isArray(rest.deads)) {
-      rest.deads = rest.deads
-        .map((d: any) => (Array.isArray(d) ? d : null))
-        .filter((d: any) => d !== null && d.length > 0);
-    } else {
-      rest.deads = []; // null do Firebase = sem mortos restantes
     }
     set(rest);
   },

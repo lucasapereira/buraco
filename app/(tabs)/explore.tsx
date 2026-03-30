@@ -724,7 +724,7 @@ export default function GameScreen() {
                             ]}>
                               <Text style={[styles.statusName, { fontSize: Math.round(15 * scale) }]}>{shortName}</Text>
                               <Text style={[styles.statusCards, { fontSize: Math.round(15 * scale) }]}>
-                                {p.hand.length} 🎴 {teams[p.teamId as 'team-1' | 'team-2']?.hasGottenDead ? '💀' : ''}
+                                {p.hand.length} 🎴 {p.hasGottenDead ? '💀' : ''}
                               </Text>
                               {p.id === currentTurnPlayerId && (
                                 <View style={{ width: '100%', height: 5, marginTop: 3 }}>
