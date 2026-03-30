@@ -74,7 +74,7 @@ export function getNextPlayer(currentId: PlayerId): PlayerId {
 }
 
 export function createInitialGameState(targetScore: number = 1500, botDifficulty: BotDifficulty = 'hard', gameMode: GameMode = 'classic'): GameState {
-  const allCards = shuffle(generateDeck());
+  const allCards = shuffle(generateDeck(gameMode === 'classic'));
 
   // Separar os 2 mortos (11 cartas cada)
   const deads: Card[][] = [

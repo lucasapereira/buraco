@@ -62,6 +62,7 @@ export default function GameScreen() {
 
   // Timer de AFK (30 segundos)
   const timerAnim = useRef(new Animated.Value(1)).current;
+  const drawPulseAnim = useRef(new Animated.Value(1)).current;
   const lastEventId = gameLog[gameLog.length - 1]?.id;
   useEffect(() => {
     timerAnim.setValue(1);
@@ -216,6 +217,22 @@ export default function GameScreen() {
   }, [roundOver]);
 
   useBotAI({ disabled: botAIDisabled, humanPlayerIds, isOnline: isOnlineMode });
+
+  // Animação de pulso nas pilhas quando é minha vez de comprar
+  useEffect(() => {
+    if (isMyTurn && turnPhase === 'draw') {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(drawPulseAnim, { toValue: 0.2, duration: 500, useNativeDriver: true }),
+          Animated.timing(drawPulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+        ])
+      );
+      pulse.start();
+      return () => { pulse.stop(); drawPulseAnim.setValue(1); };
+    } else {
+      drawPulseAnim.setValue(1);
+    }
+  }, [isMyTurn, turnPhase]);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -661,14 +678,6 @@ export default function GameScreen() {
                                   );
                                 })}
                               </View>
-                              {isCanasta && (() => {
-                                const ci = getCanastaInfo(canasta, gameCards.length);
-                                return (
-                                  <View pointerEvents="none" style={[styles.canastaRibbon, styles.ribbonByTier[ci.tier]]}>
-                                    <Text style={styles.ribbonText}>{ci.label}</Text>
-                                  </View>
-                                );
-                              })()}
                               <View style={styles.gameCardOverlay}>
                                 <View style={[
                                   styles.counterBadgeOverlay,
@@ -680,6 +689,11 @@ export default function GameScreen() {
                                   </Text>
                                 </View>
                               </View>
+                              {isCanasta && (
+                                <Text style={[styles.canastaBonusLabelBase, styles.canastaBonusByTier[getCanastaInfo(canasta, gameCards.length).tier]]}>
+                                  {getCanastaInfo(canasta, gameCards.length).label}
+                                </Text>
+                              )}
                             </View>
                           </View>
                         </TouchableOpacity>
@@ -702,17 +716,43 @@ export default function GameScreen() {
 
                         return (
                           <View key={p.id}>
-                            <View style={[styles.statusItem, { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale) }, p.id === myPlayerId && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 }]}>
-                              <Text style={[styles.statusName, { fontSize: Math.round(11 * scale) }]}>{shortName}</Text>
-                              <Text style={[styles.statusCards, { fontSize: Math.round(13 * scale) }]}>
-                                {p.hand.length} 🎴 {p.hasGottenDead ? '💀' : ''}
+                            <View style={[
+                              styles.statusItem,
+                              { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale) },
+                              p.id === myPlayerId && { borderColor: 'rgba(76,175,80,0.5)', borderWidth: 1 },
+                              p.id === currentTurnPlayerId && styles.statusItemActive,
+                            ]}>
+                              <Text style={[styles.statusName, { fontSize: Math.round(15 * scale) }]}>{shortName}</Text>
+                              <Text style={[styles.statusCards, { fontSize: Math.round(15 * scale) }]}>
+                                {p.hand.length} 🎴 {teams[p.teamId as 'team-1' | 'team-2']?.hasGottenDead ? '💀' : ''}
                               </Text>
                               {p.id === currentTurnPlayerId && (
-                                <Animated.View style={{
-                                  width: '100%', height: 2, marginTop: 3,
-                                  backgroundColor: '#FFD600',
-                                  transform: [{ scaleX: timerAnim }]
-                                }} />
+                                <View style={{ width: '100%', height: 5, marginTop: 3 }}>
+                                  {/* Barra verde: início (timerAnim 0.6–1.0) */}
+                                  <Animated.View style={{
+                                    position: 'absolute', top: 0, left: 0,
+                                    width: '100%', height: 5,
+                                    backgroundColor: '#4CAF50',
+                                    transform: [{ scaleX: timerAnim }],
+                                    opacity: timerAnim.interpolate({ inputRange: [0.5, 0.7], outputRange: [0, 1], extrapolate: 'clamp' }),
+                                  }} />
+                                  {/* Barra amarela: meio (timerAnim 0.25–0.65) */}
+                                  <Animated.View style={{
+                                    position: 'absolute', top: 0, left: 0,
+                                    width: '100%', height: 5,
+                                    backgroundColor: '#FFD600',
+                                    transform: [{ scaleX: timerAnim }],
+                                    opacity: timerAnim.interpolate({ inputRange: [0.25, 0.45, 0.6, 0.75], outputRange: [0, 1, 1, 0], extrapolate: 'clamp' }),
+                                  }} />
+                                  {/* Barra vermelha: fim (timerAnim 0–0.35) */}
+                                  <Animated.View style={{
+                                    position: 'absolute', top: 0, left: 0,
+                                    width: '100%', height: 5,
+                                    backgroundColor: '#F44336',
+                                    transform: [{ scaleX: timerAnim }],
+                                    opacity: timerAnim.interpolate({ inputRange: [0.2, 0.4], outputRange: [1, 0], extrapolate: 'clamp' }),
+                                  }} />
+                                </View>
                               )}
                             </View>
                             {/* Animação Compra */}
@@ -735,8 +775,8 @@ export default function GameScreen() {
                         { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale), backgroundColor: 'rgba(255,214,0,0.1)' },
                         deads.length === 0 && { borderColor: '#FF5252', borderWidth: 1 }
                       ]}>
-                        <Text style={[styles.statusName, { fontSize: Math.round(11 * scale) }]}>Mortos</Text>
-                        <Text style={[styles.statusCards, { fontSize: Math.round(13 * scale), color: deads.length === 0 ? '#FF5252' : '#FFD600' }]}>
+                        <Text style={[styles.statusName, { fontSize: Math.round(15 * scale) }]}>Mortos</Text>
+                        <Text style={[styles.statusCards, { fontSize: Math.round(15 * scale), color: deads.length === 0 ? '#FF5252' : '#FFD600' }]}>
                           {deads.length} {deads.length === 0 ? '🚫' : '📦'}
                         </Text>
                       </View>
@@ -828,14 +868,6 @@ export default function GameScreen() {
                                   );
                                 })}
                               </View>
-                              {isCanasta && (() => {
-                                const ci = getCanastaInfo(canasta, gameCards.length);
-                                return (
-                                  <View pointerEvents="none" style={[styles.canastaRibbon, styles.ribbonByTier[ci.tier]]}>
-                                    <Text style={styles.ribbonText}>{ci.label}</Text>
-                                  </View>
-                                );
-                              })()}
                               <View style={styles.gameCardOverlay}>
                                 <View style={[
                                   styles.counterBadgeOverlay,
@@ -848,6 +880,11 @@ export default function GameScreen() {
                                 </View>
                                 {canAdd && <Text style={styles.addTag}>➕</Text>}
                               </View>
+                              {isCanasta && (
+                                <Text style={[styles.canastaBonusLabelBase, styles.canastaBonusByTier[getCanastaInfo(canasta, gameCards.length).tier]]}>
+                                  {getCanastaInfo(canasta, gameCards.length).label}
+                                </Text>
+                              )}
                             </View>
                           </View>
                         </TouchableOpacity>
@@ -896,11 +933,16 @@ export default function GameScreen() {
 
         <View style={styles.actionBarRight}>
         <View style={styles.pileBox}>
+            {isMyTurn && turnPhase === 'draw' && (
+              <Animated.View pointerEvents="none" style={[styles.drawPulseIndicator, { opacity: drawPulseAnim }]}>
+                <Text style={styles.drawPulseText}>▼</Text>
+              </Animated.View>
+            )}
             {pile.length > 0 ? (
               <View>
                 <Card card={pile[pile.length - 1]} small onPress={handlePileClick} />
-              <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{pile.length}</Text></View>
-              <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Lixo</Text></View>
+                <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{pile.length}</Text></View>
+                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Lixo</Text></View>
               </View>
             ) : (
               <TouchableOpacity onPress={handlePileClick}>
@@ -910,15 +952,19 @@ export default function GameScreen() {
           </View>
 
         <View style={styles.pileBox}>
+            {isMyTurn && turnPhase === 'draw' && (
+              <Animated.View pointerEvents="none" style={[styles.drawPulseIndicator, { opacity: drawPulseAnim }]}>
+                <Text style={styles.drawPulseText}>▼</Text>
+              </Animated.View>
+            )}
             {deck.length > 0 ? (
               <View>
                 <Card card={{ id: '__hidden__', suit: 'spades', value: 3, deck: 1, isJoker: false }} isHidden small onPress={handleDrawDeck} />
               <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{deck.length}</Text></View>
-              <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Monte</Text></View>
               </View>
             ) : (
               <TouchableOpacity onPress={handleDrawDeck}>
-              <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Monte</Text></View>
+              <View style={styles.emptySlot} />
               </TouchableOpacity>
             )}
           </View>
@@ -926,6 +972,11 @@ export default function GameScreen() {
       </View>
 
       {/* MÃO DO JOGADOR */}
+      {isMyTurn && turnPhase === 'play' && (
+        <Animated.View pointerEvents="none" style={[styles.discardHint, { opacity: drawPulseAnim }]}>
+          <Text style={styles.discardHintText}>▲ descarte uma carta ▲</Text>
+        </Animated.View>
+      )}
       <View style={[styles.handArea, { height: Math.round((isLandscape ? 72 : 93) * tabletScale) }]}>
         <Hand
           cards={user.hand}
@@ -1089,7 +1140,7 @@ export default function GameScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1B5E20' },
-  emptyText: { color: '#fff', textAlign: 'center', marginTop: 100, fontSize: 20 },
+  emptyText: { color: '#fff', textAlign: 'center', marginTop: 100, fontSize: 22 },
 
   // HEADER
   header: {
@@ -1097,13 +1148,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 2,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  scoreLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
-  scoreMain: { color: '#B9F6CA', fontSize: 25, fontWeight: '900' },
-  scoreLive: { color: '#FFD600', fontSize: 13, fontWeight: '700' },
-  scoreText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  targetText: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 },
+  scoreLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 14, fontWeight: '700', letterSpacing: 1 },
+  scoreMain: { color: '#B9F6CA', fontSize: 27, fontWeight: '900' },
+  scoreLive: { color: '#FFD600', fontSize: 15, fontWeight: '700' },
+  scoreText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  targetText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 2 },
   restartBtn: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
-  restartText: { fontSize: 18 },
+  restartText: { fontSize: 20 },
 
   // STATUS BAR
   statusBar: {
@@ -1124,15 +1175,21 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     minWidth: 46,
   },
+  statusItemActive: {
+    backgroundColor: 'rgba(255,214,0,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,214,0,0.35)',
+    elevation: 2,
+  },
   statusName: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     marginBottom: 2,
   },
   statusCards: {
     color: '#B9F6CA',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '800',
   },
 
@@ -1151,20 +1208,20 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   turnBox: { alignItems: 'center' },
-  turnName: { color: '#FFD600', fontWeight: '900', fontSize: 18 },
+  turnName: { color: '#FFD600', fontWeight: '900', fontSize: 20 },
   phaseLabel: {
-    color: '#fff', fontWeight: '800', fontSize: 13,
+    color: '#fff', fontWeight: '800', fontSize: 15,
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, marginTop: 2,
     overflow: 'hidden',
   },
-  infoText: { color: '#B9F6CA', fontSize: 14, textAlign: 'right' },
+  infoText: { color: '#B9F6CA', fontSize: 16, textAlign: 'right' },
 
   // BOARD
   board: { flex: 1, flexDirection: 'row', paddingHorizontal: 4, paddingTop: 4 },
   gamesScroll: { flex: 1 },
   gamesScrollContent: { paddingLeft: 6, paddingRight: 6, paddingBottom: 10, flexGrow: 1 },
-  sectionLabel: { color: '#E8F5E9', fontWeight: '800', fontSize: 16, marginBottom: 4 },
-  emptyGames: { color: 'rgba(255,255,255,0.4)', fontSize: 15, marginBottom: 8, fontStyle: 'italic' },
+  sectionLabel: { color: '#E8F5E9', fontWeight: '800', fontSize: 18, marginBottom: 4 },
+  emptyGames: { color: 'rgba(255,255,255,0.4)', fontSize: 17, marginBottom: 8, fontStyle: 'italic' },
   // GRADE DE JOGOS
   gamesGrid: {
     flexDirection: 'row',
@@ -1241,7 +1298,7 @@ const styles = StyleSheet.create({
   },
   trincaChipText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '900',
   },
   gameCardHighlight: {
@@ -1260,12 +1317,12 @@ const styles = StyleSheet.create({
   },
   hiddenCountTag: {
     color: 'rgba(255,255,255,0.85)',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '900',
   },
-  canastaTag: { fontSize: 15 },
-  addTag: { fontSize: 14 },
-  jokerBadge: { fontSize: 13, color: '#FFD600', fontWeight: '900' },
+  canastaTag: { fontSize: 17 },
+  addTag: { fontSize: 16 },
+  jokerBadge: { fontSize: 15, color: '#FFD600', fontWeight: '900' },
   counterBadgeOverlay: {
     backgroundColor: 'rgba(0,0,0,0.45)',
     borderRadius: 10,
@@ -1279,13 +1336,57 @@ const styles = StyleSheet.create({
   },
   counterText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '900',
   },
   counterTextOverlay: {
     color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  canastaBonusLabelBase: {
+    position: 'absolute',
+    bottom: 3,
+    left: 3,
+    color: '#fff',
     fontSize: 11,
     fontWeight: '900',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    overflow: 'hidden',
+  },
+  canastaBonusByTier: {
+    dirty: { backgroundColor: '#E65100' },
+    c200:  { backgroundColor: '#388E3C' },
+    c500:  { backgroundColor: '#0277BD' },
+    c1000: { backgroundColor: '#6A1B9A' },
+  } as Record<string, object>,
+  discardHint: {
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  discardHintText: {
+    color: 'rgba(255,214,0,0.8)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  drawPulseIndicator: {
+    position: 'absolute',
+    top: -22,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  drawPulseText: {
+    color: '#FFD600',
+    fontSize: 22,
+    fontWeight: '900',
+    textShadowColor: '#000',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   pileCounterBadge: {
     position: 'absolute',
@@ -1306,10 +1407,10 @@ const styles = StyleSheet.create({
   pileNameTag: {
     position: 'absolute',
     bottom: 2,
-    left: -4,
+    right: 2,
     backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 6,
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 2,
     zIndex: 100,
     elevation: 10,
@@ -1335,13 +1436,13 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#FFD600', backgroundColor: 'rgba(255,214,0,0.12)',
   },
   opponentGame: { backgroundColor: 'rgba(255,0,0,0.08)' },
-  cleanCanasta: { borderLeftWidth: 3, borderLeftColor: '#FFD600' },
-  dirtyCanasta: { borderLeftWidth: 3, borderLeftColor: '#FF9800' },
+  cleanCanasta: {},
+  dirtyCanasta: {},
   // Lookup maps por tier
   canastaByTier: {
-    dirty: { borderLeftWidth: 3, borderLeftColor: '#FF9800' },
-    c200:  { borderLeftWidth: 3, borderLeftColor: '#4CAF50' },
-    c500:  { borderLeftWidth: 3, borderLeftColor: '#29B6F6' },
+    dirty: {},
+    c200:  {},
+    c500:  {},
     c1000: { borderLeftWidth: 3, borderLeftColor: '#CE93D8' },
     none:  {},
   } as Record<string, any>,
@@ -1355,10 +1456,10 @@ const styles = StyleSheet.create({
   cardClipTight: { height: 64 },
   cardClipLast: { width: 34 },
   cardClipLastTight: { width: 30 },
-  canastaLabel: { fontSize: 12, color: '#FFD600', fontWeight: '800', marginLeft: 4 },
-  gameCardCount: { fontSize: 12, color: 'rgba(255,255,255,0.5)', marginLeft: 4 },
+  canastaLabel: { fontSize: 14, color: '#FFD600', fontWeight: '800', marginLeft: 4 },
+  gameCardCount: { fontSize: 14, color: 'rgba(255,255,255,0.5)', marginLeft: 4 },
   gameInfo: { alignItems: 'flex-end', marginLeft: 4 },
-  addLabel: { fontSize: 11, color: '#FFD600', fontWeight: '800' },
+  addLabel: { fontSize: 13, color: '#FFD600', fontWeight: '800' },
 
   canastaRibbon: {
     position: 'absolute',
@@ -1387,7 +1488,7 @@ const styles = StyleSheet.create({
   },
   ribbonText: {
     color: '#fff',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
@@ -1465,22 +1566,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 60, // Individualmente alto também
   },
-  pileLabel: { color: '#E8F5E9', fontSize: 12, fontWeight: '700', marginBottom: 1 },
+  pileLabel: { color: '#E8F5E9', fontSize: 14, fontWeight: '700', marginBottom: 1 },
 
   // MENU ☰
   menuBtn: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
-  menuBtnText: { fontSize: 16, color: '#fff' },
+  menuBtnText: { fontSize: 18, color: '#fff' },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-start', alignItems: 'flex-end', paddingTop: 80, paddingRight: 12 },
   menuBox: { backgroundColor: '#1B4A28', borderRadius: 12, padding: 8, minWidth: 200, elevation: 10 },
-  menuTitle: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 6, letterSpacing: 1 },
+  menuTitle: { color: 'rgba(255,255,255,0.5)', fontSize: 15, fontWeight: '700', textAlign: 'center', marginBottom: 6, letterSpacing: 1 },
   menuItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 8, marginBottom: 4, backgroundColor: 'rgba(255,255,255,0.06)' },
-  menuItemText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  menuItemText: { color: '#fff', fontSize: 19, fontWeight: '600' },
   menuClose: { backgroundColor: 'transparent', marginTop: 4 },
   emptySlot: {
     width: 50, height: 72, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
     borderStyle: 'dashed', borderRadius: 6, justifyContent: 'center', alignItems: 'center',
   },
-  emptySlotText: { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
+  emptySlotText: { color: 'rgba(255,255,255,0.3)', fontSize: 13 },
 
   // MODAL
   modalOverlay: {
@@ -1492,26 +1593,26 @@ const styles = StyleSheet.create({
     width: '85%', maxWidth: 500, alignItems: 'center',
     borderWidth: 2, borderColor: '#FFD600',
   },
-  modalTitle: { color: '#FFD600', fontSize: 25, fontWeight: '900', textAlign: 'center', marginBottom: 16 },
+  modalTitle: { color: '#FFD600', fontSize: 27, fontWeight: '900', textAlign: 'center', marginBottom: 16 },
   modalScores: { marginBottom: 12, width: '100%' },
-  modalScoreText: { color: '#fff', fontSize: 18, marginBottom: 4 },
-  modalWhoWent: { color: '#FFD600', fontSize: 15, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
+  modalScoreText: { color: '#fff', fontSize: 20, marginBottom: 4 },
+  modalWhoWent: { color: '#FFD600', fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
   modalTeamBlock: { width: '100%', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, marginBottom: 8 },
-  modalTeamTitle: { color: '#fff', fontSize: 15, fontWeight: '800', marginBottom: 4 },
-  modalScoreRow: { color: 'rgba(255,255,255,0.75)', fontSize: 14, marginBottom: 2 },
-  modalScoreTotal: { color: '#FFD600', fontSize: 16, fontWeight: '900', marginTop: 4 },
-  modalTarget: { color: '#B9F6CA', fontSize: 15, marginBottom: 16 },
+  modalTeamTitle: { color: '#fff', fontSize: 17, fontWeight: '800', marginBottom: 4 },
+  modalScoreRow: { color: 'rgba(255,255,255,0.75)', fontSize: 16, marginBottom: 2 },
+  modalScoreTotal: { color: '#FFD600', fontSize: 18, fontWeight: '900', marginTop: 4 },
+  modalTarget: { color: '#B9F6CA', fontSize: 17, marginBottom: 16 },
   modalBtn: {
     backgroundColor: '#FFD600', paddingHorizontal: 32, paddingVertical: 12,
     borderRadius: 24,
   },
-  modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 18 },
-  modalWaiting: { color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 20 },
+  modalWaiting: { color: 'rgba(255,255,255,0.5)', fontSize: 16, textAlign: 'center', marginTop: 8 },
 
   undoButtonText: {
     color: '#FFD600',
     fontWeight: '900',
-    fontSize: 15,
+    fontSize: 17,
   },
 
   // EXPANDED GAME MODAL
@@ -1524,7 +1625,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   expandedTitle: {
-    color: '#FFD600', fontSize: 24, fontWeight: '900', marginBottom: 30,
+    color: '#FFD600', fontSize: 26, fontWeight: '900', marginBottom: 30,
     textTransform: 'uppercase', letterSpacing: 4,
     textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4,
   },
@@ -1543,7 +1644,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 6, // Garante que a sombra apareça bem
   },
   expandedCloseHint: {
-    color: 'rgba(255,255,255,0.4)', fontSize: 15, marginTop: 40,
+    color: 'rgba(255,255,255,0.4)', fontSize: 17, marginTop: 40,
     fontWeight: '700', letterSpacing: 1,
   },
   handCounterSmall: {
@@ -1556,6 +1657,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
   },
-  handCounterLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 9, fontWeight: '700' },
-  handCounterValue: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  handCounterLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '700' },
+  handCounterValue: { color: '#fff', fontSize: 18, fontWeight: '900' },
 });

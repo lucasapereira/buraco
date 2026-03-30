@@ -200,7 +200,7 @@ export const useGameStore = create<GameState & GameActions>()(
         const playerTeamId = p?.teamId ?? localPlayer?.teamId;
         let hgd = p?.hasGottenDead || false;
         // Protege contra reversão: checa o player local E o team local (evita dessincronização)
-        if (isSameRound && (localPlayer?.hasGottenDead || localState.teams[playerTeamId]?.hasGottenDead)) {
+        if (isSameRound && (localPlayer?.hasGottenDead || localState.teams[playerTeamId as TeamId]?.hasGottenDead)) {
           hgd = true;
         }
         return {

@@ -1,4 +1,4 @@
-export type Suit = 'spades' | 'hearts' | 'diamonds' | 'clubs';
+export type Suit = 'spades' | 'hearts' | 'diamonds' | 'clubs' | 'joker';
 
 export type CardValue = 
   | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 // 11=J
@@ -18,10 +18,9 @@ export interface Card {
 const SUITS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
 const VALUES: CardValue[] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 2];
 
-export function generateDeck(): Card[] {
+export function generateDeck(withPhysicalJokers: boolean = false): Card[] {
   const cards: Card[] = [];
-  
-  // Criar 2 baralhos (sem os Jokers reais de 54 cartas, o buraco usa o 2 como curinga, então 52x2=104 cartas)
+
   for (let d = 1; d <= 2; d++) {
     for (const suit of SUITS) {
       for (const value of VALUES) {
@@ -31,6 +30,18 @@ export function generateDeck(): Card[] {
           suit,
           value,
           isJoker: value === 2,
+        });
+      }
+    }
+    // 2 jokers físicos por baralho = 4 no total
+    if (withPhysicalJokers) {
+      for (let j = 1; j <= 2; j++) {
+        cards.push({
+          id: `${d}-joker-${j}`,
+          deck: d as 1 | 2,
+          suit: 'joker',
+          value: 2,
+          isJoker: true,
         });
       }
     }
@@ -49,7 +60,7 @@ export function shuffle(cards: Card[]): Card[] {
 }
 
 const SUIT_SYMBOLS: Record<Suit, string> = {
-  hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠',
+  hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠', joker: '',
 };
 
 const VALUE_LABELS: Record<number, string> = {
@@ -57,6 +68,7 @@ const VALUE_LABELS: Record<number, string> = {
 };
 
 export function cardLabel(card: Card): string {
+  if (card.suit === 'joker') return '🃏';
   const val = card.value === 2 ? '2' : (VALUE_LABELS[card.value] || card.value.toString());
   return `${val}${SUIT_SYMBOLS[card.suit]}`;
 }

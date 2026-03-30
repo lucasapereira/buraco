@@ -247,14 +247,14 @@ const styles = StyleSheet.create({
     textShadowRadius: 6,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 18,
     color: 'rgba(255,255,255,0.6)',
     letterSpacing: 2,
     marginTop: 4,
   },
   sectionTitle: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   },
   modeText: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '700',
   },
   modeTextActive: {
@@ -310,12 +310,12 @@ const styles = StyleSheet.create({
   },
   diffLabel: {
     color: 'rgba(255,255,255,0.8)',
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '700',
   },
   diffDesc: {
     color: 'rgba(255,255,255,0.45)',
-    fontSize: 13,
+    fontSize: 15,
     textAlign: 'center',
     marginBottom: 28,
     paddingHorizontal: 8,
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
   },
   targetText: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
   },
   targetTextActive: {
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
   },
   playText: {
     color: '#1B5E20',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
     letterSpacing: 1.5,
   },
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
   },
   layoutBtnText: {
     color: 'rgba(255,255,255,0.35)',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1,
   },
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     bottom: 16,
     right: 20,
     color: 'rgba(255,255,255,0.25)',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
     letterSpacing: 1,
   },
@@ -409,11 +409,11 @@ const styles = StyleSheet.create({
   },
   profileBtnLevel: {
     color: '#FFD600',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '900',
   },
   profileBtnIcon: {
-    fontSize: 16,
+    fontSize: 18,
   },
 
   // Modal diário
@@ -440,14 +440,14 @@ const styles = StyleSheet.create({
   dailyEmoji: { fontSize: 56, marginBottom: 8 },
   dailyTitle: {
     color: '#FFD600',
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '900',
     letterSpacing: 1,
     marginBottom: 6,
   },
   dailyStreak: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 15,
+    fontSize: 17,
     marginBottom: 20,
   },
   dailyXPBadge: {
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   },
   dailyXPLabel: {
     color: '#FFD600',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: 2,
   },
@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
   },
   dailyBtnText: {
     color: '#1B5E20',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
     letterSpacing: 2,
   },

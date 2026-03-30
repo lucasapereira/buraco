@@ -7,7 +7,7 @@ export type CanastaType = 'clean' | 'dirty' | 'none';
  * Ordena as cartas na mão do jogador por Naipe e depois por Valor
  */
 export function sortCardsBySuitAndValue(cards: Card[]): Card[] {
-  const suitOrder: Record<string, number> = { spades: 1, hearts: 2, clubs: 3, diamonds: 4 };
+  const suitOrder: Record<string, number> = { spades: 1, hearts: 2, clubs: 3, diamonds: 4, joker: 0 };
   return [...cards].sort((a, b) => {
     if (a.suit !== b.suit) {
       return suitOrder[a.suit] - suitOrder[b.suit];
@@ -328,6 +328,16 @@ export function canTakePile(
   if (gameMode === 'araujo_pereira') return true; // Always can take in this mode
 
   const topCard = pile[pile.length - 1];
+
+  // Joker físico no topo: pode pegar se tiver 2 cartas na mão que formem sequência com ele
+  if (topCard.suit === 'joker') {
+    for (let i = 0; i < hand.length; i++) {
+      for (let j = i + 1; j < hand.length; j++) {
+        if (validateSequence([topCard, hand[i], hand[j]], gameMode)) return true;
+      }
+    }
+    return false;
+  }
 
   // Se a carta do topo encaixa diretamente em algum jogo existente, pode pegar
   for (const game of existingGames) {

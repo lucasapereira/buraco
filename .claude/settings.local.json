@@ -38,7 +38,9 @@
       "Bash(wc:*)",
       "Bash(git fetch:*)",
       "Skill(update-config)",
-      "mcp__claude-in-chrome__navigate"
+      "mcp__claude-in-chrome__navigate",
+      "Bash(node -e \"const C = require\\(''''/Users/lucasaraujopereira/buraco/node_modules/expo-constants''''\\); console.log\\(Object.keys\\(C\\)\\)\")",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

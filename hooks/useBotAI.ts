@@ -23,6 +23,129 @@ function getCardPoints(card: Card): number {
   return 5;
 }
 
+/**
+ * Verifica se adicionar um isJoker card realmente SUJA o jogo.
+ * Um 2♥ adicionado a um jogo de copas na posição natural (valor 2) NÃO suja — é carta natural.
+ * Coringas físicos (suit='joker') SEMPRE sujam. 2s de outro naipe SEMPRE sujam.
+ */
+function wouldDirtyGame(card: Card, game: Card[]): boolean {
+  if (!card.isJoker) return false; // Carta normal nunca suja
+  if (card.suit === 'joker') return true; // Coringa físico sempre suja
+  // Suit-2 wild: verifica se é do mesmo naipe e se encaixa como 2 natural
+  const normalCards = game.filter(c => !c.isJoker);
+  if (normalCards.length === 0) return true;
+  // Em trincas, 2 curinga sempre suja
+  if (normalCards.every(c => c.value === normalCards[0].value)) return true;
+  // Em sequência: se o naipe coincide, checkCanasta vai avaliar se é limpa
+  // Simulamos adicionando: se checkCanasta retorna clean, não suja
+  if (card.suit === normalCards[0].suit) {
+    const simulated = [...game, card];
+    if (simulated.length >= 7) return checkCanasta(simulated) !== 'clean';
+    // Com menos de 7, verifica se o 2 encaixa na posição natural (valor 2 consecutivo)
+    const vals = simulated.map(c => c.value === 14 ? 1 : c.value).sort((a, b) => a - b);
+    let consecutive = true;
+    for (let i = 0; i < vals.length - 1; i++) {
+      if (vals[i + 1] - vals[i] !== 1) { consecutive = false; break; }
+    }
+    if (consecutive) return false; // 2 natural na posição certa — não suja
+  }
+  return true; // Naipe diferente ou não encaixa naturalmente
+}
+
+/**
+ * Escolhe qual coringa gastar: prefere coringa físico (🃏) ao invés de 2-curinga,
+ * pois o 2-curinga pode ser carta natural num jogo de seu naipe.
+ * Se nenhum coringa físico disponível, escolhe o 2-curinga de naipe DIFERENTE dos jogos do time.
+ */
+function pickBestJokerToSpend(jokers: Card[], teamGames: Card[][]): Card {
+  // 1. Coringa físico primeiro (não tem valor natural em nenhum jogo)
+  const physical = jokers.find(j => j.suit === 'joker');
+  if (physical) return physical;
+  // 2. 2-curinga cujo naipe NÃO coincide com nenhum jogo na mesa
+  const gameSuits = new Set<string>();
+  for (const g of teamGames) {
+    const normal = g.filter(c => !c.isJoker);
+    if (normal.length > 0 && normal.every(c => c.suit === normal[0].suit)) {
+      gameSuits.add(normal[0].suit);
+    }
+  }
+  const nonMatchingWild = jokers.find(j => !gameSuits.has(j.suit));
+  if (nonMatchingWild) return nonMatchingWild;
+  // 3. Qualquer um
+  return jokers[0];
+}
+
+/**
+ * Verifica se um jogo limpo (candidato a canastra limpa) tem chance REAL de chegar a 7 cartas.
+ * Analisa quais cartas são necessárias para estender a sequência e quantas cópias
+ * ainda estão livres (não presas em jogos na mesa de nenhum time).
+ *
+ * Exemplo: jogo=[5♥,6♥,7♥,8♥,9♥] precisa de +2 cartas. Candidatos: 4♥, 10♥, 3♥, J♥, etc.
+ * Se ambas as cópias do 4♥ e 10♥ estão na mesa, o caminho mais curto é impossível.
+ * Mas se 3♥ ou J♥ têm cópias livres, ainda é viável (precisa crescer mais).
+ *
+ * @param game - o jogo limpo candidato (sequência de mesmo naipe, sem coringas)
+ * @param allTableGames - TODOS os jogos na mesa (ambos os times) para contar cartas "presas"
+ * @param botHand - mão do bot (cartas que ele já tem disponíveis)
+ * @returns true se existe caminho viável para chegar a 7+ cartas limpas
+ */
+function canCleanCandidateGrow(game: Card[], allTableGames: Card[][], botHand: Card[]): boolean {
+  const normalCards = game.filter(c => !c.isJoker);
+  if (normalCards.length === 0) return false;
+  const suit = normalCards[0].suit;
+  const values = normalCards.map(c => c.value).sort((a, b) => a - b);
+  const minVal = values[0];
+  const maxVal = values[values.length - 1];
+  const cardsNeeded = 7 - game.length;
+  if (cardsNeeded <= 0) return true; // Já é canastra
+
+  // Valores que poderiam estender a sequência (consecutivos para cima e para baixo)
+  const possibleValues: number[] = [];
+  for (let v = minVal - 1; v >= 3; v--) possibleValues.push(v);
+  if (minVal <= 4) possibleValues.push(14); // Ás como low
+  for (let v = maxVal + 1; v <= 14; v++) possibleValues.push(v);
+
+  // Deck duplo: 2 cópias de cada carta (naipe+valor)
+  const COPIES = 2;
+
+  // Conta cartas do mesmo naipe presas em jogos na mesa
+  const locked = new Map<number, number>();
+  for (const tg of allTableGames) {
+    for (const c of tg) {
+      if (c.suit === suit && !c.isJoker) {
+        locked.set(c.value, (locked.get(c.value) || 0) + 1);
+      }
+    }
+  }
+
+  // Conta cartas do mesmo naipe na mão do bot
+  const inHand = new Map<number, number>();
+  for (const c of botHand) {
+    if (c.suit === suit && !c.isJoker) {
+      inHand.set(c.value, (inHand.get(c.value) || 0) + 1);
+    }
+  }
+
+  // Para cada valor possível, calcula cópias livres (não na mesa)
+  // Cartas na mão do bot são livres MAS já subtraídas das cópias totais se não estão na mesa
+  let availableCards = 0;
+  for (const v of possibleValues) {
+    const onTable = locked.get(v) || 0;
+    const heldByBot = inHand.get(v) || 0;
+    // Cópias livres = total - presas na mesa. Bot já tem "heldByBot" dessas.
+    // O máximo que pode conseguir é: cópias livres (inclui as da mão + deck + mãos adversárias)
+    const freeCopies = Math.max(0, COPIES - onTable);
+    if (freeCopies > 0) {
+      // Pelo menos 1 cópia PODE existir fora da mesa (deck, mão, lixo)
+      // Bot já tem certeza de "heldByBot" delas
+      availableCards += freeCopies;
+    }
+    if (availableCards >= cardsNeeded) return true;
+  }
+
+  return false; // Não há cartas livres suficientes para completar a canastra
+}
+
 /** Encontra todas as sequências válidas (e trincas) possíveis dentro de uma mão */
 function findBestSequences(hand: Card[], gameMode: GameMode = 'classic'): Card[][] {
   const sequences: Card[][] = [];
@@ -51,20 +174,22 @@ function findBestSequences(hand: Card[], gameMode: GameMode = 'classic'): Card[]
     }
     if (seq.length >= 3) sequences.push([...seq]);
 
-    // Sequências com 1 curinga — detecta a sequência mais longa possível (não só pares)
+    // Sequências com 1 curinga — detecta a sequência mais longa possível
     if (jokers.length > 0 && cards.length >= 2) {
+      const jokerToUse = pickBestJokerToSpend(jokers, []);
       for (let i = 0; i < cards.length; i++) {
+        // --- Gap no meio: [card, ..., joker_gap, ..., card]
         const seq: Card[] = [cards[i]];
         let expectedNext = cards[i].value + 1;
         let jokerUsed = false;
         for (let j = i + 1; j < cards.length; j++) {
           const currVal = cards[j].value;
-          if (currVal < expectedNext) continue; // pula duplicata ou valor já passado
+          if (currVal < expectedNext) continue;
           if (currVal === expectedNext) {
             seq.push(cards[j]);
             expectedNext = currVal + 1;
           } else if (!jokerUsed && currVal === expectedNext + 1) {
-            seq.push(jokers[0]);
+            seq.push(jokerToUse);
             seq.push(cards[j]);
             jokerUsed = true;
             expectedNext = currVal + 1;
@@ -74,6 +199,34 @@ function findBestSequences(hand: Card[], gameMode: GameMode = 'classic'): Card[]
         }
         if (seq.length >= 3 && jokerUsed && validateSequence(seq, gameMode)) {
           sequences.push([...seq]);
+        }
+
+        // --- Joker no final (tail): [card, card, joker] — estende um par consecutivo
+        if (cards.length >= 2) {
+          const nextIdx = cards.findIndex((c, idx) => idx > i && c.value === cards[i].value + 1);
+          if (nextIdx >= 0 && cards[i].value + 2 <= 14) {
+            const tailSeq = [cards[i], cards[nextIdx], jokerToUse];
+            if (validateSequence(tailSeq, gameMode)) {
+              sequences.push([...tailSeq]);
+            }
+          }
+          // Joker no início: [joker, card, card]
+          if (nextIdx >= 0 && cards[i].value - 1 >= 3) {
+            const headSeq = [jokerToUse, cards[i], cards[nextIdx]];
+            if (validateSequence(headSeq, gameMode)) {
+              sequences.push([...headSeq]);
+            }
+          }
+        }
+      }
+
+      // --- Ace-low com coringa: A-joker-3 (Ás como 1, coringa como 2)
+      const aces = cards.filter(c => c.value === 14);
+      const threes = cards.filter(c => c.value === 3);
+      if (aces.length > 0 && threes.length > 0) {
+        const aceLowSeq = [aces[0], jokerToUse, threes[0]];
+        if (validateSequence(aceLowSeq, gameMode)) {
+          sequences.push([...aceLowSeq]);
         }
       }
     }
@@ -126,28 +279,41 @@ function findBestSequences(hand: Card[], gameMode: GameMode = 'classic'): Card[]
 
 /** Avalia utilidade de uma carta para a mão (quanto vale mantê-la) */
 function cardUtility(card: Card, hand: Card[], gameMode: GameMode, teamGames: Card[][] = []): number {
-  if (card.isJoker) return 100; // Nunca descarta curinga
+  if (card.isJoker) {
+    // Escala valor do coringa: quanto mais coringas na mão, menos vale cada um
+    const jokersInHand = hand.filter(c => c.isJoker).length;
+    const baseValue = card.suit === 'joker' ? 110 : 100; // Físico vale mais (sem posição natural)
+    // Diminui utilidade marginal: 1o=base, 2o=base-15, 3o=base-30...
+    return Math.max(50, baseValue - (jokersInHand - 1) * 15);
+  }
+
   const same = hand.filter(c => !c.isJoker && c.suit === card.suit);
   const vals = same.map(c => c.value).sort((a, b) => a - b);
 
-  // Verifica se carta é adjacente a outras (potencial sequência)
+  // Verifica se carta é adjacente a OUTRAS (potencial sequência) — exclui a própria carta
   let adjacentCount = 0;
   for (const v of vals) {
-    if (Math.abs(v - card.value) <= 2) adjacentCount++;
+    if (v !== card.value && Math.abs(v - card.value) <= 2) adjacentCount++;
   }
 
   // Verifica potencial de trinca (cartas de mesmo valor)
   const sameValueCount = hand.filter(c => !c.isJoker && c.value === card.value).length;
   const trincaPotential = (gameMode === 'araujo_pereira' && sameValueCount > 1) ? 50 : 0;
 
-  // Bônus: carta que encaixa em jogo já na mesa (mais perto da canastra = mais valiosa)
+  // Bônus: carta que encaixa em jogo já na mesa — escala forte perto de canastra
   let gameBonus = 0;
   for (const game of teamGames) {
     if (validateSequence([...game, card], gameMode)) {
       const gNormal = game.filter(c => !c.isJoker);
       const isTrinca = gameMode === 'araujo_pereira' && gNormal.length > 0 && gNormal.every(c => c.value === gNormal[0].value);
-      // Trinca: bônus maior pois qualquer naipe serve, mais fácil completar canastra
-      const bonus = isTrinca ? 30 + game.length * 5 : 20 + game.length * 4;
+      let bonus = isTrinca ? 30 + game.length * 5 : 20 + game.length * 4;
+      // Bônus enorme se fecha canastra (6→7 cartas)
+      if (game.length === 6) {
+        const simulated = [...game, card];
+        const canastaType = checkCanasta(simulated);
+        if (canastaType === 'clean') bonus += 100; // Canastra limpa = +200 pontos
+        else if (canastaType === 'dirty') bonus += 50; // Canastra suja = +100 pontos
+      }
       gameBonus = Math.max(gameBonus, bonus);
     }
   }
@@ -238,10 +404,11 @@ function shouldTakePile(
       const adjacent = sameSuit.filter(h => Math.abs(h.value - pCard.value) <= 2);
       if (adjacent.length >= 2) fitsHand = true;
 
-      // Conta utilidade
-      if (pile.some(pileCard => !pileCard.isJoker && hand.some(h => !h.isJoker && h.suit === pileCard.suit && Math.abs(h.value - pileCard.value) <= 2))) {
+      // Conta utilidade desta carta do lixo especificamente
+      if (!pCard.isJoker && hand.some(h => !h.isJoker && h.suit === pCard.suit && Math.abs(h.value - pCard.value) <= 2)) {
         usefulCount++;
       }
+      if (pCard.isJoker) usefulCount++; // Curinga no lixo sempre é útil
     }
 
     if (fitsHand) return true;
@@ -256,6 +423,10 @@ function shouldTakePile(
   if (difficulty === 'easy') return false; // Fácil nunca pega lixo
 
   const topCard = pile[pile.length - 1];
+
+  // Se o topo do lixo é um coringa, é extremamente valioso — prioriza pegar
+  if (topCard.isJoker && canTakePile(hand, pile, teamGames, gameMode)) return true;
+
   // Encaixe direto OU com carta da mão preenchendo lacuna (consistente com canTakePile)
   const fitsExisting = teamGames.some(g => {
     if (validateSequence([...g, topCard], gameMode)) return true;
@@ -285,14 +456,16 @@ function shouldTakePile(
     return sameInHand.length >= 1;
   }).length;
 
-  // Se encaixa em jogo existente, o bot Hard sempre pega. O Medium pega se tiver +1 útil.
+  // Se encaixa em jogo existente
   if (fitsExisting) {
     if (difficulty === 'hard') return true;
     if (difficulty === 'medium') return usefulCount >= 1;
   }
 
+  // Hard: com 12 coringas no jogo, ser mais seletivo para não queimar coringas formando jogos fracos
+  // Só pega se o lixo tem pelo menos 2 cartas úteis ou o lixo é grande (3+)
+  if (difficulty === 'hard') return usefulCount >= 2 || pile.length >= 3;
   if (difficulty === 'medium') return usefulCount >= 2;
-  if (difficulty === 'hard') return true; // Se passou o canTakePile, pega
   return false;
 }
 
@@ -642,6 +815,39 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           }
         }
 
+        // No clássico sem canastra limpa: evita baixar jogo NOVO com curinga (suja desde o início)
+        // pois isso desperdiça o coringa e cria mais um jogo que nunca será canastra limpa.
+        // EXCEÇÃO: se o curinga é um 2 natural que encaixa limpo no jogo, permite.
+        if (s.gameMode === 'classic' && seq.some(c => c.isJoker)) {
+          // Verifica se todos os "coringas" na seq encaixam como 2 natural (limpos)
+          const normalInSeq = seq.filter(c => !c.isJoker);
+          const seqSuit = normalInSeq.length > 0 ? normalInSeq[0].suit : null;
+          const allJokersAreNatural = seq.filter(c => c.isJoker).every(j =>
+            j.suit !== 'joker' && j.suit === seqSuit // 2 do mesmo naipe
+          );
+          if (!allJokersAreNatural) {
+            const hasCleanCanasta = s.teams[bot.teamId].games.some(g => checkCanasta(g) === 'clean');
+            if (!hasCleanCanasta) {
+              const remainingAfter = bot.hand.length - seq.length;
+              const goingForDead = remainingAfter <= 1 && !s.teams[bot.teamId].hasGottenDead;
+              if (!goingForDead) {
+                // Verifica se existe algum candidato VIÁVEL a canastra limpa na mesa
+                // Se não existe nenhum viável, não adianta guardar o coringa
+                const opponentTeamId = bot.teamId === 'team-1' ? 'team-2' : 'team-1';
+                const allTableGames = [...s.teams[bot.teamId].games, ...s.teams[opponentTeamId].games];
+                const cleanCandidates = s.teams[bot.teamId].games.filter(g =>
+                  !g.some(c => c.isJoker) && g.length >= 5
+                );
+                const hasViableCandidate = cleanCandidates.some(g =>
+                  canCleanCandidateGrow(g, allTableGames, bot.hand)
+                );
+                if (hasViableCandidate) continue; // Preserva coringa para candidato viável
+                // Nenhum candidato viável — permite usar coringa em jogo novo
+              }
+            }
+          }
+        }
+
         // Verifica se a jogada não vai deixar o bot travado
         const remaining = bot.hand.filter(c => !seq.some(s => s.id === c.id));
         const wouldStrand = remaining.length === 0 &&
@@ -675,17 +881,20 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
 
     const teamGames = s.teams[bot.teamId].games;
 
-    // Prioriza jogos cujo naipe coincide com o naipe natural dos curingas na mão.
-    // Ex: 2♠ prefere o jogo de espadas ao invés do de copas.
-    const jokerSuits = new Set(bot.hand.filter(c => c.isJoker).map(c => c.suit));
+    // Prioriza jogos perto de canastra (mais cartas = mais urgente para completar)
+    const jokerSuits = new Set(bot.hand.filter(c => c.isJoker && c.suit !== 'joker').map(c => c.suit));
     const sortedIndices = Array.from({ length: teamGames.length }, (_, i) => i).sort((a, b) => {
+      const aLen = teamGames[a].length;
+      const bLen = teamGames[b].length;
       const aNormal = teamGames[a].filter(c => !c.isJoker);
       const bNormal = teamGames[b].filter(c => !c.isJoker);
-      // Prioridade 1: jogo de 6 cartas sem curinga → curinga fecha canastra suja (+100 bônus)
-      const aClosing = teamGames[a].length === 6 && !teamGames[a].some(c => c.isJoker) ? 1 : 0;
-      const bClosing = teamGames[b].length === 6 && !teamGames[b].some(c => c.isJoker) ? 1 : 0;
+      // Prioridade 1: jogo de 6 cartas sem curinga → 1 carta fecha canastra (limpa ou suja)
+      const aClosing = aLen === 6 ? 2 : 0;
+      const bClosing = bLen === 6 ? 2 : 0;
       if (aClosing !== bClosing) return bClosing - aClosing;
-      // Prioridade 2: naipe do curinga coincide com o jogo
+      // Prioridade 2: jogos maiores primeiro (mais perto de canastra)
+      if (aLen !== bLen) return bLen - aLen;
+      // Prioridade 3: naipe do curinga coincide com o jogo (para 2-curinga natural)
       const aMatch = aNormal.length > 0 && jokerSuits.has(aNormal[0].suit) ? 1 : 0;
       const bMatch = bNormal.length > 0 && jokerSuits.has(bNormal[0].suit) ? 1 : 0;
       return bMatch - aMatch;
@@ -701,6 +910,10 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         if (!game) break;
 
         if (card.isJoker) {
+          // Se o 2 é carta NATURAL neste jogo (mesmo naipe, posição 2), não é curinga — deixa passar
+          if (!wouldDirtyGame(card, game)) {
+            // É um 2 natural encaixando limpo — não precisa das proteções de coringa
+          } else {
           if (game.some(c => c.isJoker)) continue; // Já tem curinga
           if (difficulty === 'easy') continue; // Fácil nunca suja
 
@@ -721,17 +934,83 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
 
           if (freshState.gameMode === 'classic') {
             // No clássico, sujar é arriscado: sem canastra limpa separada, você não pode bater.
-            // Só suja se o time já tem uma canastra limpa em OUTRO jogo,
-            // ou se esse jogo está exatamente a 1 carta de virar canastra (6 → curinga fecha 7).
-            const otherGames = freshState.teams[bot.teamId].games.filter((_, i) => i !== gi);
+            const allGames = freshState.teams[bot.teamId].games;
+            const otherGames = allGames.filter((_, i) => i !== gi);
             const hasCleanCanastaElsewhere = otherGames.some(g => checkCanasta(g) === 'clean');
             const closingCanasta = game.length === 6;
-            if (!hasCleanCanastaElsewhere && !closingCanasta) continue;
-            // Mesmo tendo canastra limpa em outro jogo, não suja um jogo curto:
-            // o curinga vale mais na mão do que num jogo de 3-4 cartas.
-            // hard ≥ 4 cartas, medium ≥ 5 cartas (fechar canastra sempre é permitido).
-            const minLen = difficulty === 'hard' ? 4 : 5;
-            if (!closingCanasta && game.length < minLen) continue;
+
+            if (!hasCleanCanastaElsewhere) {
+              // O time NÃO tem canastra limpa ainda.
+              // Conta quantos jogos limpos com 5+ cartas existem (candidatos a virar canastra limpa).
+              const cleanCandidates = allGames.filter(g =>
+                !g.some(c => c.isJoker) && g.length >= 5
+              );
+
+              // Coleta TODOS os jogos na mesa (ambos os times) para análise de viabilidade
+              const opponentTeamId = bot.teamId === 'team-1' ? 'team-2' : 'team-1';
+              const allTableGames = [...allGames, ...freshState.teams[opponentTeamId].games];
+
+              if (cleanCandidates.length <= 1 && !game.some(c => c.isJoker) && game.length >= 5) {
+                // Este jogo é o ÚLTIMO (ou único) candidato a canastra limpa.
+                // Verifica se é VIÁVEL: as cartas necessárias ainda estão disponíveis?
+                const isViable = canCleanCandidateGrow(game, allTableGames, freshBot.hand);
+                if (isViable) {
+                  // Candidato viável — NUNCA suja! Preserva para canastra limpa natural.
+                  continue;
+                }
+                // Candidato INVIÁVEL (cartas presas na mesa) — não adianta preservar.
+                // Se está fechando canastra suja (6→7), permite sujar.
+                if (!closingCanasta) continue; // Mesmo inviável, não suja um jogo <6 sem motivo
+                // closingCanasta + inviável → suja para ao menos ter canastra suja
+              }
+
+              // Se temos vários candidatos a canastra limpa E vamos fechar uma canastra suja (6→7),
+              // aí pode sujar este, desde que sobre pelo menos um candidato VIÁVEL limpo.
+              const otherViableCandidates = cleanCandidates.filter(g =>
+                g !== game && canCleanCandidateGrow(g, allTableGames, freshBot.hand)
+              );
+              if (closingCanasta && otherViableCandidates.length >= 1) {
+                // OK, fecha essa como suja — temos outro candidato viável para canastra limpa
+              } else if (!closingCanasta) {
+                // Verifica se ALGUM candidato (incluindo este) é viável
+                const thisIsViable = canCleanCandidateGrow(game, allTableGames, freshBot.hand);
+                if (thisIsViable) continue; // Preserva — ainda tem chance
+                // Nenhum candidato é viável? Libera sujar se vantajoso
+                if (otherViableCandidates.length === 0 && !thisIsViable) {
+                  // Nenhum caminho para canastra limpa — permite sujar para não ficar travado
+                } else {
+                  continue;
+                }
+              } else {
+                // closingCanasta mas nenhum outro candidato viável
+                const hasGottenDead = freshState.teams[bot.teamId].hasGottenDead;
+                if (hasGottenDead) {
+                  // Depois do morto: verifica se este jogo é viável
+                  const thisIsViable = canCleanCandidateGrow(game, allTableGames, freshBot.hand);
+                  if (thisIsViable) continue; // Preserva — ainda tem chance de canastra limpa
+                  // Inviável mesmo depois do morto — suja para não travar
+                }
+                // Antes do morto: permite sujar para fechar canastra e bater (pegar morto)
+              }
+            } else {
+              // Já tem canastra limpa — pode sujar, mas com critério:
+              // 6→7 (fechar canastra suja): sempre vale (+100 bônus)
+              // 5→6: só se este jogo NÃO tem mais chance de virar canastra limpa
+              //       (cartas necessárias presas na mesa) — aí prepara para canastra suja futura
+              // <5: nunca suja — longe de canastra, desperdício de coringa
+              if (closingCanasta) {
+                // OK — fecha canastra suja
+              } else if (game.length >= 5) {
+                // Só suja se este jogo não tem mais chance de virar canastra limpa
+                const opponentTeamId = bot.teamId === 'team-1' ? 'team-2' : 'team-1';
+                const allTableGames = [...allGames, ...freshState.teams[opponentTeamId].games];
+                const isViable = canCleanCandidateGrow(game, allTableGames, freshBot.hand);
+                if (isViable) continue; // Preserva — ainda pode virar canastra limpa
+                // Inviável para limpa — sujar para preparar canastra suja futura
+              } else {
+                continue; // <5 cartas — nunca suja, muito longe de canastra
+              }
+            }
           } else {
             // Araujo Pereira: qualquer canastra conta → mas sujar tem custo estratégico
             // Só suja se está fechando canastra (6 → 7 suja) ou se jogo tem cartas suficientes.
@@ -741,6 +1020,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
             const minLen = difficulty === 'hard' ? 5 : 6;
             if (!closingCanasta && game.length < minLen) continue;
           }
+          } // fecha else wouldDirtyGame
         }
 
         const combined = [...game, card];

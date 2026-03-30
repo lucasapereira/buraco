@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   },
   newBadgeText: {
     color: '#1B5E20',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
   },
 });

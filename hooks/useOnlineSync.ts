@@ -127,9 +127,16 @@ export function useOnlineSync() {
       if (gameLog === prevGameLog) return; // mesma referência = nenhum log novo
       prevGameLog = gameLog;
 
-      // Verifica se a última ação foi minha (ou de um bot que controlo)
+      // Verifica se a última ação foi minha (ou de um bot que controlo).
+      // Host também sincroniza ações de humanos em AFK takeover — o host roda o turno
+      // do jogador ausente localmente, mas o playerId do lastEvent é o do guest,
+      // então sem esta exceção o host nunca faria push e os outros ficariam travados.
       const lastEvent = gameLog[gameLog.length - 1];
-      if (!lastEvent || !myPlayerIds.includes(lastEvent.playerId)) return;
+      if (!lastEvent) return;
+      // Host sincroniza qualquer ação local — isso cobre tanto seus próprios turnos
+      // quanto AFK takeover de guests (o playerId do evento seria do guest, não do host).
+      // Guests só sincronizam suas próprias ações.
+      if (!isHost && !myPlayerIds.includes(lastEvent.playerId)) return;
 
       const myUid = auth.currentUser?.uid;
       const currentState = useGameStore.getState();

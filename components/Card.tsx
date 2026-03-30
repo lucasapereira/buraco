@@ -17,8 +17,8 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
   const cardScale = width >= 600 ? Math.min(width / 600, height / 750, 1.4) : 1.0;
   const w = Math.round((small ? 50 : 60) * cardScale);
   const h = Math.round((small ? 72 : 86) * cardScale);
-  const valFontSize = Math.round((small ? 22 : 26) * cardScale);
-  const suitSmFontSize = Math.round((small ? 14 : 12) * cardScale);
+  const valFontSize = Math.round((small ? 29 : 34) * cardScale);
+  const suitSmFontSize = Math.round((small ? 18 : 16) * cardScale);
   const suitBigFontSize = Math.round((small ? 28 : 33) * cardScale);
   const suitSmMargin = -Math.round(5 * cardScale);
 
@@ -34,6 +34,34 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
     );
   }
 
+  // Joker físico — visual especial
+  if (card.suit === 'joker') {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={onPress}
+        style={[
+          styles.card,
+          styles.jokerCard,
+          { width: w, height: h },
+          selected && styles.selectedCard,
+          style,
+        ]}
+      >
+        {selected && (
+          <View style={styles.selectedBadge}>
+            <Text style={styles.selectedBadgeText}>✓</Text>
+          </View>
+        )}
+        <Text style={[styles.jokerCorner, { fontSize: suitSmFontSize + 2 }]}>🃏</Text>
+        <View style={styles.centerBox}>
+          <Text style={{ fontSize: suitBigFontSize * 1.1 }}>🃏</Text>
+        </View>
+        <Text style={[styles.jokerCorner, styles.jokerCornerBottom, { fontSize: suitSmFontSize + 2 }]}>🃏</Text>
+      </TouchableOpacity>
+    );
+  }
+
   const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
   const color = card.isJoker ? '#9C27B0' : isRed ? '#D32F2F' : '#212121';
 
@@ -42,7 +70,6 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
   };
 
   const getDisplayValue = () => {
-    if (card.isJoker && card.value !== 2) return '★'; // No caso de adicionarmos jokers reais sem valor
     switch (card.value) {
       case 2: return '2';
       case 11: return 'J';
@@ -74,21 +101,13 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
         <Text style={[styles.suitSmall, { color, fontSize: suitSmFontSize, marginTop: suitSmMargin }]}>{suitSymbols[card.suit]}</Text>
       </View>
 
-      <View style={styles.centerBox}>
-        <Text style={[styles.suitBig, { color, fontSize: suitBigFontSize }]}>{suitSymbols[card.suit]}</Text>
-      </View>
-
-      <View style={styles.bottomCorner}>
-        <Text style={[styles.value, { color, fontSize: valFontSize }]}>{getDisplayValue()}</Text>
-        <Text style={[styles.suitSmall, { color, fontSize: suitSmFontSize, marginTop: suitSmMargin }]}>{suitSymbols[card.suit]}</Text>
-      </View>
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFEF7',
+    backgroundColor: '#FFFFFF',
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#ccc',
@@ -97,8 +116,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.15,
     shadowRadius: 2,
-    justifyContent: 'space-between',
-    paddingVertical: 1, // Reduzido para aproximar o número da borda
+    justifyContent: 'flex-start',
+    paddingVertical: 3,
     paddingLeft: 1,
     paddingRight: 5,
     overflow: 'hidden',
@@ -140,6 +159,21 @@ const styles = StyleSheet.create({
     borderColor: '#0D47A1',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  jokerCard: {
+    backgroundColor: '#FFF8E1',
+    borderColor: '#FFD600',
+    borderWidth: 2,
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+    paddingHorizontal: 3,
+  },
+  jokerCorner: {
+    alignSelf: 'flex-start',
+  },
+  jokerCornerBottom: {
+    alignSelf: 'flex-end',
+    transform: [{ rotate: '180deg' }],
   },
   hiddenText: {
     fontSize: 26,
