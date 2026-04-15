@@ -68,10 +68,20 @@ function checkAndHandleDead(
 ): { newHand: Card[]; gotDead: boolean; newDeads: Card[][] } {
   let newHand = [...hand];
   let gotDead = false;
-  const newDeads = [...deads];
+  
+  // Limpeza extra garantida contra arrays de Firebase corrompidos que possam ter passado
+  const newDeads = (Array.isArray(deads) ? deads : []).map(d => {
+    let inner = d;
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      inner = Object.values(inner);
+    }
+    return Array.isArray(inner) ? inner : [];
+  }).filter(d => d.length > 0);
 
   if (newHand.length === 0 && !teamHasGottenDead && newDeads.length > 0) {
-    newHand = newDeads.pop()!;
+    const popped = newDeads.pop()!;
+    // Garante que o item removido também venha blindado
+    newHand = Array.isArray(popped) ? popped : Object.values(popped || {});
     gotDead = true;
   }
 
@@ -542,6 +552,66 @@ export const useGameStore = create<GameState & GameActions>()(
     }
 
     if (!canTake) return false;
+
+    // REGRA EXTRA (modo clássico): verifica se pegar o lixo forçaria um bater ilegal.
+    // Isso ocorre quando a mão resultante (mão atual + lixo) é tão pequena que
+    // todo meld possível com a carta do topo deixa o jogador com apenas 1 carta (descarte)
+    // e a equipe não tem canastra limpa nem morto disponível.
+    if (state.gameMode !== 'araujo_pereira') {
+      const topCard = state.pile[state.pile.length - 1];
+      const futureHand = [...player.hand, ...state.pile];
+      const teamGames = state.teams[player.teamId].games;
+      const hasGottenDead = state.teams[player.teamId].hasGottenDead;
+      const hasDead = state.deads.length > 0;
+
+      // Coleta todos os subsets válidos da futureHand que incluem topCard e formam meld
+      const handWithoutTop = futureHand.filter(c => c.id !== topCard.id);
+      let hasAtLeastOneEscape = false;
+
+      // Testa melds de 2 cartas da mão + topCard (mínimo de 3)
+      for (let i = 0; i < handWithoutTop.length && !hasAtLeastOneEscape; i++) {
+        for (let j = i + 1; j < handWithoutTop.length && !hasAtLeastOneEscape; j++) {
+          const meld = [topCard, handWithoutTop[i], handWithoutTop[j]];
+          if (validateSequence(meld, state.gameMode)) {
+            const remaining = futureHand.filter(c => !meld.some(m => m.id === c.id));
+            // "escape" = sobram 2+ cartas (pelo menos 1 para jogar depois + 1 para descartar)
+            // ou pode pegar morto, ou tem canastra
+            if (remaining.length >= 2 || hasDead || !hasGottenDead) {
+              hasAtLeastOneEscape = true;
+            } else if (remaining.length === 1) {
+              // Ficaria com 1 carta p/ descartar e bater: só ok se tiver canastra limpa
+              if (teamHasCleanCanasta(state, player.teamId)) hasAtLeastOneEscape = true;
+            }
+          }
+        }
+      }
+
+      // Também testa adicionar topCard a jogos existentes com cartas da mão
+      if (!hasAtLeastOneEscape) {
+        for (const game of teamGames) {
+          for (let i = 0; i < handWithoutTop.length && !hasAtLeastOneEscape; i++) {
+            const combined = [...game, topCard, handWithoutTop[i]];
+            if (validateSequence(combined, state.gameMode)) {
+              const remaining = futureHand.filter(c => c.id !== topCard.id && c.id !== handWithoutTop[i].id);
+              if (remaining.length >= 2 || hasDead || !hasGottenDead || teamHasCleanCanasta(state, player.teamId)) {
+                hasAtLeastOneEscape = true;
+              }
+            }
+          }
+          if (!hasAtLeastOneEscape) {
+            const combined = [...game, topCard];
+            if (validateSequence(combined, state.gameMode)) {
+              const remaining = futureHand.filter(c => c.id !== topCard.id);
+              if (remaining.length >= 2 || hasDead || !hasGottenDead || teamHasCleanCanasta(state, player.teamId)) {
+                hasAtLeastOneEscape = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (!hasAtLeastOneEscape) return false; // Bloqueado: pegaria o lixo mas ficaria sem saída
+    }
 
     const pileCount = state.pile.length;
 

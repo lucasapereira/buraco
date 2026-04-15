@@ -125,12 +125,12 @@ export function createInitialGameState(targetScore: number = 1500, botDifficulty
 
 /** Calcula os pontos de uma mão/jogos no final da rodada */
 export function calculateCardPoints(card: Card): number {
-  if (card.isJoker) return 20; // Curinga (2)
+  if (card.suit === 'joker') return 20; // Coringão físico
+  if (card.isJoker) return 10; // 2 (wild) vale 10
   switch (card.value) {
     case 14: return 15; // Ás
-    case 13: case 12: case 11: case 10: return 10;
-    case 9: case 8: case 7: return 10;
-    case 6: case 5: case 4: case 3: return 5;
+    case 13: case 12: case 11: case 10: case 9: case 8: return 10;
+    case 7: case 6: case 5: case 4: case 3: return 5;
     default: return 5;
   }
 }

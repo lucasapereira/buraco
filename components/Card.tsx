@@ -15,11 +15,11 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
   const { width, height } = useWindowDimensions();
   // Limita pelo menor entre largura e altura para não crescer demais em landscape
   const cardScale = width >= 600 ? Math.min(width / 600, height / 750, 1.4) : 1.0;
-  const w = Math.round((small ? 50 : 60) * cardScale);
-  const h = Math.round((small ? 72 : 86) * cardScale);
-  const valFontSize = Math.round((small ? 29 : 34) * cardScale);
-  const suitSmFontSize = Math.round((small ? 18 : 16) * cardScale);
-  const suitBigFontSize = Math.round((small ? 28 : 33) * cardScale);
+  const w = Math.round((small ? 56 : 60) * cardScale);
+  const h = Math.round((small ? 80 : 86) * cardScale);
+  const valFontSize = Math.round((small ? 32 : 34) * cardScale);
+  const suitSmFontSize = Math.round((small ? 20 : 16) * cardScale);
+  const suitBigFontSize = Math.round((small ? 31 : 33) * cardScale);
   const suitSmMargin = -Math.round(5 * cardScale);
 
   if (isHidden) {

@@ -329,45 +329,78 @@ export function canTakePile(
 
   const topCard = pile[pile.length - 1];
 
-  // Joker físico no topo: pode pegar se tiver 2 cartas na mão que formem sequência com ele
-  if (topCard.suit === 'joker') {
+  // Se a carta do topo encaixa diretamente em algum jogo existente, pode pegar
+  for (const game of existingGames) {
+    if (validateSequence([...game, topCard], gameMode)) return true;
+
+    // Filtra cartas relevantes da mão (mesmo naipe do jogo + coringas)
+    const normalInGame = game.filter(c => !c.isJoker);
+    const gameSuit = normalInGame.length > 0 ? normalInGame[0].suit : null;
+    const relevant = gameSuit
+      ? hand.filter(c => c.isJoker || c.suit === gameSuit)
+      : hand;
+
+    // Ou encaixa junto com 1 carta da mão
+    for (let i = 0; i < relevant.length; i++) {
+      if (validateSequence([...game, topCard, relevant[i]], gameMode)) return true;
+    }
+
+    // Ou encaixa junto com 2 cartas da mão
+    for (let i = 0; i < relevant.length; i++) {
+      for (let j = i + 1; j < relevant.length; j++) {
+        if (validateSequence([...game, topCard, relevant[i], relevant[j]], gameMode)) return true;
+      }
+    }
+
+    // Ou encaixa junto com 3+ cartas da mão (mesmo naipe + coringas)
+    for (let i = 0; i < relevant.length; i++) {
+      for (let j = i + 1; j < relevant.length; j++) {
+        for (let k = j + 1; k < relevant.length; k++) {
+          if (validateSequence([...game, topCard, relevant[i], relevant[j], relevant[k]], gameMode)) return true;
+        }
+      }
+    }
+
+    // 4 cartas da mão
+    for (let i = 0; i < relevant.length; i++) {
+      for (let j = i + 1; j < relevant.length; j++) {
+        for (let k = j + 1; k < relevant.length; k++) {
+          for (let l = k + 1; l < relevant.length; l++) {
+            if (validateSequence([...game, topCard, relevant[i], relevant[j], relevant[k], relevant[l]], gameMode)) return true;
+          }
+        }
+      }
+    }
+  }
+
+  // Tenta combinar a carta do topo com 2+ cartas da mão para formar um novo jogo
+  if (topCard.isJoker) {
+    // Sendo curinga, ela pode assumir o lugar com QUAISQUER 2 cartas da mão compatíveis
     for (let i = 0; i < hand.length; i++) {
       for (let j = i + 1; j < hand.length; j++) {
         if (validateSequence([topCard, hand[i], hand[j]], gameMode)) return true;
       }
     }
-    return false;
-  }
+  } else {
+    const nonJokers = hand.filter(c => !c.isJoker && c.suit === topCard.suit);
+    const jokers = hand.filter(c => c.isJoker);
 
-  // Se a carta do topo encaixa diretamente em algum jogo existente, pode pegar
-  for (const game of existingGames) {
-    if (validateSequence([...game, topCard], gameMode)) return true;
-
-    // Ou encaixa junto com 1 carta da mão
-    for (let i = 0; i < hand.length; i++) {
-      if (validateSequence([...game, topCard, hand[i]], gameMode)) return true;
-    }
-
-    // Ou encaixa junto com 2 cartas da mão
-    for (let i = 0; i < hand.length; i++) {
-      for (let j = i + 1; j < hand.length; j++) {
-        if (validateSequence([...game, topCard, hand[i], hand[j]], gameMode)) return true;
+    // Testa sequências de 3 com a carta do topo: topCard + 2 da mão
+    for (let i = 0; i < nonJokers.length; i++) {
+      for (let j = i + 1; j < nonJokers.length; j++) {
+        if (validateSequence([topCard, nonJokers[i], nonJokers[j]], gameMode)) return true;
+      }
+      // Com 1 curinga
+      if (jokers.length > 0) {
+        if (validateSequence([topCard, nonJokers[i], jokers[0]], gameMode)) return true;
       }
     }
-  }
 
-  // Tenta combinar a carta do topo com 2+ cartas da mão
-  const nonJokers = hand.filter(c => !c.isJoker && c.suit === topCard.suit);
-  const jokers = hand.filter(c => c.isJoker);
-
-  // Testa sequências de 3 com a carta do topo: topCard + 2 da mão
-  for (let i = 0; i < nonJokers.length; i++) {
-    for (let j = i + 1; j < nonJokers.length; j++) {
-      if (validateSequence([topCard, nonJokers[i], nonJokers[j]])) return true;
-    }
-    // Com 1 curinga
-    if (jokers.length > 0) {
-      if (validateSequence([topCard, nonJokers[i], jokers[0]])) return true;
+    // Testa topCard + 2 coringas (ex: 2♠ natural + Joker + 4♠)
+    for (let i = 0; i < jokers.length; i++) {
+      for (let j = i + 1; j < jokers.length; j++) {
+        if (validateSequence([topCard, jokers[i], jokers[j]], gameMode)) return true;
+      }
     }
   }
   return false;

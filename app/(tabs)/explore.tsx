@@ -49,7 +49,7 @@ export default function GameScreen() {
   useKeepAwake();
   const { width: SW, height: SH } = useWindowDimensions();
   const isLandscape = SW > SH;
-  const tabletScale = SW >= 600 ? Math.min(SW / 600, SH / 750, 1.4) : 1.0;
+  const tabletScale = SW >= 600 ? Math.min(SW / 450, SH / 650, 1.8) : 1.0;
   const {
     players, deck, pile, deads, teams, currentTurnPlayerId,
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
@@ -93,6 +93,16 @@ export default function GameScreen() {
     : ['user'];
 
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
+  // Limpa seleções fantasmas (IDs de cartas que saíram da mão por sync online)
+  const userRef = players.find(p => p.id === (isOnlineMode && mySeat !== null ? SEAT_PLAYER_IDS[mySeat] : 'user'));
+  const handIds = userRef?.hand.map(c => c.id);
+  useEffect(() => {
+    if (!handIds) return;
+    setSelectedCards(prev => {
+      const filtered = prev.filter(id => handIds.includes(id));
+      return filtered.length !== prev.length ? filtered : prev;
+    });
+  }, [handIds?.join(',')]);
   const [showMenu, setShowMenu] = useState(false);
   const [tempOpenGame, setTempOpenGame] = useState<{ teamId: string; index: number } | null>(null);
   const router = useRouter();
@@ -218,6 +228,8 @@ export default function GameScreen() {
 
   useBotAI({ disabled: botAIDisabled, humanPlayerIds, isOnline: isOnlineMode });
 
+  const isMyTurn = currentTurnPlayerId === myPlayerId;
+
   // Animação de pulso nas pilhas quando é minha vez de comprar
   useEffect(() => {
     if (isMyTurn && turnPhase === 'draw') {
@@ -250,7 +262,6 @@ export default function GameScreen() {
     );
   }
 
-  const isMyTurn = currentTurnPlayerId === myPlayerId;
   const myTeamGames = teams[myTeamId].games;
   const opTeamGames = teams[opTeamId].games;
 
@@ -289,17 +300,70 @@ export default function GameScreen() {
       Alert.alert('Lixo vazio', 'O lixo está vazio.');
       return;
     }
+
     // Verifica regra: precisa ter jogo com o topo do lixo (exceto Araujo Pereira)
-    if (gameMode !== 'araujo_pereira' && !canTakePile(user.hand, pile, myTeamGames, gameMode)) {
+    if (gameMode !== 'araujo_pereira') {
       const topCard = pile[pile.length - 1];
-      Alert.alert(
+      const selCards = user.hand.filter(c => selectedCards.includes(c.id));
+      let actionToTake: (() => void) | null = null;
+      
+      const alertDeadlock = () => Alert.alert(
         '❌ Não pode pegar o lixo',
-        `Você precisa usar o ${cardLabel(topCard)} em um jogo (novo ou existente).`
+        `Pegar o lixo te forçaria a bater usando o ${cardLabel(topCard)}, mas sua equipe não tem canastra limpa.`
       );
+
+      // Tenta adicionar a um JOGO EXISTENTE com as cartas selecionadas (se houver) + carta do topo
+      for (let i = 0; i < myTeamGames.length; i++) {
+        if (validateSequence([...myTeamGames[i], ...selCards, topCard], gameMode)) {
+          actionToTake = () => {
+            const success = drawFromPile(myPlayerId);
+            if (success) addToExistingGame(myPlayerId, [...selectedCards, topCard.id], i);
+            else alertDeadlock();
+          };
+          break;
+        }
+      }
+
+      // Se não encontrou jogo existente, tenta formar um NOVO jogo (mínimo de 2 selecionadas + topo = 3)
+      if (!actionToTake && selCards.length >= 2) {
+        if (validateSequence([...selCards, topCard], gameMode)) {
+          actionToTake = () => {
+             const success = drawFromPile(myPlayerId);
+             if (success) {
+               const playSuccess = playCards(myPlayerId, [...selectedCards, topCard.id]);
+               if (!playSuccess) {
+                 Alert.alert('⚠️ Ação bloqueada', 'O jogo é válido, mas você não pode ficar sem cartas na mão sem ter completado os requisitos para bater. O lixo foi para a sua mão.');
+               }
+             } else {
+               alertDeadlock();
+             }
+          };
+        }
+      }
+
+      if (!actionToTake) {
+         if (canTakePile(user.hand, pile, myTeamGames, gameMode)) {
+           Alert.alert(
+             'Selecione as cartas!',
+             `Para pegar o lixo, selecione ANTES na sua mão as cartas que formam jogo com o ${cardLabel(topCard)}.\n` + 
+             `(Ou clique se a carta pode incrementar diretamente um jogo seu)`
+           );
+         } else {
+           Alert.alert('❌ Não pode pegar o lixo', `Você precisa usar o ${cardLabel(topCard)} em um jogo (novo ou existente).`);
+         }
+         return;
+      }
+      
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      actionToTake();
+      setSelectedCards([]);
       return;
     }
+
+    // Modo Araujo Pereira (puxar o lixo é livre)
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    drawFromPile(myPlayerId);
+    const tookPile = drawFromPile(myPlayerId);
+    if (tookPile) setSelectedCards([]);
   };
 
   const handleDiscard = () => {
@@ -474,10 +538,6 @@ export default function GameScreen() {
         }
       }
 
-      // SEMPRE mostrar a penúltima
-      if (mappedCards.length > 2) {
-        mappedCards[mappedCards.length - 2]._isObscured = false;
-      }
     }
 
     // Opcional: manter o coringa em primeiro nas trincas se ele estiver visível
@@ -594,7 +654,7 @@ export default function GameScreen() {
           <TouchableOpacity
             activeOpacity={1}
             onPress={handleTableClick}
-            style={{ flexGrow: 1 }}
+            style={{ flexGrow: 1, justifyContent: SW >= 600 ? 'center' : 'flex-start' }}
           >
             {(() => {
               const totalGames = (myTeamGames || []).length + (opTeamGames || []).length;
@@ -605,8 +665,8 @@ export default function GameScreen() {
               const smallCardW = Math.round(50 * scale);
               const landscapeFactor = isLandscape ? 0.78 : 1;
               const clipH = Math.round((tightMode ? 64 : denseMode ? 68 : 72) * scale * landscapeFactor);
-              const lastClipW = scale > 1 ? smallCardW : (tightMode ? 30 : 34);
-              const wrapMinH = Math.round((tightMode ? 76 : denseMode ? 80 : 84) * scale * landscapeFactor);
+              const lastClipW = Math.round(28 * scale);
+              const wrapMinH = Math.round((tightMode ? 68 : denseMode ? 72 : 76) * scale * landscapeFactor);
 
               return (
                 <>
@@ -616,6 +676,7 @@ export default function GameScreen() {
                     styles.gamesGrid,
                     denseMode && styles.gamesGridDense,
                     tightMode && styles.gamesGridTight,
+                    { rowGap: Math.round((tightMode ? 1 : denseMode ? 2 : 3) * scale), columnGap: Math.round(8 * scale) }
                   ]}>
                     {opTeamGames.map((gameCards, idx) => {
                       const canasta = checkCanasta(gameCards);
@@ -623,22 +684,7 @@ export default function GameScreen() {
                       const isTrinca = gameCards.length >= 3 && gameCards.filter(c => !c.isJoker).every((c, _, arr) => c.value === arr[0].value);
                       const isCanasta = canasta !== 'none';
 
-                      let cardMargin = Math.round(-28 * scale);
-                      const obscuredMargin = Math.round(-46 * scale);
-                      if (visibleCards.length > 1) {
-                        const containerWidth = (SW - 90) / 3;
-                        const numObscured = visibleCards.filter((c: any) => c._isObscured).length;
-                        const numNormalNotFirst = visibleCards.length - 1 - numObscured;
 
-                        let normalMargin = isCanasta ? Math.round(-30 * scale) : Math.round(-28 * scale);
-                        if (numNormalNotFirst > 0) {
-                           const obscuredWidth = numObscured * (smallCardW + obscuredMargin);
-                           const spaceForNormal = containerWidth - smallCardW - obscuredWidth + Math.round(16 * scale);
-                           const calcMargin = Math.floor(spaceForNormal / numNormalNotFirst) - smallCardW;
-                           normalMargin = Math.max(Math.round(-34 * scale), Math.min(normalMargin, calcMargin));
-                        }
-                        cardMargin = normalMargin;
-                      }
 
                       return (
                         <TouchableOpacity
@@ -664,31 +710,35 @@ export default function GameScreen() {
                                 denseMode && styles.gameCardsDense,
                               ]}>
                                 {visibleCards.map((c: any, ci: number) => {
-                                  const isPrevObscured = ci > 0 && visibleCards[ci - 1]._isObscured;
-                                  return (
-                                    <View key={c.id} style={ci > 0 ? { marginLeft: isPrevObscured ? obscuredMargin : cardMargin } : undefined}>
-                                      <View style={[
-                                        styles.cardClip,
-                                        { height: clipH },
-                                        ci === visibleCards.length - 1 && { width: lastClipW },
-                                      ]}>
-                                        <Card card={c} small />
+                                    const isLast = ci === visibleCards.length - 1;
+                                    const visibleW = c._isObscured 
+                                      ? Math.round(4 * scale) 
+                                      : (isCanasta ? Math.round(24 * scale) : Math.round(26 * scale));
+                                      
+                                    return (
+                                      <View key={c.id}>
+                                        <View style={[
+                                          styles.cardClip,
+                                          { height: clipH },
+                                          { width: isLast ? lastClipW : visibleW },
+                                        ]}>
+                                          <Card card={c} small />
+                                        </View>
                                       </View>
-                                    </View>
-                                  );
-                                })}
-                              </View>
-                              <View style={styles.gameCardOverlay}>
-                                <View style={[
-                                  styles.counterBadgeOverlay,
-                                  isCanasta && styles.badgeByTier[getCanastaInfo(canasta, gameCards.length).tier]
-                                ]}>
-                                  <Text style={styles.counterTextOverlay}>
-                                    {isCanasta && (getCanastaInfo(canasta, gameCards.length).emoji + ' ')}
-                                    {gameCards.length}
-                                  </Text>
+                                    );
+                                  })}
                                 </View>
-                              </View>
+                                <View style={styles.gameCardOverlay}>
+                                  <View style={[
+                                    styles.counterBadgeOverlay,
+                                    isCanasta && styles.badgeByTier[getCanastaInfo(canasta, gameCards.length).tier]
+                                  ]}>
+                                    <Text style={styles.counterTextOverlay}>
+                                      {isCanasta && (getCanastaInfo(canasta, gameCards.length).emoji + ' ')}
+                                      {gameCards.length}
+                                    </Text>
+                                  </View>
+                                </View>
                               {isCanasta && (
                                 <Text style={[styles.canastaBonusLabelBase, styles.canastaBonusByTier[getCanastaInfo(canasta, gameCards.length).tier]]}>
                                   {getCanastaInfo(canasta, gameCards.length).label}
@@ -790,6 +840,7 @@ export default function GameScreen() {
                     styles.gamesGrid,
                     denseMode && styles.gamesGridDense,
                     tightMode && styles.gamesGridTight,
+                    { rowGap: Math.round((tightMode ? 1 : denseMode ? 2 : 3) * scale), columnGap: Math.round(8 * scale) }
                   ]}>
                     {myTeamGames.map((gameCards, idx) => {
                       const canasta = checkCanasta(gameCards);
@@ -797,22 +848,7 @@ export default function GameScreen() {
                       const isTrinca = gameCards.length >= 3 && gameCards.filter(c => !c.isJoker).every((c, _, arr) => c.value === arr[0].value);
                       const isCanasta = canasta !== 'none';
 
-                      let cardMargin = Math.round(-28 * scale);
-                      const obscuredMargin = Math.round(-46 * scale);
-                      if (visibleCards.length > 1) {
-                        const containerWidth = (SW - 90) / 3;
-                        const numObscured = visibleCards.filter((c: any) => c._isObscured).length;
-                        const numNormalNotFirst = visibleCards.length - 1 - numObscured;
 
-                        let normalMargin = isCanasta ? Math.round(-30 * scale) : Math.round(-28 * scale);
-                        if (numNormalNotFirst > 0) {
-                           const obscuredWidth = numObscured * (smallCardW + obscuredMargin);
-                           const spaceForNormal = containerWidth - smallCardW - obscuredWidth + Math.round(16 * scale);
-                           const calcMargin = Math.floor(spaceForNormal / numNormalNotFirst) - smallCardW;
-                           normalMargin = Math.max(Math.round(-34 * scale), Math.min(normalMargin, calcMargin));
-                        }
-                        cardMargin = normalMargin;
-                      }
 
                       const canAdd = (() => {
                         if (!isMyTurn || turnPhase !== 'play' || selectedCards.length === 0) return false;
@@ -854,13 +890,17 @@ export default function GameScreen() {
                                 denseMode && styles.gameCardsDense,
                               ]}>
                                 {visibleCards.map((c: any, ci: number) => {
-                                  const isPrevObscured = ci > 0 && visibleCards[ci - 1]._isObscured;
+                                  const isLast = ci === visibleCards.length - 1;
+                                  const visibleW = c._isObscured 
+                                    ? Math.round(4 * scale) 
+                                    : (isCanasta ? Math.round(24 * scale) : Math.round(26 * scale));
+
                                   return (
-                                    <View key={c.id} style={ci > 0 ? { marginLeft: isPrevObscured ? obscuredMargin : cardMargin } : undefined}>
+                                    <View key={c.id}>
                                       <View style={[
                                         styles.cardClip,
                                         { height: clipH },
-                                        ci === visibleCards.length - 1 && { width: lastClipW },
+                                        { width: isLast ? lastClipW : visibleW },
                                       ]}>
                                         <Card card={c} small />
                                       </View>
@@ -903,10 +943,10 @@ export default function GameScreen() {
       {/* ACTION BAR INFERIOR */}
       <View style={styles.actionBar}>
         {/* Background clicável para não ter "ponto cego" na hora de baixar jogo */}
-        <TouchableOpacity 
-          activeOpacity={1} 
-          onPress={handleTableClick} 
-          style={StyleSheet.absoluteFill} 
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={handleTableClick}
+          style={StyleSheet.absoluteFill}
         />
         <View style={styles.actionBarLeft}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -1205,7 +1245,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  handArea: { 
+  handArea: {
     height: 93,
     overflow: 'visible',
     paddingBottom: 0,
@@ -1221,64 +1261,57 @@ const styles = StyleSheet.create({
   infoText: { color: '#B9F6CA', fontSize: 16, textAlign: 'right' },
 
   // BOARD
-  board: { flex: 1, flexDirection: 'row', paddingHorizontal: 4, paddingTop: 4 },
+  board: { flex: 1, flexDirection: 'row', paddingHorizontal: 2, paddingTop: 4 },
   gamesScroll: { flex: 1 },
-  gamesScrollContent: { paddingLeft: 6, paddingRight: 6, paddingBottom: 10, flexGrow: 1 },
+  gamesScrollContent: { paddingLeft: 4, paddingRight: 4, paddingBottom: 10, flexGrow: 1 },
   sectionLabel: { color: '#E8F5E9', fontWeight: '800', fontSize: 18, marginBottom: 4 },
   emptyGames: { color: 'rgba(255,255,255,0.4)', fontSize: 17, marginBottom: 8, fontStyle: 'italic' },
   // GRADE DE JOGOS
   gamesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    rowGap: 6,
-    columnGap: 8,
-    marginBottom: 4,
-    justifyContent: 'space-between',
+    rowGap: 1,
+    columnGap: 6,
+    marginBottom: 12,
+    justifyContent: 'flex-start',
     overflow: 'visible',
   },
   gamesGridDense: {
-    rowGap: 4,
+    rowGap: 2,
     columnGap: 6,
   },
   gamesGridTight: {
-    rowGap: 3,
+    rowGap: 1,
     columnGap: 6,
   },
   gameCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-    flexBasis: '31%',
-    minWidth: '31%',
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    paddingVertical: 1,
+    paddingHorizontal: 2,
     flexGrow: 0,
-    flexShrink: 1,
-    justifyContent: 'space-between',
+    flexShrink: 0,
     overflow: 'visible',
   },
   gameCardDense: {
-    paddingVertical: 3,
+    paddingVertical: 1,
     paddingHorizontal: 3,
   },
   gameCardLandscape: {
-    flexBasis: '23%',
-    minWidth: '23%',
   },
   gameCardTight: {
-    paddingVertical: 2,
+    paddingVertical: 0,
     paddingHorizontal: 2,
   },
   gameCardInner: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     overflow: 'visible',
   },
   gameCardsWrap: {
-    flex: 1,
     position: 'relative',
     minHeight: 84,
     justifyContent: 'center',
@@ -1439,7 +1472,7 @@ const styles = StyleSheet.create({
   gameRowHighlight: {
     borderWidth: 1.5, borderColor: '#FFD600', backgroundColor: 'rgba(255,214,0,0.12)',
   },
-  opponentGame: { backgroundColor: 'rgba(255,0,0,0.08)' },
+  opponentGame: { backgroundColor: 'transparent' },
   cleanCanasta: {},
   dirtyCanasta: {},
   // Lookup maps por tier
@@ -1450,7 +1483,8 @@ const styles = StyleSheet.create({
     c1000: { borderLeftWidth: 3, borderLeftColor: '#CE93D8' },
     none:  {},
   } as Record<string, any>,
-  gameCards: { flexDirection: 'row', flex: 1, overflow: 'visible', paddingLeft: 2, paddingRight: 6 },
+  gameCards: { flexDirection: 'row', overflow: 'visible', paddingLeft: 0, paddingRight: 4 },
+  gameCardsInner: { flexDirection: 'row', alignSelf: 'flex-start', position: 'relative', overflow: 'visible' },
   gameCardsDense: { paddingLeft: 4, paddingRight: 4 },
   cardClip: {
     overflow: 'hidden',
@@ -1527,7 +1561,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 2,
     paddingHorizontal: 16,
-    marginBottom: 0, 
+    marginBottom: 0,
     backgroundColor: 'rgba(0,0,0,0.25)', // Um pouco mais escuro que a mesa
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',

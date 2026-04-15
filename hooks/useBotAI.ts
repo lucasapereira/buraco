@@ -482,7 +482,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
   const lastEventId = useGameStore(s => s.gameLog[s.gameLog.length - 1]?.id);
   useEffect(() => {
     lastActionTimeRef.current = Date.now();
-  }, [lastEventId]);
+  }, [lastEventId, options.isOnline]);
 
   // Reseta o timer de AFK quando muda o turno (evita que espera no lobby conte como AFK)
   const currentTurnPlayerId = useGameStore(s => s.currentTurnPlayerId);
@@ -882,19 +882,28 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     const teamGames = s.teams[bot.teamId].games;
 
     // Prioriza jogos perto de canastra (mais cartas = mais urgente para completar)
+    // IMPORTANTE: jogos LIMPOS antes de sujos — canastra limpa (+200) > suja (+100)
     const jokerSuits = new Set(bot.hand.filter(c => c.isJoker && c.suit !== 'joker').map(c => c.suit));
     const sortedIndices = Array.from({ length: teamGames.length }, (_, i) => i).sort((a, b) => {
       const aLen = teamGames[a].length;
       const bLen = teamGames[b].length;
+      const aClean = !teamGames[a].some(c => c.isJoker);
+      const bClean = !teamGames[b].some(c => c.isJoker);
+      // Prioridade 1: jogo LIMPO de 6 cartas → fechar canastra limpa (+200)
+      const aClosingClean = (aLen === 6 && aClean) ? 1 : 0;
+      const bClosingClean = (bLen === 6 && bClean) ? 1 : 0;
+      if (aClosingClean !== bClosingClean) return bClosingClean - aClosingClean;
+      // Prioridade 2: jogo de 6 cartas (sujo) → fechar canastra suja (+100)
+      const aClosing = aLen === 6 ? 1 : 0;
+      const bClosing = bLen === 6 ? 1 : 0;
+      if (aClosing !== bClosing) return bClosing - aClosing;
+      // Prioridade 3: jogos limpos antes de sujos (protege caminho para canastra limpa)
+      if (aClean !== bClean) return aClean ? -1 : 1;
+      // Prioridade 4: jogos maiores primeiro (mais perto de canastra)
+      if (aLen !== bLen) return bLen - aLen;
+      // Prioridade 5: naipe do curinga coincide com o jogo (para 2-curinga natural)
       const aNormal = teamGames[a].filter(c => !c.isJoker);
       const bNormal = teamGames[b].filter(c => !c.isJoker);
-      // Prioridade 1: jogo de 6 cartas sem curinga → 1 carta fecha canastra (limpa ou suja)
-      const aClosing = aLen === 6 ? 2 : 0;
-      const bClosing = bLen === 6 ? 2 : 0;
-      if (aClosing !== bClosing) return bClosing - aClosing;
-      // Prioridade 2: jogos maiores primeiro (mais perto de canastra)
-      if (aLen !== bLen) return bLen - aLen;
-      // Prioridade 3: naipe do curinga coincide com o jogo (para 2-curinga natural)
       const aMatch = aNormal.length > 0 && jokerSuits.has(aNormal[0].suit) ? 1 : 0;
       const bMatch = bNormal.length > 0 && jokerSuits.has(bNormal[0].suit) ? 1 : 0;
       return bMatch - aMatch;
