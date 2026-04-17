@@ -3,12 +3,12 @@ import React from 'react';
 import {
   Platform,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ACHIEVEMENTS, getRank, LEVEL_THRESHOLDS } from '../../game/achievements';
 import { useStatsStore } from '../../store/statsStore';
@@ -41,7 +41,7 @@ export default function StatsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor="#0D3B1E" barStyle="light-content" translucent={false} />
+      <StatusBar style="light" />
 
       {/* Header */}
       <View style={styles.header}>

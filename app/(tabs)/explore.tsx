@@ -9,7 +9,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,6 +16,7 @@ import {
   useWindowDimensions,
   Animated
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card } from '../../components/Card';
 import { EventBanner } from '../../components/EventBanner';
@@ -593,7 +593,7 @@ export default function GameScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor="#0D3B1E" barStyle="light-content" translucent={false} />
+      <StatusBar style="light" />
       {/* HEADER */}
       <View style={styles.header}>
         {/* ☰ + NÓS lado esquerdo */}

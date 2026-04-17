@@ -2,7 +2,7 @@
   "expo": {
     "name": "Buraco",
     "slug": "buraco",
-    "version": "1.22.0",
+    "version": "1.27.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "buraco",
@@ -19,7 +19,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.lucasapereira.buraco",
-      "versionCode": 22
+      "versionCode": 27
     },
     "web": {
       "output": "static",

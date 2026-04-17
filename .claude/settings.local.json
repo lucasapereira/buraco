@@ -40,7 +40,10 @@
       "Skill(update-config)",
       "mcp__claude-in-chrome__navigate",
       "Bash(node -e \"const C = require\\(''''/Users/lucasaraujopereira/buraco/node_modules/expo-constants''''\\); console.log\\(Object.keys\\(C\\)\\)\")",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Bash(npm view *)",
+      "Bash(npx expo-doctor *)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/expo/expo/sdk-55/packages/expo/bundledNativeModules.json\")"
     ]
   }
 }
