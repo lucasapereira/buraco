@@ -1,13 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { AppState, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { AppState, LayoutAnimation } from 'react-native';
 import { Card } from '../game/deck';
 import { BotDifficulty, GameMode, PlayerId } from '../game/engine';
 import { canTakePile, sortCardsBySuitAndValue, validateSequence, checkCanasta } from '../game/rules';
 import { useGameStore } from '../store/gameStore';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -321,8 +317,84 @@ function cardUtility(card: Card, hand: Card[], gameMode: GameMode, teamGames: Ca
   return (adjacentCount * 10) + trincaPotential + getCardPoints(card) + gameBonus;
 }
 
-/** Escolhe a carta a descartar (menor utilidade) */
-function chooseBestDiscard(hand: Card[], discardedHistory: string[], difficulty: BotDifficulty, lastDrawnCardId: string | null, gameMode: GameMode, teamGames: Card[][] = [], pileTopId: string | null = null): Card {
+/**
+ * Quantifica o "quão útil" descartar essa carta seria para o time adversário.
+ * Somado à utilidade própria do bot em chooseBestDiscard para formar um custo total.
+ *
+ * Sinais avaliados:
+ * - Encaixe direto numa meld adversária (MUITO perigoso, escala com tamanho da meld)
+ * - Adjacente à extremidade de uma sequência adversária (eles podem estender via pile-take)
+ * - Mesmo valor que uma trinca adversária (araujo_pereira)
+ * - Baseline pequeno para naipe onde adversário está construindo sequência
+ * - Coringa sempre é utilíssimo pro adversário
+ */
+function opponentDangerScore(card: Card, opponentGames: Card[][], gameMode: GameMode): number {
+  if (card.isJoker) return 200; // Nunca descarte coringa de graça
+  let danger = 0;
+  const oppSuitsWithSeq = new Set<string>();
+
+  for (const game of opponentGames) {
+    const normal = game.filter(c => !c.isJoker);
+    if (normal.length === 0) continue;
+    const isSeq = normal.every(c => c.suit === normal[0].suit);
+    const isTrinca = normal.every(c => c.value === normal[0].value);
+
+    if (isSeq) oppSuitsWithSeq.add(normal[0].suit);
+
+    // Encaixe direto — adversário adiciona imediatamente
+    if (validateSequence([...game, card], gameMode)) {
+      const closeness = Math.min(game.length, 7);
+      danger = Math.max(danger, 80 + closeness * 10); // 110..150
+      continue;
+    }
+
+    // Carta adjacente à extremidade de uma sequência de mesmo naipe
+    // → adversário pode pegar o lixo e estender com 1 carta da mão dele
+    if (isSeq && normal[0].suit === card.suit) {
+      const vals = normal.map(c => c.value).sort((a, b) => a - b);
+      const min = vals[0];
+      const max = vals[vals.length - 1];
+      const nearLow = card.value >= Math.max(3, min - 2) && card.value < min;
+      const nearHigh = card.value > max && card.value <= Math.min(14, max + 2);
+      if (nearLow || nearHigh) {
+        danger = Math.max(danger, 40 + game.length * 3);
+      }
+    }
+
+    // Trinca no araujo_pereira: qualquer carta de mesmo valor encaixa
+    if (gameMode === 'araujo_pereira' && isTrinca && normal[0].value === card.value) {
+      danger = Math.max(danger, 80 + game.length * 5);
+    }
+  }
+
+  // Leitura de adversário: naipe que eles estão construindo → leve desincentivo
+  if (danger === 0 && oppSuitsWithSeq.has(card.suit)) {
+    danger = 12;
+  }
+  return danger;
+}
+
+/**
+ * Detecta se um oponente específico tomou o lixo recentemente.
+ * Usado para pesar um pouco mais o risco de descartes em naipes/valores que eles parecem estar coletando.
+ */
+function opponentRecentlyTookPile(gameLog: { type: string; playerId: string }[], opponentIds: string[]): boolean {
+  const recent = gameLog.slice(-10);
+  return recent.some(ev => ev.type === 'draw_pile' && opponentIds.includes(ev.playerId));
+}
+
+/** Escolhe a carta a descartar (menor utilidade + menor risco ao adversário) */
+function chooseBestDiscard(
+  hand: Card[],
+  discardedHistory: string[],
+  difficulty: BotDifficulty,
+  lastDrawnCardId: string | null,
+  gameMode: GameMode,
+  teamGames: Card[][] = [],
+  pileTopId: string | null = null,
+  opponentGames: Card[][] = [],
+  opponentTookPileRecently: boolean = false
+): Card {
   let nonJokers = hand.filter(c => !c.isJoker);
   if (nonJokers.length === 0) return hand[0]; // Só tem curinga
 
@@ -340,34 +412,31 @@ function chooseBestDiscard(hand: Card[], discardedHistory: string[], difficulty:
     return [...nonJokers].sort((a, b) => getCardPoints(a) - getCardPoints(b))[0];
   }
 
-  if (difficulty === 'medium') {
-    return [...nonJokers].sort((a, b) =>
-      cardUtility(a, hand, gameMode, teamGames) - cardUtility(b, hand, gameMode, teamGames)
-    )[0];
-  }
-
-  // Difícil: menor utilidade + preferência por descartar naipe/valor já descartado
-  const sorted = [...nonJokers].sort((a, b) =>
-    cardUtility(a, hand, gameMode, teamGames) - cardUtility(b, hand, gameMode, teamGames)
-  );
-
   // Deck duplo: compara por naipe+valor (não por ID) — descarte da cópia 1 torna cópia 2 "segura"
   const discardedSuitValues = new Set(
     discardedHistory.map(id => { const p = id.split('-'); return `${p[1]}-${p[2]}`; })
   );
-  const safeDiscard = sorted.find(c => discardedSuitValues.has(`${c.suit}-${c.value}`));
+  const discardedValues = new Set(
+    discardedHistory.map(id => id.split('-')[2])
+  );
 
-  // Buraco Mole: também verifica por VALOR (trincas não dependem de naipe)
-  // Descartar um 7 é mais seguro se outro 7 (qualquer naipe) já apareceu no lixo
-  if (gameMode === 'araujo_pereira') {
-    const discardedValues = new Set(
-      discardedHistory.map(id => id.split('-')[2])
-    );
-    const safeByValue = sorted.find(c => discardedValues.has(String(c.value)));
-    return safeDiscard || safeByValue || sorted[0];
-  }
+  // Hard aplica peso cheio no perigo; medium aplica parcialmente (ainda comete alguns erros)
+  const dangerWeight = difficulty === 'hard' ? 1.0 : 0.4;
+  // Se o adversário pegou lixo recentemente, amplifica o peso de perigo (eles estão ativos)
+  const aggressionMultiplier = opponentTookPileRecently ? 1.25 : 1.0;
+  const safeWeight = difficulty === 'hard' ? 1.0 : 0.5;
 
-  return safeDiscard || sorted[0];
+  const scored = nonJokers.map(c => {
+    const util = cardUtility(c, hand, gameMode, teamGames);
+    const danger = opponentDangerScore(c, opponentGames, gameMode) * dangerWeight * aggressionMultiplier;
+    // Descartes "seguros" (cópia já no lixo → provavelmente ninguém espera)
+    const sameCopyBonus = discardedSuitValues.has(`${c.suit}-${c.value}`) ? 15 * safeWeight : 0;
+    const sameValueBonus = (gameMode === 'araujo_pereira' && discardedValues.has(String(c.value))) ? 8 * safeWeight : 0;
+    return { card: c, score: util + danger - sameCopyBonus - sameValueBonus };
+  });
+
+  scored.sort((a, b) => a.score - b.score);
+  return scored[0].card;
 }
 
 /** Avalia se vale a pena pegar o lixo (respeitando a regra obrigatória) */
@@ -511,9 +580,9 @@ function shouldTakePile(
     if (difficulty === 'medium') return usefulCount >= 1;
   }
 
-  // Hard: com 12 coringas no jogo, ser mais seletivo para não queimar coringas formando jogos fracos
-  // Só pega se o lixo tem pelo menos 2 cartas úteis ou o lixo é grande (3+)
-  if (difficulty === 'hard') return usefulCount >= 2 || pile.length >= 3;
+  // Hard: pile-take é quase sempre dominante em clássico (ganha massa de cartas).
+  // Pega se tem pelo menos 1 carta útil, OU o lixo é grande o suficiente para valer por volume.
+  if (difficulty === 'hard') return usefulCount >= 1 || pile.length >= 3;
   if (difficulty === 'medium') return usefulCount >= 2;
   return false;
 }
@@ -731,8 +800,6 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     const topCard = bot.hand.find(c => c.id === pileTopId);
     if (!topCard) return;
 
-    // 1) Tenta ADICIONAR a um jogo existente (topo encaixa diretamente)
-    // Dois passes: primeiro sem sujar canastras limpas, depois (se necessário) com elas.
     const teamGames = s.teams[bot.teamId].games;
     // Ordena jogos: naipe natural do topo primeiro (2♦ prefere jogo de ouros), canastras limpas por último.
     const sortedGameIndices = Array.from({ length: teamGames.length }, (_, i) => i).sort((a, b) => {
@@ -751,11 +818,78 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const bCleanCanasta = checkCanasta(bGame) === 'clean' ? 1 : 0;
       return aCleanCanasta - bCleanCanasta;
     });
+
+    // ─────────────────────────────────────────────────────────────
+    // FASE A: TENTATIVAS LIMPAS (prefere nunca sujar nenhum jogo)
+    // Evita o bug clássico do bot sujar 2♦ num jogo de paus quando
+    // poderia formar NOVO jogo limpo de ouros com cartas da mão.
+    // ─────────────────────────────────────────────────────────────
+
+    // A1) Adiciona topo a jogo existente SEM sujar
+    for (const gi of sortedGameIndices) {
+      const game = useGameStore.getState().teams[bot.teamId].games[gi];
+      if (!game) continue;
+      if (topCard.isJoker && wouldDirtyGame(topCard, game)) continue;
+      if (validateSequence([...game, topCard], s.gameMode)) {
+        animate();
+        if (useGameStore.getState().addToExistingGame(botId, [pileTopId], gi)) return;
+      }
+    }
+
+    // A2) Adiciona topo + carta(s) da mão a jogo existente SEM sujar
+    for (const gi of sortedGameIndices) {
+      const freshState = useGameStore.getState();
+      const game = freshState.teams[bot.teamId].games[gi];
+      if (!game) continue;
+      if (topCard.isJoker && wouldDirtyGame(topCard, game)) continue;
+      const freshBot = freshState.players.find(p => p.id === botId);
+      if (!freshBot) return;
+
+      for (const c of freshBot.hand) {
+        if (c.id === pileTopId) continue;
+        if (validateSequence([...game, topCard, c], freshState.gameMode)) {
+          animate();
+          if (useGameStore.getState().addToExistingGame(botId, [pileTopId, c.id], gi)) return;
+        }
+      }
+      for (let i = 0; i < freshBot.hand.length; i++) {
+        if (freshBot.hand[i].id === pileTopId) continue;
+        for (let j = i + 1; j < freshBot.hand.length; j++) {
+          if (freshBot.hand[j].id === pileTopId) continue;
+          if (validateSequence([...game, topCard, freshBot.hand[i], freshBot.hand[j]], freshState.gameMode)) {
+            animate();
+            if (useGameStore.getState().addToExistingGame(botId, [pileTopId, freshBot.hand[i].id, freshBot.hand[j].id], gi)) return;
+          }
+        }
+      }
+    }
+
+    // A3) Forma NOVO jogo onde topo (2-curinga) é colocado naturalmente.
+    // Só considera sequências em que topo é do mesmo naipe da seq e TODOS os demais
+    // curingas da seq também são naturais do mesmo naipe — ou seja, jogada 100% limpa.
+    if (topCard.isJoker && topCard.suit !== 'joker') {
+      const sequences = findBestSequences(bot.hand, s.gameMode);
+      for (const seq of sequences) {
+        if (!seq.some(c => c.id === pileTopId)) continue;
+        const seqNormal = seq.filter(c => !c.isJoker);
+        const seqSuit = seqNormal.length > 0 ? seqNormal[0].suit : null;
+        if (seqSuit !== topCard.suit) continue;
+        const allJokersNatural = seq.filter(c => c.isJoker).every(j => j.suit === seqSuit);
+        if (!allJokersNatural) continue;
+        animate();
+        if (useGameStore.getState().playCards(botId, seq.map(c => c.id))) return;
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FASE B: FALLBACK — permite sujar, mas ainda protege canastras limpas
+    // ─────────────────────────────────────────────────────────────
+
+    // B1) Adiciona topo a jogo existente (protege apenas canastra limpa)
     for (let pass = 0; pass < 2; pass++) {
       for (const gi of sortedGameIndices) {
         const game = useGameStore.getState().teams[bot.teamId].games[gi];
         if (!game) continue;
-        // No primeiro passe, pula jogos onde o topo sujaria uma canastra limpa
         if (pass === 0 && topCard.isJoker && wouldDirtyGame(topCard, game) && checkCanasta(game) === 'clean') continue;
         if (validateSequence([...game, topCard], s.gameMode)) {
           animate();
@@ -764,9 +898,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       }
     }
 
-    // 1b) Tenta ADICIONAR com topCard + carta(s) da mão para preencher lacuna no jogo existente
-    //     Ex: mesa=[3,4,5], mão=[6], topo=7 → addToExistingGame([6,7], jogo[3,4,5])
-    // Dois passes: primeiro sem sujar canastras limpas, depois (se necessário) com elas.
+    // B2) Adiciona topo + cartas da mão (protege apenas canastra limpa no pass 0)
     for (let pass = 0; pass < 2; pass++) {
       for (const gi of sortedGameIndices) {
         const freshState = useGameStore.getState();
@@ -774,10 +906,8 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         if (!game) continue;
         const freshBot = freshState.players.find(p => p.id === botId);
         if (!freshBot) return;
-        // No primeiro passe, pula jogos onde o topo sujaria uma canastra limpa
         if (pass === 0 && topCard.isJoker && wouldDirtyGame(topCard, game) && checkCanasta(game) === 'clean') continue;
 
-        // Com 1 carta da mão
         for (const c of freshBot.hand) {
           if (c.id === pileTopId) continue;
           if (validateSequence([...game, topCard, c], freshState.gameMode)) {
@@ -785,7 +915,6 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
             if (useGameStore.getState().addToExistingGame(botId, [pileTopId, c.id], gi)) return;
           }
         }
-        // Com 2 cartas da mão
         for (let i = 0; i < freshBot.hand.length; i++) {
           if (freshBot.hand[i].id === pileTopId) continue;
           for (let j = i + 1; j < freshBot.hand.length; j++) {
@@ -799,7 +928,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       }
     }
 
-    // 2) Tenta via findBestSequences (novo jogo)
+    // B3) Tenta via findBestSequences (qualquer jogo novo, mesmo com curinga sujo)
     const sequences = findBestSequences(bot.hand, s.gameMode);
     for (const seq of sequences) {
       if (seq.some(c => c.id === pileTopId)) {
@@ -986,6 +1115,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       if (aClean !== bClean) return aClean ? -1 : 1;
       // Prioridade 5: jogos maiores primeiro (mais perto de canastra)
       if (aLen !== bLen) return bLen - aLen;
+      return 0;
     });
 
     for (const gi of sortedIndices) {
@@ -1136,7 +1266,21 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     }
 
     const teamGames = fresh.teams[bot.teamId].games;
-    const card = chooseBestDiscard(bot.hand, fresh.discardedCardHistory, fresh.botDifficulty, fresh.lastDrawnCardId, fresh.gameMode, teamGames, pileTopId);
+    const opponentTeamId = bot.teamId === 'team-1' ? 'team-2' : 'team-1';
+    const opponentGames = fresh.teams[opponentTeamId].games;
+    const opponentIds = fresh.players.filter(p => p.teamId === opponentTeamId).map(p => p.id);
+    const tookPileRecently = opponentRecentlyTookPile(fresh.gameLog as any, opponentIds);
+    const card = chooseBestDiscard(
+      bot.hand,
+      fresh.discardedCardHistory,
+      fresh.botDifficulty,
+      fresh.lastDrawnCardId,
+      fresh.gameMode,
+      teamGames,
+      pileTopId,
+      opponentGames,
+      tookPileRecently
+    );
     animate(); // anim do lixo
     useGameStore.getState().discard(botId, card.id);
 

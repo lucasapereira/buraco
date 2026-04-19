@@ -49,7 +49,6 @@ export default function HomeScreen() {
   useEffect(() => {
     if (Platform.OS === 'android') {
       NavigationBar.setVisibilityAsync('hidden').catch(() => {});
-      NavigationBar.setBehaviorAsync('inset-touch').catch(() => {});
     }
   }, []);
 

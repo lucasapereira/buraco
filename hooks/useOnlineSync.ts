@@ -50,6 +50,7 @@ export function useOnlineSync() {
     const unsubscribeGame = onValue(gameRef, (snapshot) => {
       if (applyingRemote.current) return;
       const remoteState = snapshot.val();
+      console.log('[sync] recv', !!remoteState, remoteState?._writerInstanceId?.slice?.(0, 4), 'lastEvent=', remoteState?.gameLog?.[remoteState.gameLog.length - 1]?.type);
       if (!remoteState) return;
 
       // Ignora atualizações que eu mesmo escrevi (usa instance ID estável,
@@ -136,9 +137,13 @@ export function useOnlineSync() {
       // Host sincroniza qualquer ação local — isso cobre tanto seus próprios turnos
       // quanto AFK takeover de guests (o playerId do evento seria do guest, não do host).
       // Guests só sincronizam suas próprias ações.
-      if (!isHost && !myPlayerIds.includes(lastEvent.playerId)) return;
+      if (!isHost && !myPlayerIds.includes(lastEvent.playerId)) {
+        console.log('[sync] skip (not mine)', lastEvent.type, 'by', lastEvent.playerId, 'myIds=', myPlayerIds.join(','));
+        return;
+      }
 
       const myUid = auth.currentUser?.uid;
+      console.log('[sync] push', lastEvent.type, 'by', lastEvent.playerId, 'auth=', myUid ?? 'NULL', 'isHost=', isHost);
       const currentState = useGameStore.getState();
 
       // Extrai só os campos do GameState (exclui funções, animações e estado visual local)
@@ -157,7 +162,9 @@ export function useOnlineSync() {
         _writerUid: myUid,
         _writerInstanceId: INSTANCE_ID,
       }));
-      dbSet(ref(db, `rooms/${roomCode}/gameState`), payload).catch(() => {});
+      dbSet(ref(db, `rooms/${roomCode}/gameState`), payload)
+        .then(() => console.log('[sync] push OK', lastEvent.type))
+        .catch(err => console.warn('[sync] push FAIL', err?.code, err?.message, 'auth=', auth.currentUser?.uid ?? 'NULL'));
     });
 
     return () => unsubscribe();

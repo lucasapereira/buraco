@@ -249,7 +249,6 @@ export default function GameScreen() {
   useEffect(() => {
     if (Platform.OS === 'android') {
       NavigationBar.setVisibilityAsync('hidden').catch(() => {});
-      NavigationBar.setBehaviorAsync('inset-touch').catch(() => {});
     }
   }, []);
 
