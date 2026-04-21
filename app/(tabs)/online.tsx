@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Modal,
   Platform,
@@ -18,12 +19,46 @@ import { useKeepAwake } from 'expo-keep-awake';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { onValue, ref } from 'firebase/database';
 import { db } from '../../config/firebase';
-import { BotDifficulty, GameMode, createInitialGameState } from '../../game/engine';
+import { GameMode, createInitialGameState } from '../../game/engine';
 import { useGameStore } from '../../store/gameStore';
 import { useOnlineStore, SEAT_PLAYER_IDS, SeatInfo, PublicRoomInfo } from '../../store/onlineStore';
+import { useProfileStore } from '../../store/profileStore';
+import { signInWithGoogle, unlinkGoogle } from '../../hooks/useGoogleAuth';
 
 const TEAM_LABEL: Record<number, string> = { 0: 'Time 1', 1: 'Time 2', 2: 'Time 1', 3: 'Time 2' };
 const TEAM_COLOR: Record<number, string> = { 0: '#4CAF50', 1: '#FF5252', 2: '#4CAF50', 3: '#FF5252' };
+
+import { auth } from '../../config/firebase';
+function GoogleLinkStatus({ onLink, onUnlink, loading }: { onLink: () => void; onUnlink: () => void; loading: boolean }) {
+  const user = auth.currentUser;
+  const linked = user && !user.isAnonymous;
+  if (linked) {
+    return (
+      <View style={styles.googleLinkedBox}>
+        <Text style={styles.googleLinkedText}>✓ Vinculado ao Google</Text>
+        <Text style={styles.googleLinkedSub}>{user?.email ?? ''}</Text>
+        <TouchableOpacity
+          style={[styles.googleUnlinkBtn, loading && styles.btnDisabled]}
+          onPress={onUnlink}
+          disabled={loading}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.googleUnlinkBtnText}>Desvincular</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+  return (
+    <TouchableOpacity
+      style={[styles.googleLinkBtn, loading && styles.btnDisabled]}
+      onPress={onLink}
+      disabled={loading}
+      activeOpacity={0.85}
+    >
+      {loading ? <ActivityIndicator color="#0A1C30" /> : <Text style={styles.googleLinkBtnText}>🔐 Vincular ao Google</Text>}
+    </TouchableOpacity>
+  );
+}
 
 export default function OnlineScreen() {
   useKeepAwake();
@@ -43,16 +78,22 @@ export default function OnlineScreen() {
     if (Platform.OS === 'android') {
       NavigationBar.setVisibilityAsync('hidden').catch(() => {});
     }
-    // Se já tem nome, vai direto para home
-    if (store.displayName.trim().length > 0) setStep('home');
+    // Se já tem nome RESERVADO no Firebase, vai direto pra home
+    if (useProfileStore.getState().myUsername) setStep('home');
   }, []);
 
   // Quando a sala muda para 'playing', navega para o jogo.
-  // Quando volta para 'idle' (ex: leaveRoom após partida), reseta o step.
+  // Quando volta para 'idle'/'abandoned'/'finished' (ex: leaveRoom após partida), reseta o step.
   useEffect(() => {
     if (store.roomStatus === 'playing') {
       router.replace('/(tabs)/explore' as any);
-    } else if (store.roomStatus === 'idle' && (step === 'lobby' || step === 'create')) {
+    } else if (
+      (store.roomStatus === 'idle' || store.roomStatus === 'abandoned' || store.roomStatus === 'finished') &&
+      (step === 'lobby' || step === 'create')
+    ) {
+      // Garante que state local da sala foi limpo (caso a sala tenha sido abandonada
+      // via listener sem leaveRoom explícito)
+      if (store.roomCode) useOnlineStore.getState().leaveRoom();
       setStep(store.displayName.trim().length > 0 ? 'home' : 'name');
     }
   }, [store.roomStatus]);
@@ -65,27 +106,50 @@ export default function OnlineScreen() {
     const unsubSeats = onValue(ref(db, `rooms/${roomCode}/seats`), (snap) => {
       const raw = snap.val() ?? {};
       const seats: (SeatInfo | null)[] = [0, 1, 2, 3].map(i => raw[i] ?? null);
-      const { applyRoomSnapshot, roomStatus, roomMode, roomTarget, roomDifficulty } = useOnlineStore.getState();
-      applyRoomSnapshot({ status: roomStatus, seats, mode: roomMode, target: roomTarget, difficulty: roomDifficulty });
+      const { applyRoomSnapshot, roomStatus, roomMode, roomTarget } = useOnlineStore.getState();
+      applyRoomSnapshot({ status: roomStatus, seats, mode: roomMode, target: roomTarget });
     });
 
     const unsubMeta = onValue(ref(db, `rooms/${roomCode}/meta`), (snap) => {
       const meta = snap.val();
-      if (!meta) return;
-      const { applyRoomSnapshot, roomMode, roomTarget, roomDifficulty, seats } = useOnlineStore.getState();
-      applyRoomSnapshot({ status: meta.status, seats, mode: meta.mode ?? roomMode, target: meta.targetScore ?? roomTarget, difficulty: meta.difficulty ?? roomDifficulty });
+      // Sala foi removida ou nunca existiu — limpa state local e manda pra home
+      if (!meta) {
+        useOnlineStore.getState().leaveRoom();
+        setStep('home');
+        return;
+      }
+      const { applyRoomSnapshot, roomMode, roomTarget, seats } = useOnlineStore.getState();
+      applyRoomSnapshot({ status: meta.status, seats, mode: meta.mode ?? roomMode, target: meta.targetScore ?? roomTarget });
     });
 
     return () => { unsubSeats(); unsubMeta(); };
   }, [store.roomCode, step]);
 
-  const handleSaveName = () => {
+  const handleSaveName = async () => {
     if (store.displayName.trim().length < 2) {
       store.setError('Nome muito curto (mínimo 2 letras)');
       return;
     }
     store.setError(null);
-    setStep('home');
+    try {
+      // Garante auth antes de tentar reservar (transação precisa de um uid)
+      await store.ensureAuth();
+      const profile = useProfileStore.getState();
+      if (profile.myUsername && profile.myUsernameLower === store.displayName.trim().toLowerCase().replace(/\s+/g, '')) {
+        // Já é o meu nome — só avança
+        setStep('home');
+        return;
+      }
+      if (profile.myUsername) {
+        await profile.changeUsername(store.displayName);
+      } else {
+        await profile.claimUsername(store.displayName);
+      }
+      await useProfileStore.getState().migrateLocalStatsIfNeeded();
+      setStep('home');
+    } catch (e: any) {
+      store.setError(useProfileStore.getState().claimError ?? e?.message ?? 'Erro ao reservar nome');
+    }
   };
 
   const handleCreate = async () => {
@@ -121,6 +185,61 @@ export default function OnlineScreen() {
     } catch (_) {}
   };
 
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const handleUnlink = () => {
+    Alert.alert(
+      'Desvincular Google?',
+      'Seu perfil e stats ficam salvos — ao entrar de novo com Google, tudo é restaurado. Você voltará a ser um jogador anônimo neste aparelho.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desvincular',
+          style: 'destructive',
+          onPress: async () => {
+            setGoogleLoading(true);
+            try {
+              await unlinkGoogle();
+              store.setDisplayName('');
+              setStep('name');
+            } finally {
+              setGoogleLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    store.setError(null);
+    try {
+      await store.ensureAuth(); // garante que tem uid anônimo
+      const res = await signInWithGoogle();
+      if (!res.ok) {
+        if (res.error !== 'Login cancelado') {
+          Alert.alert('Falha no login Google', res.error);
+          store.setError(res.error);
+        }
+        return;
+      }
+      const { myUsername } = useProfileStore.getState();
+      if (myUsername) {
+        Alert.alert('Login OK', `Bem-vindo de volta, ${myUsername}! Stats restaurados.`);
+        store.setDisplayName(myUsername);
+        setStep('home');
+      } else {
+        // Logou mas não tem perfil — provavelmente é recuperação de reinstalação
+        // cujo uid antigo não tinha Google linkado. Avisa e deixa escolher nome novo.
+        Alert.alert(
+          'Login com Google OK',
+          'Não achei perfil antigo vinculado a essa conta Google. Se você tinha um perfil antes e quer recuperá-lo, me chama que recupero manualmente pelo seu nome antigo. Por enquanto, escolha um nome pra continuar.',
+        );
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   const handleLeave = async () => {
     await store.leaveRoom();
     setStep('home');
@@ -128,8 +247,8 @@ export default function OnlineScreen() {
 
   const handleStartGame = async () => {
     // Host: cria o estado inicial e envia pro Firebase
-    const { roomMode, roomTarget, roomDifficulty, seats } = store;
-    const initialState = createInitialGameState(roomTarget, roomDifficulty, roomMode);
+    const { roomMode, roomTarget, seats } = store;
+    const initialState = createInitialGameState(roomTarget, roomMode);
 
     // Substitui os nomes dos players pelos nomes reais das pessoas na sala
     initialState.players = initialState.players.map((p, idx) => {
@@ -138,7 +257,7 @@ export default function OnlineScreen() {
     });
 
     // Aplica localmente com nomes reais (bots recebem nome genérico)
-    startNewGame(roomTarget, roomDifficulty, roomMode);
+    startNewGame(roomTarget, roomMode);
     const playersWithNames = useGameStore.getState().players.map((p, idx) => {
       const seat = seats[idx];
       return { ...p, name: seat?.name ?? `Bot ${idx + 1}` };
@@ -184,6 +303,25 @@ export default function OnlineScreen() {
           <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveName} activeOpacity={0.85}>
             <Text style={styles.primaryBtnText}>CONTINUAR →</Text>
           </TouchableOpacity>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>ou</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
+            onPress={handleGoogle}
+            disabled={googleLoading}
+            activeOpacity={0.85}
+          >
+            {googleLoading
+              ? <ActivityIndicator color="#0A1C30" />
+              : <Text style={styles.googleBtnText}>🔐 Entrar com Google</Text>}
+          </TouchableOpacity>
+          <Text style={styles.googleHint}>Recupera seu perfil mesmo após reinstalar o app</Text>
+
           <TouchableOpacity style={styles.backLink} onPress={() => router.replace('/(tabs)' as any)}>
             <Text style={styles.backLinkText}>← Voltar</Text>
           </TouchableOpacity>
@@ -206,6 +344,8 @@ export default function OnlineScreen() {
           >
             <Text style={styles.nameEditText}>Mudar nome</Text>
           </TouchableOpacity>
+
+          <GoogleLinkStatus onLink={handleGoogle} onUnlink={handleUnlink} loading={googleLoading} />
 
           <View style={styles.homeButtons}>
             <TouchableOpacity
@@ -259,7 +399,7 @@ export default function OnlineScreen() {
 
   // ── STEP: CONFIGURAR SALA (host) ──────────────────────────────────────────
   if (step === 'create') {
-    const { roomMode, roomTarget, roomDifficulty } = store;
+    const { roomMode, roomTarget } = store;
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -271,7 +411,7 @@ export default function OnlineScreen() {
               <TouchableOpacity
                 key={m}
                 style={[styles.optionBtn, roomMode === m && styles.optionBtnActive]}
-                onPress={() => store.setRoomSettings(m, roomTarget, roomDifficulty)}
+                onPress={() => store.setRoomSettings(m, roomTarget)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.optionText, roomMode === m && styles.optionTextActive]}>
@@ -287,27 +427,11 @@ export default function OnlineScreen() {
               <TouchableOpacity
                 key={t}
                 style={[styles.optionBtn, roomTarget === t && styles.optionBtnActive]}
-                onPress={() => store.setRoomSettings(roomMode, t, roomDifficulty)}
+                onPress={() => store.setRoomSettings(roomMode, t)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.optionText, roomTarget === t && styles.optionTextActive]}>
                   {t.toLocaleString()}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.sectionLabel}>Dificuldade dos Bots</Text>
-          <View style={styles.optionRow}>
-            {(['easy', 'medium', 'hard'] as BotDifficulty[]).map(d => (
-              <TouchableOpacity
-                key={d}
-                style={[styles.optionBtn, roomDifficulty === d && styles.optionBtnActive]}
-                onPress={() => store.setRoomSettings(roomMode, roomTarget, d)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.optionText, roomDifficulty === d && styles.optionTextActive]}>
-                  {d === 'easy' ? 'Fácil' : d === 'medium' ? 'Médio' : 'Difícil'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -682,6 +806,45 @@ const styles = StyleSheet.create({
   waitingText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
 
   errorText: { color: '#FF8A80', fontSize: 13, marginTop: 8, textAlign: 'center' },
+
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 12, width: '100%' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.15)' },
+  dividerText: { color: 'rgba(255,255,255,0.5)', marginHorizontal: 10, fontSize: 12, fontWeight: '600' },
+
+  googleBtn: {
+    backgroundColor: '#fff',
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    alignItems: 'center',
+    width: '100%',
+  },
+  googleBtnText: { color: '#0A1C30', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
+  googleHint: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 8, textAlign: 'center' },
+
+  googleLinkBtn: {
+    backgroundColor: '#fff',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  googleLinkBtnText: { color: '#0A1C30', fontSize: 13, fontWeight: '800' },
+  googleLinkedBox: { alignItems: 'center', marginBottom: 18 },
+  googleLinkedText: { color: '#B9F6CA', fontSize: 13, fontWeight: '800' },
+  googleLinkedSub: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 2 },
+  googleUnlinkBtn: {
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,138,128,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,138,128,0.5)',
+  },
+  googleUnlinkBtnText: { color: '#FF8A80', fontSize: 12, fontWeight: '700' },
+
   backLink: { marginTop: 20 },
   backLinkText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
 

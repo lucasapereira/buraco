@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Card, cardLabel } from '../game/deck';
 import {
-  BotDifficulty,
   GameEvent,
   GameMode,
   GameState,
@@ -17,7 +16,7 @@ import { canTakePile, sortCardsBySuitAndValue, sortGameCards, validateSequence, 
 type TurnPhase = 'draw' | 'play' | 'discard';
 
 interface GameActions {
-  startNewGame: (targetScore?: number, difficulty?: BotDifficulty, gameMode?: GameMode) => void;
+  startNewGame: (targetScore?: number, gameMode?: GameMode) => void;
   startNewRound: () => void;
   startLayoutTest: () => void;
   drawFromDeck: (playerId: PlayerId) => void;
@@ -166,9 +165,9 @@ export const useGameStore = create<GameState & GameActions>()(
     (set, get) => ({
       ...createInitialGameState(),
 
-  startNewGame: (targetScore = 3000, difficulty = 'medium' as BotDifficulty, gameMode = 'classic' as GameMode) => {
+  startNewGame: (targetScore = 3000, gameMode = 'classic' as GameMode) => {
     eventCounter = 0;
-    set(createInitialGameState(targetScore, difficulty, gameMode));
+    set(createInitialGameState(targetScore, gameMode));
   },
 
   // Usado pelo modo online: aplica estado recebido do Firebase
@@ -183,13 +182,16 @@ export const useGameStore = create<GameState & GameActions>()(
     // Firebase converte arrays vazios em null — restaura os campos críticos
     const localState = get();
 
-    // Verifica se a notificação do Firebase pertence à MESMA rodada (ou nova).
-    // Se for da MESMA rodada, a trava de hasGottenDead não permite reverter pra false.
+    // Verifica se a notificação do Firebase pertence à MESMA partida.
+    // Os filtros de rodada/morto só valem dentro da mesma partida (mesmo gameId).
+    // Se o gameId remoto for diferente, é partida nova — aplicamos sem restrição
+    // (senão o estado persistido de uma partida anterior bloquearia a nova).
     const remoteRoundNumber = rest.roundNumber ?? 1;
-    if (remoteRoundNumber < localState.roundNumber) {
-      return; // Ignora completamente pacotes atrasados de rodadas anteriores
+    const isSameMatch = !!rest.gameId && rest.gameId === localState.gameId;
+    if (isSameMatch && remoteRoundNumber < localState.roundNumber) {
+      return; // Ignora pacotes atrasados de rodadas anteriores da mesma partida
     }
-    const isSameRound = remoteRoundNumber === localState.roundNumber;
+    const isSameRound = isSameMatch && remoteRoundNumber === localState.roundNumber;
 
     if (rest.teams) {
       for (const teamId of ['team-1', 'team-2'] as const) {
@@ -278,7 +280,7 @@ export const useGameStore = create<GameState & GameActions>()(
 
   startNewRound: () => {
     const state = get();
-    const fresh = createInitialGameState(state.targetScore, state.botDifficulty, state.gameMode);
+    const fresh = createInitialGameState(state.targetScore, state.gameMode);
     // Preserva os nomes reais dos jogadores (definidos pelo modo online ou pelo usuário)
     const freshPlayers = fresh.players.map((fp, i) => ({
       ...fp,
@@ -293,7 +295,6 @@ export const useGameStore = create<GameState & GameActions>()(
       players: freshPlayers,
       gameLog: [roundStartEvent],
       matchScores: state.matchScores,
-      botDifficulty: state.botDifficulty,
       gameMode: state.gameMode,
       roundNumber: state.roundNumber + 1,
       gameId: state.gameId, // preserva o ID da partida entre rodadas
@@ -364,7 +365,7 @@ export const useGameStore = create<GameState & GameActions>()(
     const pileCards: Card[] = [c(2,'spades',7),c(2,'clubs',2),c(1,'hearts',5),c(1,'diamonds',2),c(2,'spades',6)];
 
     set({
-      ...createInitialGameState(1500, 'hard', 'classic'),
+      ...createInitialGameState(1500, 'classic'),
       players: [
         { id: 'user', teamId: 'team-1', name: 'Você', hand: sortCardsBySuitAndValue(userHand), hasGottenDead: true },
         { id: 'bot-1', teamId: 'team-2', name: 'Adv 1', hand: sortCardsBySuitAndValue(bot1Hand), hasGottenDead: true },

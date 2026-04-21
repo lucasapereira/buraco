@@ -22,7 +22,8 @@ import { Card } from '../../components/Card';
 import { EventBanner } from '../../components/EventBanner';
 import { Hand } from '../../components/Hand';
 import { AchievementToast } from '../../components/AchievementToast';
-import { calculateCardPoints, calculateLiveScore } from '../../game/engine';
+import { Confetti } from '../../components/Confetti';
+import { calculateCardPoints, calculateLiveScore, createInitialGameState } from '../../game/engine';
 import { canTakePile, checkCanasta, validateSequence } from '../../game/rules';
 import { ACHIEVEMENTS } from '../../game/achievements';
 import { useBotAI } from '../../hooks/useBotAI';
@@ -30,9 +31,97 @@ import { useGameSounds } from '../../hooks/useGameSounds';
 import { useOnlineSync } from '../../hooks/useOnlineSync';
 import { useGameStore } from '../../store/gameStore';
 import { useStatsStore } from '../../store/statsStore';
+import { useProfileStore } from '../../store/profileStore';
 import { useOnlineStore, SEAT_PLAYER_IDS, TEAM_OF_SEAT } from '../../store/onlineStore';
 import { cardLabel } from '../../game/deck';
 
+
+// Frases prontas pra zoeira / malhação no online. Ordem = ordem no picker.
+const TAUNT_PRESETS: string[] = [
+  'Pisa! 👣',
+  'Peia! 🥊',
+  'Deu sorte, hein?',
+  'Lavou a burra',
+  'Fiz cagada 💩',
+  'Mete lixo!',
+  'Não pega o lixo!',
+  'Cadê a canastra?',
+  'Tá pensando muito 🐌',
+  'Vai logo!',
+  'Achou? 👀',
+  '😂',
+  '🤡',
+  '🔥',
+];
+
+/** Bolha de fala que aparece acima do jogador quando ele manda uma zoeira. */
+function TauntBubble({ entry, seatIdx }: { entry: { msg: string; ts: number; id: string } | undefined; seatIdx: number }) {
+  const [visible, setVisible] = useState(false);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const lastIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!entry) return;
+    if (entry.id === lastIdRef.current) return;
+    // Antes usávamos Date.now() - entry.ts pra filtrar taunts antigos, mas isso
+    // quebrava quando os relógios dos dois celulares estavam dessincronizados —
+    // o receptor descartava a mensagem como "velha". Hoje o useOnlineSync ignora
+    // o primeiro snapshot do listener, então aqui só rastreamos o id.
+    lastIdRef.current = entry.id;
+    setVisible(true);
+    opacity.setValue(0);
+    Animated.sequence([
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.delay(2800),
+      Animated.timing(opacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(({ finished }) => { if (finished) setVisible(false); });
+  }, [entry?.id]);
+
+  if (!visible || !entry) return null;
+  // Nos extremos (assentos 0 e 3) ancoramos a bolha ao lado do item em vez de
+  // centralizar, pra não ser cortada pela borda da tela. A bolha fica ABAIXO
+  // do statusItem (top: 100%) — acima a statusBar cortava contra o boardo.
+  const alignStyle =
+    seatIdx === 0 ? tauntStyles.bubbleLeft
+    : seatIdx === 3 ? tauntStyles.bubbleRight
+    : tauntStyles.bubbleCenter;
+  return (
+    <Animated.View pointerEvents="none" style={[tauntStyles.bubble, alignStyle, { opacity }]}>
+      <Text style={tauntStyles.bubbleText}>{entry.msg}</Text>
+    </Animated.View>
+  );
+}
+
+const tauntStyles = StyleSheet.create({
+  bubble: {
+    position: 'absolute',
+    top: '100%',
+    marginTop: 4,
+    minWidth: 90,
+    maxWidth: 200,
+    backgroundColor: '#FFD600',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 20,
+    zIndex: 999,
+  },
+  bubbleCenter: { left: '50%', transform: [{ translateX: -100 }], width: 200 },
+  bubbleLeft: { left: 0 },
+  bubbleRight: { right: 0 },
+  bubbleText: {
+    color: '#1B5E20',
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+    flexWrap: 'wrap',
+  },
+});
 
 /** Retorna label, emoji e chave de estilo para uma canastra */
 function getCanastaInfo(canasta: 'clean' | 'dirty' | 'none', length: number) {
@@ -55,7 +144,7 @@ export default function GameScreen() {
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
     drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
     startNewRound, startNewGame,
-    gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode, botDifficulty,
+    gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode,
     animatingDiscard, animatingDrawPlayerId,
     turnHistory, undoLastPlay
   } = useGameStore();
@@ -77,8 +166,9 @@ export default function GameScreen() {
   }, [currentTurnPlayerId, lastEventId]);
 
   // ── Modo Online ────────────────────────────────────────────────────────────
-  const { mySeat, roomStatus, seats } = useOnlineStore();
+  const { mySeat, roomStatus, seats, taunts, sendTaunt } = useOnlineStore();
   const isOnlineMode = roomStatus === 'playing';
+  const [tauntPickerOpen, setTauntPickerOpen] = useState(false);
   // Em modo offline sempre sou 'user' (seat 0); online, uso o assento atribuído
   const myPlayerId = isOnlineMode && mySeat !== null ? SEAT_PLAYER_IDS[mySeat] : 'user';
   const myTeamId   = isOnlineMode && mySeat !== null ? TEAM_OF_SEAT[mySeat] : 'team-1';
@@ -158,24 +248,32 @@ export default function GameScreen() {
     prevDeadsLength.current = deads.length;
   }, [deads.length, playSound]);
 
+  const [confettiTrigger, setConfettiTrigger] = useState(0);
   const prevCanastaCount = useRef(0);
+  const prevMyCanastaCount = useRef(0);
   useEffect(() => {
     let count = 0;
-    teams['team-1'].games.forEach(g => { if (checkCanasta(g) !== 'none') count++; });
-    teams['team-2'].games.forEach(g => { if (checkCanasta(g) !== 'none') count++; });
+    let myCount = 0;
+    teams['team-1'].games.forEach(g => { if (checkCanasta(g) !== 'none') { count++; if (myTeamId === 'team-1') myCount++; } });
+    teams['team-2'].games.forEach(g => { if (checkCanasta(g) !== 'none') { count++; if (myTeamId === 'team-2') myCount++; } });
     if (count > prevCanastaCount.current && count > 0) {
       playSound('canastra');
     }
+    if (myCount > prevMyCanastaCount.current) {
+      setConfettiTrigger(Date.now());
+    }
     prevCanastaCount.current = count;
-  }, [teams, playSound]);
+    prevMyCanastaCount.current = myCount;
+  }, [teams, playSound, myTeamId]);
 
   const prevRoundWinner = useRef<string | null>(null);
   useEffect(() => {
     if (winnerTeamId && winnerTeamId !== prevRoundWinner.current) {
       playSound('bater');
+      if (winnerTeamId === myTeamId) setConfettiTrigger(Date.now());
     }
     prevRoundWinner.current = winnerTeamId;
-  }, [winnerTeamId, playSound]);
+  }, [winnerTeamId, playSound, myTeamId]);
 
   const prevTurnPlayer = useRef<string | null>(null);
   useEffect(() => {
@@ -211,19 +309,53 @@ export default function GameScreen() {
     const lastRoundEnd = gameLog.slice().reverse().find(e => e.type === 'round_end');
     const userBated = (lastRoundEnd?.playerId === myPlayerId) && (lastRoundEnd?.message?.includes('BATEU') ?? false);
 
-    recordRound({
-      matchEnded: winnerTeamId !== null,
-      matchWon: winnerTeamId === myTeamId,
-      myRoundScore: teams[myTeamId].score,
-      myMatchScore: matchScores[myTeamId],
-      theirMatchScore: matchScores[opTeamId],
-      cleanCanastas,
-      dirtyCanastas,
-      canastas500,
-      canastas1000,
-      userBated,
-      difficulty: botDifficulty,
-    });
+    // Coleta nomes / rating dos adversários (online apenas — pra ELO + histórico)
+    const isMatchEnd = winnerTeamId !== null;
+    (async () => {
+      let opponentTeamAvgRating: number | undefined;
+      let opponentNames: string[] | undefined;
+      let partnerName: string | undefined;
+      if (isOnlineMode && isMatchEnd) {
+        const myTeamSeats = mySeat !== null ? [0, 1, 2, 3].filter(i => TEAM_OF_SEAT[i] === myTeamId && i !== mySeat) : [];
+        const oppSeats = [0, 1, 2, 3].filter(i => TEAM_OF_SEAT[i] === opTeamId);
+        partnerName = myTeamSeats.length > 0 ? (seats[myTeamSeats[0]]?.name ?? undefined) : undefined;
+        opponentNames = oppSeats.map(i => seats[i]?.name ?? `Adversário`);
+        // Média de rating dos adversários (humanos têm uid; bots não têm — usa default 1000)
+        const oppRatings: number[] = [];
+        for (const seatIdx of oppSeats) {
+          const seat = seats[seatIdx];
+          if (seat?.uid) {
+            const prof = await useProfileStore.getState().loadProfile(seat.uid);
+            oppRatings.push(prof?.onlineRating ?? 1000);
+          } else {
+            oppRatings.push(1000);
+          }
+        }
+        opponentTeamAvgRating = oppRatings.length > 0
+          ? oppRatings.reduce((a, b) => a + b, 0) / oppRatings.length
+          : 1000;
+      } else if (!isOnlineMode && isMatchEnd) {
+        partnerName = players.find(p => p.teamId === myTeamId && p.id !== myPlayerId)?.name;
+        opponentNames = players.filter(p => p.teamId === opTeamId).map(p => p.name);
+      }
+
+      recordRound({
+        matchEnded: isMatchEnd,
+        matchWon: winnerTeamId === myTeamId,
+        myRoundScore: teams[myTeamId].score,
+        myMatchScore: matchScores[myTeamId],
+        theirMatchScore: matchScores[opTeamId],
+        cleanCanastas,
+        dirtyCanastas,
+        canastas500,
+        canastas1000,
+        userBated,
+        isOnline: isOnlineMode,
+        opponentTeamAvgRating,
+        opponentNames,
+        partnerName,
+      });
+    })();
   }, [roundOver]);
 
   useBotAI({ disabled: botAIDisabled, humanPlayerIds, isOnline: isOnlineMode });
@@ -285,7 +417,29 @@ export default function GameScreen() {
     drawFromDeck(myPlayerId);
   };
 
+  const pileTapRef = useRef<{ last: number; timer: ReturnType<typeof setTimeout> | null }>({ last: 0, timer: null });
   const handlePileClick = () => {
+    // Double-tap em modo online: abre picker de emote
+    if (isOnlineMode) {
+      const now = Date.now();
+      if (now - pileTapRef.current.last < 320) {
+        if (pileTapRef.current.timer) { clearTimeout(pileTapRef.current.timer); pileTapRef.current.timer = null; }
+        pileTapRef.current.last = 0;
+        setTauntPickerOpen(true);
+        return;
+      }
+      pileTapRef.current.last = now;
+      pileTapRef.current.timer = setTimeout(() => {
+        pileTapRef.current.last = 0;
+        pileTapRef.current.timer = null;
+        doPileClick();
+      }, 320);
+      return;
+    }
+    doPileClick();
+  };
+
+  const doPileClick = () => {
     if (!isMyTurn) {
       const current = players.find(p => p.id === currentTurnPlayerId);
       Alert.alert('Aguarde', `É a vez de ${current?.name || 'outro jogador'}.`);
@@ -763,8 +917,11 @@ export default function GameScreen() {
                           : p.name;
                         const shortName = displayName.length > 7 ? displayName.slice(0, 7) + '.' : displayName;
 
+                        const tauntEntry = isOnlineMode && seatIdx >= 0 ? taunts?.[seatIdx] : undefined;
+
                         return (
-                          <View key={p.id}>
+                          <View key={p.id} style={{ position: 'relative' }}>
+                            <TauntBubble entry={tauntEntry} seatIdx={seatIdx} />
                             <View style={[
                               styles.statusItem,
                               { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale) },
@@ -967,6 +1124,16 @@ export default function GameScreen() {
                <Text style={styles.handCounterLabel}>VOCÊ</Text>
                <Text style={styles.handCounterValue}>{user.hand.length}</Text>
             </View>
+
+            {isOnlineMode && (
+              <TouchableOpacity
+                style={styles.tauntBtn}
+                onPress={() => setTauntPickerOpen(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.tauntBtnIcon}>💬</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -1039,7 +1206,7 @@ export default function GameScreen() {
                   'Tem certeza? O progresso atual será perdido.',
                   [
                     { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Reiniciar', style: 'destructive', onPress: () => { startNewGame(targetScore, botDifficulty, gameMode); setSelectedCards([]); } },
+                    { text: 'Reiniciar', style: 'destructive', onPress: () => { startNewGame(targetScore, gameMode); setSelectedCards([]); } },
                   ]
                 );
               }}
@@ -1143,21 +1310,38 @@ export default function GameScreen() {
 
             {winnerTeamId ? (
               isHost ? (
-                <TouchableOpacity style={styles.modalBtn} onPress={async () => {
-                  if (isOnlineMode) { await useOnlineStore.getState().leaveRoom(); }
-                  startNewGame(targetScore, botDifficulty, gameMode);
-                  router.replace('/(tabs)' as any);
-                }}>
-                  <Text style={styles.modalBtnText}>Novo Jogo</Text>
-                </TouchableOpacity>
+                <View style={{ gap: 10 }}>
+                  <TouchableOpacity style={styles.modalBtn} onPress={async () => {
+                    if (isOnlineMode) {
+                      const fresh = createInitialGameState(targetScore, gameMode);
+                      useGameStore.getState().applyRemoteState(fresh as unknown as Record<string, unknown>);
+                      setSelectedCards([]);
+                      await useOnlineStore.getState().rematch(fresh);
+                    } else {
+                      startNewGame(targetScore, gameMode);
+                      setSelectedCards([]);
+                    }
+                  }}>
+                    <Text style={styles.modalBtnText}>🔁 Revanche</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#455A64' }]} onPress={async () => {
+                    if (isOnlineMode) { await useOnlineStore.getState().leaveRoom(); }
+                    router.replace('/(tabs)' as any);
+                  }}>
+                    <Text style={[styles.modalBtnText, { color: '#fff' }]}>Sair</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
-                <TouchableOpacity style={styles.modalBtn} onPress={async () => {
-                  const { leaveRoom } = useOnlineStore.getState();
-                  await leaveRoom();
-                  router.replace('/(tabs)' as any);
-                }}>
-                  <Text style={styles.modalBtnText}>Voltar ao Menu</Text>
-                </TouchableOpacity>
+                <View style={{ gap: 10 }}>
+                  <Text style={styles.modalWaiting}>Aguardando host iniciar revanche...</Text>
+                  <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#455A64' }]} onPress={async () => {
+                    const { leaveRoom } = useOnlineStore.getState();
+                    await leaveRoom();
+                    router.replace('/(tabs)' as any);
+                  }}>
+                    <Text style={[styles.modalBtnText, { color: '#fff' }]}>Sair</Text>
+                  </TouchableOpacity>
+                </View>
               )
             ) : (
               isHost ? (
@@ -1177,6 +1361,48 @@ export default function GameScreen() {
         achievement={currentToastAchievement}
         onDismiss={shiftNewlyUnlocked}
       />
+
+      {/* Confete em eventos grandes (canasta do meu time, batida) */}
+      <Confetti trigger={confettiTrigger} />
+
+      {/* Picker de malhação (zoeira) */}
+      <Modal visible={tauntPickerOpen} transparent animationType="fade" onRequestClose={() => setTauntPickerOpen(false)}>
+        <TouchableOpacity style={styles.tauntOverlay} activeOpacity={1} onPress={() => setTauntPickerOpen(false)}>
+          <View style={styles.tauntBox}>
+            <Text style={styles.tauntTitle}>Malhação 😤</Text>
+            <View style={styles.tauntGrid}>
+              {TAUNT_PRESETS.map(msg => (
+                <TouchableOpacity
+                  key={msg}
+                  style={styles.tauntOption}
+                  onPress={() => { sendTaunt(msg); setTauntPickerOpen(false); }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.tauntOptionText}>{msg}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Modal: host saiu do jogo (sala abandonada) */}
+      <Modal visible={roomStatus === 'abandoned'} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>😵 Host saiu do jogo</Text>
+            <Text style={styles.modalWaiting}>
+              O host encerrou ou perdeu a conexão. A partida foi interrompida.
+            </Text>
+            <TouchableOpacity style={styles.modalBtn} onPress={async () => {
+              await useOnlineStore.getState().leaveRoom();
+              router.replace('/(tabs)' as any);
+            }}>
+              <Text style={styles.modalBtnText}>Voltar ao Menu</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1184,6 +1410,39 @@ export default function GameScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1B5E20' },
   emptyText: { color: '#fff', textAlign: 'center', marginTop: 100, fontSize: 22 },
+
+  // Malhação (zoeira)
+  tauntBtn: {
+    backgroundColor: 'rgba(255,214,0,0.15)',
+    borderRadius: 14,
+    width: 34, height: 34,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,214,0,0.4)',
+  },
+  tauntBtnIcon: { fontSize: 18 },
+  tauntOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tauntBox: {
+    width: '88%', maxWidth: 420,
+    backgroundColor: '#1B5E20',
+    borderRadius: 20, padding: 20,
+    borderWidth: 2, borderColor: '#FFD600',
+  },
+  tauntTitle: {
+    color: '#FFD600', fontSize: 22, fontWeight: '900',
+    textAlign: 'center', marginBottom: 14, letterSpacing: 1,
+  },
+  tauntGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center',
+  },
+  tauntOption: {
+    backgroundColor: 'rgba(255,214,0,0.2)',
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: 'rgba(255,214,0,0.5)',
+  },
+  tauntOptionText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // HEADER
   header: {

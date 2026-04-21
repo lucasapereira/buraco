@@ -65,6 +65,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="wifi" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="ranking"
+        options={{
+          title: 'Ranking',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="star.fill" color={color} />,
+        }}
+      />
     </Tabs>
   );
 }

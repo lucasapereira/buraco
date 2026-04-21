@@ -4,35 +4,11 @@ import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { useStatsStore, DailyRewardInfo } from '../../store/statsStore';
 import { useOnlineStore } from '../../store/onlineStore';
-import { BotDifficulty, GameMode } from '../../game/engine';
+import { GameMode } from '../../game/engine';
 import * as NavigationBar from 'expo-navigation-bar';
 import Constants from 'expo-constants';
 
 const APP_VERSION = Constants.expoConfig?.version ?? '?';
-
-const DIFFICULTIES: { key: BotDifficulty; label: string; emoji: string; desc: string; color: string }[] = [
-  {
-    key: 'easy',
-    label: 'Fácil',
-    emoji: '🟢',
-    desc: 'Joga sequências óbvias, nunca pega o lixo',
-    color: '#2E7D32',
-  },
-  {
-    key: 'medium',
-    label: 'Médio',
-    emoji: '🟡',
-    desc: 'Estratégico, pega lixo quando vale a pena',
-    color: '#F57F17',
-  },
-  {
-    key: 'hard',
-    label: 'Difícil',
-    emoji: '🔴',
-    desc: 'Memoriza descartes e joga defensivamente',
-    color: '#B71C1C',
-  },
-];
 
 const TARGETS = [1500, 3000, 5000];
 
@@ -41,7 +17,6 @@ export default function HomeScreen() {
   const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId } = useGameStore();
   const { level, checkDailyReward, claimDailyReward } = useStatsStore();
   const { resetRoom, roomStatus } = useOnlineStore();
-  const [difficulty, setDifficulty] = useState<BotDifficulty>('hard');
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
   const [dailyReward, setDailyReward] = useState<DailyRewardInfo | null>(null);
@@ -61,7 +36,7 @@ export default function HomeScreen() {
 
   const handleStart = () => {
     if (roomStatus !== 'idle') resetRoom();
-    startNewGame(targetScore, difficulty, gameMode);
+    startNewGame(targetScore, gameMode);
     router.replace('/(tabs)/explore' as any);
   };
 
@@ -70,7 +45,7 @@ export default function HomeScreen() {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Sim, Apagar', style: 'destructive', onPress: () => {
           if (roomStatus !== 'idle') resetRoom();
-          startNewGame(targetScore, difficulty, gameMode);
+          startNewGame(targetScore, gameMode);
       }}
     ]);
   };
@@ -145,31 +120,6 @@ export default function HomeScreen() {
         {gameMode === 'classic' ? 'Regras originais: sem trincas, bater limpo.' : 'Regras da família: trincas liberadas, lixo livre, bate sujo.'}
       </Text>
 
-      {/* Seletor de Dificuldade */}
-      <Text style={styles.sectionTitle}>Nível de Dificuldade</Text>
-      <View style={styles.diffRow}>
-        {DIFFICULTIES.map(d => (
-          <TouchableOpacity
-            key={d.key}
-            style={[
-              styles.diffBtn,
-              { borderColor: d.color },
-              difficulty === d.key && { backgroundColor: d.color },
-            ]}
-            onPress={() => setDifficulty(d.key)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.diffEmoji}>{d.emoji}</Text>
-            <Text style={[styles.diffLabel, difficulty === d.key && { color: '#fff', fontWeight: '900' }]}>
-              {d.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <Text style={styles.diffDesc}>
-        {DIFFICULTIES.find(d => d.key === difficulty)?.desc}
-      </Text>
-
       {/* Seletor de Meta */}
       <Text style={styles.sectionTitle}>Meta de Pontos</Text>
       <View style={styles.targetRow}>
@@ -208,6 +158,14 @@ export default function HomeScreen() {
         activeOpacity={0.85}
       >
         <Text style={[styles.playText, { color: '#FFD600' }]}>🌐 JOGAR ONLINE</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.playBtn, { backgroundColor: 'transparent', borderWidth: 2, borderColor: '#FFD600', marginTop: 12 }]}
+        onPress={() => router.replace('/(tabs)/ranking' as any)}
+        activeOpacity={0.85}
+      >
+        <Text style={[styles.playText, { color: '#FFD600' }]}>🏆 RANKING</Text>
       </TouchableOpacity>
 
       <TouchableOpacity

@@ -676,7 +676,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       return;
     }
 
-    const difficulty = s.botDifficulty;
+    const difficulty: BotDifficulty = 'hard' as BotDifficulty;
     const bot = s.players.find(p => p.id === botId);
     if (!bot) return;
 
@@ -766,7 +766,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       return;
     }
 
-    const difficulty = s.botDifficulty;
+    const difficulty: BotDifficulty = 'hard' as BotDifficulty;
 
     // Captura o topo do lixo ANTES de qualquer jogada (pode ser limpo depois)
     const pileTopId = s.mustPlayPileTopId ?? null;
@@ -1084,7 +1084,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     if (s.currentTurnPlayerId !== botId || s.turnPhase !== 'play' || s.roundOver) return;
     const bot = s.players.find(p => p.id === botId);
     if (!bot) return;
-    const difficulty = s.botDifficulty;
+    const difficulty: BotDifficulty = 'hard' as BotDifficulty;
 
     const teamGames = s.teams[bot.teamId].games;
 
@@ -1273,7 +1273,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     const card = chooseBestDiscard(
       bot.hand,
       fresh.discardedCardHistory,
-      fresh.botDifficulty,
+      'hard',
       fresh.lastDrawnCardId,
       fresh.gameMode,
       teamGames,

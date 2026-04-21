@@ -8,7 +8,6 @@ import {
   getDailyRewardXP,
   getLevelFromXP,
 } from '../game/achievements';
-import { BotDifficulty } from '../game/engine';
 
 function generateId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -39,7 +38,21 @@ export interface RoundEndData {
   canastas500: number;       // canastas limpas de 13 cartas (+500)
   canastas1000: number;      // canastas limpas de 14 cartas (+1000)
   userBated: boolean;        // o jogador 'user' bateu
-  difficulty: BotDifficulty;
+  isOnline?: boolean;                  // partida foi PvP online
+  opponentTeamAvgRating?: number;      // (online) média do rating do time adversário pra calcular ELO
+  opponentNames?: string[];            // nomes dos adversários (registro no histórico)
+  partnerName?: string;                // nome do parceiro
+}
+
+export interface RecentMatch {
+  ts: number;
+  mode: 'bot' | 'online';
+  won: boolean;
+  myScore: number;
+  theirScore: number;
+  partnerName?: string;
+  opponentNames?: string[];
+  ratingDelta?: number; // só pra online
 }
 
 export interface DailyRewardInfo {
@@ -79,6 +92,20 @@ interface StatsState {
   longestWinStreak: number;
   hardWins: number;
 
+  // ── vs BOT (subset das partidas totais) ───────────────────────
+  botMatchesPlayed: number;
+  botMatchesWon: number;
+  currentBotWinStreak: number;   // zera em qualquer derrota vs bot
+  longestBotWinStreak: number;
+
+  // ── ONLINE (PvP) ──────────────────────────────────────────────
+  onlineMatchesPlayed: number;
+  onlineMatchesWon: number;
+  onlineRating: number;          // ELO simples, base 1000
+
+  // ── Histórico das últimas 10 partidas ─────────────────────────
+  recentMatches: RecentMatch[];
+
   // Streak diário
   currentStreak: number;
   longestStreak: number;
@@ -114,12 +141,27 @@ const INITIAL: Omit<StatsState, 'playerId'> = {
   currentWinStreak: 0,
   longestWinStreak: 0,
   hardWins: 0,
+  botMatchesPlayed: 0,
+  botMatchesWon: 0,
+  currentBotWinStreak: 0,
+  longestBotWinStreak: 0,
+  onlineMatchesPlayed: 0,
+  onlineMatchesWon: 0,
+  onlineRating: 1000,
+  recentMatches: [],
   currentStreak: 0,
   longestStreak: 0,
   lastDailyRewardDate: '',
   unlockedAchievements: [],
   newlyUnlocked: [],
 };
+
+// ── ELO simples (K=25, base 1000) ─────────────────────────────────────────
+const ELO_K = 25;
+function eloDelta(myRating: number, oppRating: number, won: boolean): number {
+  const expected = 1 / (1 + Math.pow(10, (oppRating - myRating) / 400));
+  return Math.round(ELO_K * ((won ? 1 : 0) - expected));
+}
 
 // ── Store ────────────────────────────────────────────────────────────────────
 export const useStatsStore = create<StatsState & StatsActions>()(
@@ -157,21 +199,56 @@ export const useStatsStore = create<StatsState & StatsActions>()(
 
         // Partidas (só quando a partida termina)
         let { matchesPlayed, matchesWon, currentWinStreak, longestWinStreak, hardWins, biggestMatchDiff } = s;
+        let { botMatchesPlayed, botMatchesWon, currentBotWinStreak, longestBotWinStreak } = s;
+        let { onlineMatchesPlayed, onlineMatchesWon, onlineRating } = s;
+        let recentMatches = s.recentMatches;
+        let ratingDelta = 0;
 
         if (data.matchEnded) {
           matchesPlayed++;
+          const matchDiff = Math.abs(data.myMatchScore - data.theirMatchScore);
           if (data.matchWon) {
             matchesWon++;
             currentWinStreak++;
             longestWinStreak = Math.max(longestWinStreak, currentWinStreak);
-            if (data.difficulty === 'hard') hardWins++;
-            const diff = Math.abs(data.myMatchScore - data.theirMatchScore);
-            biggestMatchDiff = Math.max(biggestMatchDiff, diff);
+            biggestMatchDiff = Math.max(biggestMatchDiff, matchDiff);
             xp += 150;
           } else {
             currentWinStreak = 0;
             xp += 30;
           }
+
+          // Branch bot vs online
+          if (data.isOnline) {
+            onlineMatchesPlayed++;
+            if (data.matchWon) onlineMatchesWon++;
+            const opp = data.opponentTeamAvgRating ?? 1000;
+            ratingDelta = eloDelta(onlineRating, opp, data.matchWon);
+            onlineRating = Math.max(0, onlineRating + ratingDelta);
+          } else {
+            botMatchesPlayed++;
+            if (data.matchWon) {
+              botMatchesWon++;
+              currentBotWinStreak++;
+              longestBotWinStreak = Math.max(longestBotWinStreak, currentBotWinStreak);
+              hardWins++;
+            } else {
+              currentBotWinStreak = 0;
+            }
+          }
+
+          // Histórico das últimas 10 partidas
+          const newMatch: RecentMatch = {
+            ts: Date.now(),
+            mode: data.isOnline ? 'online' : 'bot',
+            won: data.matchWon,
+            myScore: data.myMatchScore,
+            theirScore: data.theirMatchScore,
+            partnerName: data.partnerName,
+            opponentNames: data.opponentNames,
+            ratingDelta: data.isOnline ? ratingDelta : undefined,
+          };
+          recentMatches = [newMatch, ...s.recentMatches].slice(0, 10);
         }
 
         // Checar conquistas
@@ -218,6 +295,14 @@ export const useStatsStore = create<StatsState & StatsActions>()(
           currentWinStreak,
           longestWinStreak,
           hardWins,
+          botMatchesPlayed,
+          botMatchesWon,
+          currentBotWinStreak,
+          longestBotWinStreak,
+          onlineMatchesPlayed,
+          onlineMatchesWon,
+          onlineRating,
+          recentMatches,
           unlockedAchievements: [...s.unlockedAchievements, ...newAchievements],
           newlyUnlocked: [...s.newlyUnlocked, ...newAchievements],
         });

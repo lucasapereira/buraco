@@ -82,14 +82,13 @@ export function useOnlineSync() {
     const unsubMeta = onValue(metaRef, (snapshot) => {
       const meta = snapshot.val();
       if (!meta) return;
-      const { applyRoomSnapshot, roomMode, roomTarget, roomDifficulty, seats: currentSeats } = useOnlineStore.getState();
+      const { applyRoomSnapshot, roomMode, roomTarget, seats: currentSeats } = useOnlineStore.getState();
       if (meta.status !== useOnlineStore.getState().roomStatus) {
         applyRoomSnapshot({
           status: meta.status,
           seats: currentSeats,
           mode: meta.mode ?? roomMode,
           target: meta.targetScore ?? roomTarget,
-          difficulty: meta.difficulty ?? roomDifficulty,
         });
       }
     });
@@ -97,19 +96,33 @@ export function useOnlineSync() {
     const unsubSeats = onValue(seatsRef, (snapshot) => {
       const raw = snapshot.val() ?? {};
       const seats: any[] = [0, 1, 2, 3].map(i => raw[i] ?? null);
-      const { applyRoomSnapshot, roomStatus, roomMode, roomTarget, roomDifficulty } = useOnlineStore.getState();
+      const { applyRoomSnapshot, roomStatus, roomMode, roomTarget } = useOnlineStore.getState();
       applyRoomSnapshot({
         status: roomStatus,
         seats,
         mode: roomMode,
         target: roomTarget,
-        difficulty: roomDifficulty,
       });
+    });
+
+    // Taunts: mensagens rápidas de zoeira por assento
+    // O primeiro snapshot (estado atual) é descartado pra não mostrar taunts
+    // escritos antes de eu entrar na partida. Só updates subsequentes animam.
+    const tauntsRef = ref(db, `rooms/${roomCode}/taunts`);
+    let firstTauntsSnap = true;
+    const unsubTaunts = onValue(tauntsRef, (snapshot) => {
+      if (firstTauntsSnap) {
+        firstTauntsSnap = false;
+        return;
+      }
+      const raw = snapshot.val() ?? {};
+      useOnlineStore.getState().applyTauntsSnapshot(raw);
     });
 
     return () => {
       unsubMeta();
       unsubSeats();
+      unsubTaunts();
     };
   }, [roomCode]);
 
