@@ -60,7 +60,9 @@
       "Bash(./gradlew assembleRelease --console=plain)",
       "Bash(./gradlew bundleRelease --console=plain)",
       "Bash(./gradlew signingReport)",
-      "Read(//Users/lucasaraujopereira/**)"
+      "Read(//Users/lucasaraujopereira/**)",
+      "Bash(xargs -I {} bash -c 'cd android/app && ls -la \"{}\" 2>&1 | head -3')",
+      "Bash(./gradlew bundleRelease assembleRelease)"
     ]
   }
 }

@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Buraco",
+    "name": "Queti's Buraco",
     "slug": "buraco",
-    "version": "1.38.0",
+    "version": "1.41.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "buraco",
@@ -13,11 +13,11 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
-        "backgroundColor": "#0A1C30"
+        "backgroundColor": "#0D1117"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.lucasapereira.buraco",
-      "versionCode": 38
+      "versionCode": 41
     },
     "web": {
       "output": "static",
@@ -31,7 +31,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#0A1C30",
+          "backgroundColor": "#0D1117",
           "dark": {
             "backgroundColor": "#000000"
           }

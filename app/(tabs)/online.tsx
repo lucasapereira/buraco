@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Modal,
   Platform,
@@ -14,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { showAlert } from '../../components/ThemedAlert';
 import * as Clipboard from 'expo-clipboard';
 import { useKeepAwake } from 'expo-keep-awake';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,9 +24,11 @@ import { useGameStore } from '../../store/gameStore';
 import { useOnlineStore, SEAT_PLAYER_IDS, SeatInfo, PublicRoomInfo } from '../../store/onlineStore';
 import { useProfileStore } from '../../store/profileStore';
 import { signInWithGoogle, unlinkGoogle } from '../../hooks/useGoogleAuth';
+import { ScreenBackground } from '../../components/ScreenBackground';
+import { GameColors, Radius, Elevation } from '../../constants/colors';
 
 const TEAM_LABEL: Record<number, string> = { 0: 'Time 1', 1: 'Time 2', 2: 'Time 1', 3: 'Time 2' };
-const TEAM_COLOR: Record<number, string> = { 0: '#4CAF50', 1: '#FF5252', 2: '#4CAF50', 3: '#FF5252' };
+const TEAM_COLOR: Record<number, string> = { 0: GameColors.team.green, 1: GameColors.team.red, 2: GameColors.team.green, 3: GameColors.team.red };
 
 import { auth } from '../../config/firebase';
 function GoogleLinkStatus({ onLink, onUnlink, loading }: { onLink: () => void; onUnlink: () => void; loading: boolean }) {
@@ -187,7 +189,7 @@ export default function OnlineScreen() {
 
   const [googleLoading, setGoogleLoading] = useState(false);
   const handleUnlink = () => {
-    Alert.alert(
+    showAlert(
       'Desvincular Google?',
       'Seu perfil e stats ficam salvos — ao entrar de novo com Google, tudo é restaurado. Você voltará a ser um jogador anônimo neste aparelho.',
       [
@@ -217,20 +219,20 @@ export default function OnlineScreen() {
       const res = await signInWithGoogle();
       if (!res.ok) {
         if (res.error !== 'Login cancelado') {
-          Alert.alert('Falha no login Google', res.error);
+          showAlert('Falha no login Google', res.error);
           store.setError(res.error);
         }
         return;
       }
       const { myUsername } = useProfileStore.getState();
       if (myUsername) {
-        Alert.alert('Login OK', `Bem-vindo de volta, ${myUsername}! Stats restaurados.`);
+        showAlert('Login OK', `Bem-vindo de volta, ${myUsername}! Stats restaurados.`);
         store.setDisplayName(myUsername);
         setStep('home');
       } else {
         // Logou mas não tem perfil — provavelmente é recuperação de reinstalação
         // cujo uid antigo não tinha Google linkado. Avisa e deixa escolher nome novo.
-        Alert.alert(
+        showAlert(
           'Login com Google OK',
           'Não achei perfil antigo vinculado a essa conta Google. Se você tinha um perfil antes e quer recuperá-lo, me chama que recupero manualmente pelo seu nome antigo. Por enquanto, escolha um nome pra continuar.',
         );
@@ -283,7 +285,7 @@ export default function OnlineScreen() {
   // ── STEP: NOME ────────────────────────────────────────────────────────────
   if (step === 'name') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenBackground><SafeAreaView style={styles.container}>
         <View style={styles.centered}>
           <Text style={styles.title}>Como você se chama?</Text>
           <Text style={styles.subtitle}>Aparecerá para os outros jogadores</Text>
@@ -326,14 +328,14 @@ export default function OnlineScreen() {
             <Text style={styles.backLinkText}>← Voltar</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </SafeAreaView></ScreenBackground>
     );
   }
 
   // ── STEP: HOME ────────────────────────────────────────────────────────────
   if (step === 'home') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenBackground><SafeAreaView style={styles.container}>
         <View style={styles.centered}>
           <Text style={styles.title}>Jogar Online</Text>
           <Text style={styles.playerName}>👤 {store.displayName}</Text>
@@ -393,7 +395,7 @@ export default function OnlineScreen() {
             <Text style={styles.backLinkText}>← Menu principal</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </SafeAreaView></ScreenBackground>
     );
   }
 
@@ -401,7 +403,7 @@ export default function OnlineScreen() {
   if (step === 'create') {
     const { roomMode, roomTarget } = store;
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenBackground><SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.title}>Configurar Sala</Text>
 
@@ -475,14 +477,14 @@ export default function OnlineScreen() {
             <Text style={styles.backLinkText}>← Voltar</Text>
           </TouchableOpacity>
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaView></ScreenBackground>
     );
   }
 
   // ── STEP: SALAS PÚBLICAS ──────────────────────────────────────────────────
   if (step === 'browse') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenBackground><SafeAreaView style={styles.container}>
         <View style={styles.browseHeader}>
           <Text style={styles.title}>Salas Públicas</Text>
           <TouchableOpacity
@@ -548,13 +550,13 @@ export default function OnlineScreen() {
         <TouchableOpacity style={[styles.backLink, { alignSelf: 'center', marginBottom: 16 }]} onPress={() => setStep('home')}>
           <Text style={styles.backLinkText}>← Voltar</Text>
         </TouchableOpacity>
-      </SafeAreaView>
+      </SafeAreaView></ScreenBackground>
     );
   }
 
   // ── STEP: LOBBY (aguardando jogadores) ────────────────────────────────────
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenBackground><SafeAreaView style={styles.container}>
       <View style={styles.centered}>
         {/* Badge público/privado */}
         <View style={[styles.visibilityBadge, store.roomIsPublic ? styles.visibilityBadgePublic : styles.visibilityBadgePrivate]}>
@@ -652,220 +654,222 @@ export default function OnlineScreen() {
           <Text style={styles.backLinkText}>← Sair da sala</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </SafeAreaView></ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1B5E20' },
+  container: { flex: 1, backgroundColor: 'transparent' },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   scrollContent: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 40, paddingBottom: 40 },
 
-  title: { color: '#FFD600', fontSize: 28, fontWeight: '900', letterSpacing: 2, marginBottom: 8 },
-  subtitle: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginBottom: 24 },
-  playerName: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 4 },
+  title: { color: GameColors.gold, fontSize: 30, fontWeight: '900', letterSpacing: 2, marginBottom: 10 },
+  subtitle: { color: GameColors.text.muted, fontSize: 14, marginBottom: 26 },
+  playerName: { color: GameColors.text.primary, fontSize: 22, fontWeight: '900', marginBottom: 4 },
 
   nameEditBtn: { marginBottom: 32 },
-  nameEditText: { color: 'rgba(255,214,0,0.7)', fontSize: 13, fontWeight: '600' },
+  nameEditText: { color: GameColors.gold, opacity: 0.7, fontSize: 13, fontWeight: '600' },
 
   nameInput: {
     width: '100%',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 14,
+    backgroundColor: GameColors.surface.mid,
+    borderRadius: Radius.md,
     paddingHorizontal: 18,
-    paddingVertical: 14,
-    color: '#fff',
+    paddingVertical: 16,
+    color: GameColors.text.primary,
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: GameColors.surface.border,
     textAlign: 'center',
   },
 
   homeButtons: { width: '100%', gap: 12, marginBottom: 8 },
 
   primaryBtn: {
-    backgroundColor: '#FFD600',
+    backgroundColor: GameColors.gold,
     paddingVertical: 16,
     paddingHorizontal: 40,
-    borderRadius: 30,
+    borderRadius: Radius.pill,
     alignItems: 'center',
-    shadowColor: '#FFD600',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
     width: '100%',
+    ...Elevation.goldGlow,
   },
-  primaryBtnText: { color: '#1B5E20', fontSize: 18, fontWeight: '900', letterSpacing: 2 },
+  primaryBtnText: { color: GameColors.text.onGold, fontSize: 18, fontWeight: '900', letterSpacing: 2 },
   btnDisabled: { opacity: 0.5 },
 
   joinRow: { flexDirection: 'row', gap: 8 },
   joinInput: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 14,
+    backgroundColor: GameColors.surface.mid,
+    borderRadius: Radius.md,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#fff',
+    paddingVertical: 14,
+    color: GameColors.text.primary,
     fontSize: 18,
     fontWeight: '900',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: GameColors.surface.border,
     letterSpacing: 4,
     textAlign: 'center',
   },
   joinBtn: {
-    backgroundColor: '#FFD600',
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    backgroundColor: GameColors.gold,
+    borderRadius: Radius.md,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     justifyContent: 'center',
+    ...Elevation.goldGlow,
   },
-  joinBtnText: { color: '#1B5E20', fontSize: 15, fontWeight: '900' },
+  joinBtnText: { color: GameColors.text.onGold, fontSize: 15, fontWeight: '900' },
 
   sectionLabel: {
-    color: 'rgba(255,255,255,0.6)',
+    color: GameColors.text.secondary,
     fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1.5,
+    fontWeight: '800',
+    letterSpacing: 2,
     textTransform: 'uppercase',
     alignSelf: 'flex-start',
     marginBottom: 10,
   },
-  optionRow: { flexDirection: 'row', gap: 8, width: '100%', marginBottom: 20 },
+  optionRow: { flexDirection: 'row', gap: 8, width: '100%', marginBottom: 22 },
   optionBtn: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: 13,
+    borderRadius: Radius.sm,
+    backgroundColor: GameColors.surface.low,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: GameColors.surface.border,
   },
-  optionBtnActive: { backgroundColor: '#FFD600', borderColor: '#FFD600' },
-  optionText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '700' },
-  optionTextActive: { color: '#1B5E20', fontWeight: '900' },
+  optionBtnActive: { backgroundColor: GameColors.gold, borderColor: GameColors.gold, ...Elevation.goldGlow },
+  optionText: { color: GameColors.text.secondary, fontSize: 14, fontWeight: '700' },
+  optionTextActive: { color: GameColors.text.onGold, fontWeight: '900' },
 
   // Lobby
   codeBox: {
-    backgroundColor: 'rgba(255,214,0,0.12)',
-    borderRadius: 18,
-    paddingHorizontal: 32,
-    paddingVertical: 18,
+    backgroundColor: GameColors.goldSoft,
+    borderRadius: Radius.lg,
+    paddingHorizontal: 36,
+    paddingVertical: 20,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#FFD600',
+    borderColor: GameColors.gold,
     marginBottom: 6,
+    ...Elevation.card,
   },
-  codeText: { color: '#FFD600', fontSize: 40, fontWeight: '900', letterSpacing: 8 },
-  codeCopy: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 },
+  codeText: { color: GameColors.gold, fontSize: 42, fontWeight: '900', letterSpacing: 8 },
+  codeCopy: { color: GameColors.text.muted, fontSize: 12, marginTop: 4 },
   whatsappBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#25D366',
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
     marginTop: 10,
     marginBottom: 4,
+    ...Elevation.btn,
   },
-  whatsappBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  whatsappBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
 
-  seatsList: { width: '100%', gap: 8 },
+  seatsList: { width: '100%', gap: 10 },
   seatRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 12,
+    backgroundColor: GameColors.surface.low,
+    borderRadius: Radius.md,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderWidth: 1,
-    borderColor: 'transparent',
-    gap: 10,
+    borderColor: GameColors.surface.border,
+    gap: 12,
   },
-  seatRowMe: { borderColor: 'rgba(255,214,0,0.4)', backgroundColor: 'rgba(255,214,0,0.08)' },
-  seatRowEmpty: { borderColor: 'rgba(255,255,255,0.2)', borderStyle: 'dashed' },
-  seatTeamDot: { width: 10, height: 10, borderRadius: 5 },
+  seatRowMe: { borderColor: GameColors.goldBorder, backgroundColor: GameColors.goldSoft },
+  seatRowEmpty: { borderColor: GameColors.surface.high, borderStyle: 'dashed' },
+  seatTeamDot: { width: 12, height: 12, borderRadius: 6 },
   seatInfo: { flex: 1 },
-  seatName: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  seatTeamLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 1 },
-  seatConnected: { color: '#4CAF50', fontSize: 16 },
+  seatName: { color: GameColors.text.primary, fontSize: 15, fontWeight: '700' },
+  seatTeamLabel: { color: GameColors.text.muted, fontSize: 11, marginTop: 2 },
+  seatConnected: { color: GameColors.success, fontSize: 16 },
 
   waitingBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    marginTop: 22,
+    backgroundColor: GameColors.surface.low,
+    borderRadius: Radius.md,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: GameColors.surface.border,
   },
-  waitingText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
+  waitingText: { color: GameColors.text.secondary, fontSize: 14 },
 
-  errorText: { color: '#FF8A80', fontSize: 13, marginTop: 8, textAlign: 'center' },
+  errorText: { color: GameColors.dangerSoft, fontSize: 13, marginTop: 8, textAlign: 'center' },
 
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 12, width: '100%' },
-  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.15)' },
-  dividerText: { color: 'rgba(255,255,255,0.5)', marginHorizontal: 10, fontSize: 12, fontWeight: '600' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 14, width: '100%' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: GameColors.surface.border },
+  dividerText: { color: GameColors.text.muted, marginHorizontal: 12, fontSize: 12, fontWeight: '600' },
 
   googleBtn: {
     backgroundColor: '#fff',
     paddingVertical: 14,
     paddingHorizontal: 40,
-    borderRadius: 30,
+    borderRadius: Radius.pill,
     alignItems: 'center',
     width: '100%',
+    ...Elevation.btn,
   },
-  googleBtnText: { color: '#0A1C30', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
-  googleHint: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 8, textAlign: 'center' },
+  googleBtnText: { color: '#222', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
+  googleHint: { color: GameColors.text.muted, fontSize: 12, marginTop: 10, textAlign: 'center' },
 
   googleLinkBtn: {
     backgroundColor: '#fff',
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingHorizontal: 18,
+    borderRadius: Radius.pill,
     alignItems: 'center',
     marginBottom: 18,
   },
-  googleLinkBtnText: { color: '#0A1C30', fontSize: 13, fontWeight: '800' },
+  googleLinkBtnText: { color: '#222', fontSize: 13, fontWeight: '800' },
   googleLinkedBox: { alignItems: 'center', marginBottom: 18 },
-  googleLinkedText: { color: '#B9F6CA', fontSize: 13, fontWeight: '800' },
-  googleLinkedSub: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 2 },
+  googleLinkedText: { color: GameColors.successSoft, fontSize: 13, fontWeight: '800' },
+  googleLinkedSub: { color: GameColors.text.muted, fontSize: 11, marginTop: 2 },
   googleUnlinkBtn: {
-    marginTop: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 14,
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: Radius.sm,
     backgroundColor: 'rgba(255,138,128,0.15)',
     borderWidth: 1,
     borderColor: 'rgba(255,138,128,0.5)',
   },
-  googleUnlinkBtnText: { color: '#FF8A80', fontSize: 12, fontWeight: '700' },
+  googleUnlinkBtnText: { color: GameColors.dangerSoft, fontSize: 12, fontWeight: '700' },
 
-  backLink: { marginTop: 20 },
-  backLinkText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
+  backLink: { marginTop: 22 },
+  backLinkText: { color: GameColors.text.muted, fontSize: 14, fontWeight: '600' },
 
   secondaryBtn: {
-    backgroundColor: 'rgba(255,214,0,0.15)',
+    backgroundColor: GameColors.goldSoft,
     paddingVertical: 14,
     paddingHorizontal: 40,
-    borderRadius: 30,
+    borderRadius: Radius.pill,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,214,0,0.5)',
+    borderColor: GameColors.goldBorder,
     width: '100%',
   },
-  secondaryBtnText: { color: '#FFD600', fontSize: 15, fontWeight: '800', letterSpacing: 1 },
+  secondaryBtnText: { color: GameColors.gold, fontSize: 15, fontWeight: '800', letterSpacing: 1 },
 
   visibilityHint: {
-    color: 'rgba(255,255,255,0.4)',
+    color: GameColors.text.muted,
     fontSize: 12,
     textAlign: 'center',
     marginTop: -12,
-    marginBottom: 20,
+    marginBottom: 22,
     paddingHorizontal: 8,
   },
 
@@ -875,60 +879,61 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
   refreshBtn: { padding: 8 },
-  refreshBtnText: { color: '#FFD600', fontSize: 14, fontWeight: '700' },
+  refreshBtnText: { color: GameColors.gold, fontSize: 14, fontWeight: '700' },
 
-  browseList: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24, gap: 10 },
+  browseList: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24, gap: 12 },
 
   roomCard: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 16,
+    backgroundColor: GameColors.surface.low,
+    borderRadius: Radius.md,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: GameColors.surface.border,
   },
   roomCardLeft: { flex: 1 },
-  roomCode: { color: '#FFD600', fontSize: 20, fontWeight: '900', letterSpacing: 3, marginBottom: 2 },
-  roomMeta: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginBottom: 8 },
+  roomCode: { color: GameColors.gold, fontSize: 22, fontWeight: '900', letterSpacing: 3, marginBottom: 2 },
+  roomMeta: { color: GameColors.text.secondary, fontSize: 12, marginBottom: 8 },
   roomPlayers: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   playerDot: { width: 10, height: 10, borderRadius: 5 },
-  playerDotFilled: { backgroundColor: '#4CAF50' },
-  playerDotEmpty: { backgroundColor: 'rgba(255,255,255,0.2)' },
-  playerCountText: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginLeft: 4 },
+  playerDotFilled: { backgroundColor: GameColors.success },
+  playerDotEmpty: { backgroundColor: GameColors.surface.high },
+  playerCountText: { color: GameColors.text.muted, fontSize: 11, marginLeft: 6 },
 
   joinRoomBtn: {
-    backgroundColor: '#FFD600',
+    backgroundColor: GameColors.gold,
     paddingVertical: 10,
     paddingHorizontal: 18,
-    borderRadius: 20,
+    borderRadius: Radius.pill,
     alignItems: 'center',
-    minWidth: 70,
+    minWidth: 74,
+    ...Elevation.goldGlow,
   },
-  joinRoomBtnText: { color: '#1B5E20', fontSize: 13, fontWeight: '900' },
+  joinRoomBtnText: { color: GameColors.text.onGold, fontSize: 13, fontWeight: '900' },
 
-  emptyText: { color: 'rgba(255,255,255,0.7)', fontSize: 16, fontWeight: '700', marginBottom: 8 },
-  emptySubText: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
+  emptyText: { color: GameColors.text.secondary, fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  emptySubText: { color: GameColors.text.muted, fontSize: 13 },
 
   visibilityBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: Radius.pill,
     borderWidth: 1,
   },
   visibilityBadgePublic: {
-    backgroundColor: 'rgba(76,175,80,0.15)',
-    borderColor: 'rgba(76,175,80,0.5)',
+    backgroundColor: 'rgba(102,187,106,0.15)',
+    borderColor: 'rgba(102,187,106,0.5)',
   },
   visibilityBadgePrivate: {
-    backgroundColor: 'rgba(255,193,7,0.15)',
-    borderColor: 'rgba(255,193,7,0.4)',
+    backgroundColor: GameColors.goldSoft,
+    borderColor: GameColors.goldBorder,
   },
-  visibilityBadgeText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  visibilityBadgeText: { color: GameColors.text.primary, fontSize: 13, fontWeight: '700' },
 });

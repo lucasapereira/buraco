@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Dimensions,
   LayoutAnimation,
   Modal,
@@ -16,6 +15,7 @@ import {
   useWindowDimensions,
   Animated
 } from 'react-native';
+import { showAlert } from '../../components/ThemedAlert';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card } from '../../components/Card';
@@ -34,6 +34,8 @@ import { useStatsStore } from '../../store/statsStore';
 import { useProfileStore } from '../../store/profileStore';
 import { useOnlineStore, SEAT_PLAYER_IDS, TEAM_OF_SEAT } from '../../store/onlineStore';
 import { cardLabel } from '../../game/deck';
+import { ScreenBackground } from '../../components/ScreenBackground';
+import { GameColors, Radius, Elevation } from '../../constants/colors';
 
 
 // Frases prontas pra zoeira / malhação no online. Ordem = ordem no picker.
@@ -406,11 +408,11 @@ export default function GameScreen() {
   const handleDrawDeck = () => {
     if (!isMyTurn) {
       const current = players.find(p => p.id === currentTurnPlayerId);
-      Alert.alert('Aguarde', `É a vez de ${current?.name || 'outro jogador'}. Fase: ${turnPhase}`);
+      showAlert('Aguarde', `É a vez de ${current?.name || 'outro jogador'}. Fase: ${turnPhase}`);
       return;
     }
     if (turnPhase !== 'draw') {
-      Alert.alert('Já comprou', 'Você já comprou neste turno. Baixe jogos ou selecione 1 carta e descarte.');
+      showAlert('Já comprou', 'Você já comprou neste turno. Baixe jogos ou selecione 1 carta e descarte.');
       return;
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -442,7 +444,7 @@ export default function GameScreen() {
   const doPileClick = () => {
     if (!isMyTurn) {
       const current = players.find(p => p.id === currentTurnPlayerId);
-      Alert.alert('Aguarde', `É a vez de ${current?.name || 'outro jogador'}.`);
+      showAlert('Aguarde', `É a vez de ${current?.name || 'outro jogador'}.`);
       return;
     }
     if (turnPhase === 'play') {
@@ -450,7 +452,7 @@ export default function GameScreen() {
       return;
     }
     if (pile.length === 0) {
-      Alert.alert('Lixo vazio', 'O lixo está vazio.');
+      showAlert('Lixo vazio', 'O lixo está vazio.');
       return;
     }
 
@@ -460,7 +462,7 @@ export default function GameScreen() {
       const selCards = user.hand.filter(c => selectedCards.includes(c.id));
       let actionToTake: (() => void) | null = null;
       
-      const alertDeadlock = () => Alert.alert(
+      const alertDeadlock = () => showAlert(
         '❌ Não pode pegar o lixo',
         `Pegar o lixo te forçaria a bater usando o ${cardLabel(topCard)}, mas sua equipe não tem canastra limpa.`
       );
@@ -485,7 +487,7 @@ export default function GameScreen() {
              if (success) {
                const playSuccess = playCards(myPlayerId, [...selectedCards, topCard.id]);
                if (!playSuccess) {
-                 Alert.alert('⚠️ Ação bloqueada', 'O jogo é válido, mas você não pode ficar sem cartas na mão sem ter completado os requisitos para bater. O lixo foi para a sua mão.');
+                 showAlert('⚠️ Ação bloqueada', 'O jogo é válido, mas você não pode ficar sem cartas na mão sem ter completado os requisitos para bater. O lixo foi para a sua mão.');
                }
              } else {
                alertDeadlock();
@@ -496,13 +498,13 @@ export default function GameScreen() {
 
       if (!actionToTake) {
          if (canTakePile(user.hand, pile, myTeamGames, gameMode)) {
-           Alert.alert(
+           showAlert(
              'Selecione as cartas!',
              `Para pegar o lixo, selecione ANTES na sua mão as cartas que formam jogo com o ${cardLabel(topCard)}.\n` + 
              `(Ou clique se a carta pode incrementar diretamente um jogo seu)`
            );
          } else {
-           Alert.alert('❌ Não pode pegar o lixo', `Você precisa usar o ${cardLabel(topCard)} em um jogo (novo ou existente).`);
+           showAlert('❌ Não pode pegar o lixo', `Você precisa usar o ${cardLabel(topCard)} em um jogo (novo ou existente).`);
          }
          return;
       }
@@ -526,7 +528,7 @@ export default function GameScreen() {
       if (pileTopStillInHand) {
         const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
         const label = topCard ? cardLabel(topCard) : 'do topo';
-        Alert.alert(
+        showAlert(
           '⚠️ Baixe o jogo primeiro',
           `Você pegou o lixo e deve baixar um jogo usando o ${label} antes de descartar.`
         );
@@ -535,7 +537,7 @@ export default function GameScreen() {
       // Carta não está mais na mão — foi jogada, deixa continuar
     }
     if (selectedCards.length !== 1) {
-      Alert.alert('Selecione 1 carta', 'Para descartar, selecione exatamente 1 carta.');
+      showAlert('Selecione 1 carta', 'Para descartar, selecione exatamente 1 carta.');
       return;
     }
 
@@ -549,7 +551,7 @@ export default function GameScreen() {
       });
 
       if (!willGetDead && !hasCanasta) {
-        Alert.alert(
+        showAlert(
           '⚠️ Não pode bater',
           `Sua equipe precisa de uma canastra ${gameMode === 'araujo_pereira' ? '' : 'limpa '}para bater e encerrar a rodada.`
         );
@@ -567,11 +569,11 @@ export default function GameScreen() {
     if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
       const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
       const label = topCard ? cardLabel(topCard) : 'comprada';
-      Alert.alert('⚠️ Regra do Lixo', `Sua primeira jogada DEVE incluir o ${label} (topo do lixo).\n\nVocê pode:\n• Tocar num jogo seu já na mesa (selecionando o ${label} + cartas para completar)\n• Ou baixar um novo jogo com 3+ cartas`);
+      showAlert('⚠️ Regra do Lixo', `Sua primeira jogada DEVE incluir o ${label} (topo do lixo).\n\nVocê pode:\n• Tocar num jogo seu já na mesa (selecionando o ${label} + cartas para completar)\n• Ou baixar um novo jogo com 3+ cartas`);
       return;
     }
     if (selectedCards.length < 3) {
-      Alert.alert('Mínimo 3 cartas', 'Selecione no mínimo 3 cartas para baixar um jogo STBL.');
+      showAlert('Mínimo 3 cartas', 'Selecione no mínimo 3 cartas para baixar um jogo STBL.');
       return;
     }
     const success = playCards(myPlayerId, selectedCards);
@@ -585,10 +587,10 @@ export default function GameScreen() {
         const msg = gameMode === 'araujo_pereira' 
           ? 'As cartas não formam uma sequência válida ou trinca (máximo 1 curinga em Buraco Mole).'
           : 'As cartas selecionadas não formam uma sequência válida.\n\nLembre: mesmo naipe, valores consecutivos, máximo 1 curinga (2).';
-        Alert.alert('Combinação Inválida', msg);
+        showAlert('Combinação Inválida', msg);
       } else {
         // Encaixa, mas o store recusou (provavelmente trancaria o jogador)
-        Alert.alert('⚠️ Ação bloqueada', 'Você não pode ficar sem cartas na mão sem ter uma canastra ou pegar o morto.');
+        showAlert('⚠️ Ação bloqueada', 'Você não pode ficar sem cartas na mão sem ter uma canastra ou pegar o morto.');
       }
     }
   };
@@ -616,7 +618,7 @@ export default function GameScreen() {
     if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
       const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
       const label = topCard ? cardLabel(topCard) : 'do topo';
-      Alert.alert('⚠️ Regra do Lixo', `Você deve usar o ${label} (topo do lixo) na sua primeira jogada (novo jogo ou adicionar a um existente).`);
+      showAlert('⚠️ Regra do Lixo', `Você deve usar o ${label} (topo do lixo) na sua primeira jogada (novo jogo ou adicionar a um existente).`);
       return;
     }
 
@@ -637,10 +639,10 @@ export default function GameScreen() {
         if (!fits) {
           // Se falhou por regra do jogo, abre o ZOOM para o jogador conferir o jogo e entender o erro
           setTempOpenGame({ teamId: myTeamId, index: gameIndex });
-          Alert.alert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
+          showAlert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
         } else {
           // Encaixa, mas o store recusou (provavelmente "wouldStrandPlayer")
-          Alert.alert('⚠️ Ação bloqueada', 'Você não pode ficar sem cartas na mão sem ter uma canastra ou pegar o morto.');
+          showAlert('⚠️ Ação bloqueada', 'Você não pode ficar sem cartas na mão sem ter uma canastra ou pegar o morto.');
         }
       }
     }
@@ -745,6 +747,7 @@ export default function GameScreen() {
   const opRodadaDisplay = roundOver ? teams[opTeamId].score : opLive;
 
   return (
+    <ScreenBackground>
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
       {/* HEADER */}
@@ -1201,7 +1204,7 @@ export default function GameScreen() {
               style={styles.menuItem}
               onPress={() => {
                 setShowMenu(false);
-                Alert.alert(
+                showAlert(
                   'Reiniciar Partida',
                   'Tem certeza? O progresso atual será perdido.',
                   [
@@ -1217,7 +1220,7 @@ export default function GameScreen() {
               style={styles.menuItem}
               onPress={() => {
                 setShowMenu(false);
-                Alert.alert(
+                showAlert(
                   'Sair',
                   'Deseja sair para o menu principal?',
                   [
@@ -1404,58 +1407,62 @@ export default function GameScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1B5E20' },
-  emptyText: { color: '#fff', textAlign: 'center', marginTop: 100, fontSize: 22 },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  emptyText: { color: GameColors.text.primary, textAlign: 'center', marginTop: 100, fontSize: 22 },
 
   // Malhação (zoeira)
   tauntBtn: {
-    backgroundColor: 'rgba(255,214,0,0.15)',
-    borderRadius: 14,
+    backgroundColor: GameColors.goldSoft,
+    borderRadius: Radius.sm,
     width: 34, height: 34,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,214,0,0.4)',
+    borderWidth: 1, borderColor: GameColors.goldBorder,
   },
   tauntBtnIcon: { fontSize: 18 },
   tauntOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    flex: 1, backgroundColor: GameColors.overlay.modal,
     alignItems: 'center', justifyContent: 'center',
   },
   tauntBox: {
     width: '88%', maxWidth: 420,
-    backgroundColor: '#1B5E20',
-    borderRadius: 20, padding: 20,
-    borderWidth: 2, borderColor: '#FFD600',
+    backgroundColor: GameColors.bg.surfaceSoft,
+    borderRadius: Radius.lg, padding: 22,
+    borderWidth: 2, borderColor: GameColors.gold,
+    ...Elevation.modal,
   },
   tauntTitle: {
-    color: '#FFD600', fontSize: 22, fontWeight: '900',
+    color: GameColors.gold, fontSize: 22, fontWeight: '900',
     textAlign: 'center', marginBottom: 14, letterSpacing: 1,
   },
   tauntGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center',
   },
   tauntOption: {
-    backgroundColor: 'rgba(255,214,0,0.2)',
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
-    borderWidth: 1, borderColor: 'rgba(255,214,0,0.5)',
+    backgroundColor: GameColors.goldSoft,
+    borderRadius: Radius.sm, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: GameColors.goldBorder,
   },
-  tauntOptionText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  tauntOptionText: { color: GameColors.text.primary, fontSize: 15, fontWeight: '700' },
 
   // HEADER
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 2,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingHorizontal: 12, paddingVertical: 4,
+    backgroundColor: GameColors.surface.darker,
+    borderBottomWidth: 1,
+    borderBottomColor: GameColors.surface.border,
   },
-  scoreLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 14, fontWeight: '700', letterSpacing: 1 },
-  scoreMain: { color: '#B9F6CA', fontSize: 27, fontWeight: '900' },
-  scoreLive: { color: '#FFD600', fontSize: 15, fontWeight: '700' },
-  scoreText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  targetText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 2 },
-  restartBtn: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
+  scoreLabel: { color: GameColors.text.secondary, fontSize: 13, fontWeight: '700', letterSpacing: 1.2 },
+  scoreMain: { color: GameColors.successSoft, fontSize: 27, fontWeight: '900' },
+  scoreLive: { color: GameColors.gold, fontSize: 15, fontWeight: '700' },
+  scoreText: { color: GameColors.text.primary, fontSize: 17, fontWeight: '700' },
+  targetText: { color: GameColors.text.muted, fontSize: 14, marginTop: 2 },
+  restartBtn: { backgroundColor: GameColors.surface.high, borderRadius: Radius.sm, paddingHorizontal: 12, paddingVertical: 7 },
   restartText: { fontSize: 20 },
 
   // STATUS BAR
@@ -1865,55 +1872,61 @@ const styles = StyleSheet.create({
   pileLabel: { color: '#E8F5E9', fontSize: 14, fontWeight: '700', marginBottom: 1 },
 
   // MENU ☰
-  menuBtn: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
-  menuBtnText: { fontSize: 18, color: '#fff' },
-  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-start', alignItems: 'flex-end', paddingTop: 80, paddingRight: 12 },
-  menuBox: { backgroundColor: '#1B4A28', borderRadius: 12, padding: 8, minWidth: 200, elevation: 10 },
-  menuTitle: { color: 'rgba(255,255,255,0.5)', fontSize: 15, fontWeight: '700', textAlign: 'center', marginBottom: 6, letterSpacing: 1 },
-  menuItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 8, marginBottom: 4, backgroundColor: 'rgba(255,255,255,0.06)' },
-  menuItemText: { color: '#fff', fontSize: 19, fontWeight: '600' },
+  menuBtn: { backgroundColor: GameColors.surface.high, borderRadius: Radius.sm, paddingHorizontal: 11, paddingVertical: 8 },
+  menuBtnText: { fontSize: 18, color: GameColors.text.primary },
+  menuOverlay: { flex: 1, backgroundColor: GameColors.overlay.light, justifyContent: 'flex-start', alignItems: 'flex-end', paddingTop: 80, paddingRight: 12 },
+  menuBox: {
+    backgroundColor: GameColors.bg.surfaceSoft, borderRadius: Radius.md, padding: 10, minWidth: 210,
+    borderWidth: 1, borderColor: GameColors.surface.border,
+    ...Elevation.modal,
+  },
+  menuTitle: { color: GameColors.text.muted, fontSize: 14, fontWeight: '800', textAlign: 'center', marginBottom: 8, letterSpacing: 1.5 },
+  menuItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: Radius.xs, marginBottom: 5, backgroundColor: GameColors.surface.low },
+  menuItemText: { color: GameColors.text.primary, fontSize: 18, fontWeight: '700' },
   menuClose: { backgroundColor: 'transparent', marginTop: 4 },
   emptySlot: {
-    width: 50, height: 72, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
-    borderStyle: 'dashed', borderRadius: 6, justifyContent: 'center', alignItems: 'center',
+    width: 50, height: 72, borderWidth: 2, borderColor: GameColors.surface.high,
+    borderStyle: 'dashed', borderRadius: Radius.xs, justifyContent: 'center', alignItems: 'center',
   },
-  emptySlotText: { color: 'rgba(255,255,255,0.3)', fontSize: 13 },
+  emptySlotText: { color: GameColors.text.faint, fontSize: 13 },
 
   // MODAL
   modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+    flex: 1, backgroundColor: GameColors.overlay.modal,
     justifyContent: 'center', alignItems: 'center',
   },
   modalBox: {
-    backgroundColor: '#1B5E20', borderRadius: 16, padding: 24,
-    width: '85%', maxWidth: 500, alignItems: 'center',
-    borderWidth: 2, borderColor: '#FFD600',
+    backgroundColor: GameColors.bg.surfaceSoft, borderRadius: Radius.lg, padding: 26,
+    width: '86%', maxWidth: 500, alignItems: 'center',
+    borderWidth: 2, borderColor: GameColors.gold,
+    ...Elevation.modal,
   },
-  modalTitle: { color: '#FFD600', fontSize: 27, fontWeight: '900', textAlign: 'center', marginBottom: 16 },
-  modalScores: { marginBottom: 12, width: '100%' },
-  modalScoreText: { color: '#fff', fontSize: 20, marginBottom: 4 },
-  modalWhoWent: { color: '#FFD600', fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
-  modalTeamBlock: { width: '100%', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, marginBottom: 8 },
-  modalTeamTitle: { color: '#fff', fontSize: 17, fontWeight: '800', marginBottom: 4 },
-  modalScoreRow: { color: 'rgba(255,255,255,0.75)', fontSize: 16, marginBottom: 2 },
-  modalScoreTotal: { color: '#FFD600', fontSize: 18, fontWeight: '900', marginTop: 4 },
-  modalTarget: { color: '#B9F6CA', fontSize: 17, marginBottom: 16 },
+  modalTitle: { color: GameColors.gold, fontSize: 28, fontWeight: '900', textAlign: 'center', marginBottom: 18, letterSpacing: 1 },
+  modalScores: { marginBottom: 14, width: '100%' },
+  modalScoreText: { color: GameColors.text.primary, fontSize: 20, marginBottom: 4 },
+  modalWhoWent: { color: GameColors.gold, fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
+  modalTeamBlock: { width: '100%', backgroundColor: GameColors.surface.low, borderRadius: Radius.sm, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: GameColors.surface.border },
+  modalTeamTitle: { color: GameColors.text.primary, fontSize: 17, fontWeight: '800', marginBottom: 4 },
+  modalScoreRow: { color: GameColors.text.secondary, fontSize: 16, marginBottom: 2 },
+  modalScoreTotal: { color: GameColors.gold, fontSize: 18, fontWeight: '900', marginTop: 4 },
+  modalTarget: { color: GameColors.successSoft, fontSize: 17, marginBottom: 18 },
   modalBtn: {
-    backgroundColor: '#FFD600', paddingHorizontal: 32, paddingVertical: 12,
-    borderRadius: 24,
+    backgroundColor: GameColors.gold, paddingHorizontal: 36, paddingVertical: 14,
+    borderRadius: Radius.pill,
+    ...Elevation.goldGlow,
   },
-  modalBtnText: { color: '#1B5E20', fontWeight: '900', fontSize: 20 },
-  modalWaiting: { color: 'rgba(255,255,255,0.5)', fontSize: 16, textAlign: 'center', marginTop: 8 },
+  modalBtnText: { color: GameColors.text.onGold, fontWeight: '900', fontSize: 20, letterSpacing: 1 },
+  modalWaiting: { color: GameColors.text.muted, fontSize: 16, textAlign: 'center', marginTop: 8 },
 
   undoButtonText: {
-    color: '#FFD600',
+    color: GameColors.gold,
     fontWeight: '900',
     fontSize: 17,
   },
 
   // EXPANDED GAME MODAL
   expandedOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
+    flex: 1, backgroundColor: GameColors.overlay.modalDeep,
     justifyContent: 'center', alignItems: 'center',
   },
   expandedBox: {

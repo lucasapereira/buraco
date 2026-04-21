@@ -2,10 +2,13 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useForceUpdate } from '@/hooks/useForceUpdate';
+import { ThemedAlertHost } from '../components/ThemedAlert';
+import { useThemeStore } from '../store/themeStore';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.lucasapereira.buraco';
 
@@ -17,7 +20,18 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { needsUpdate, checking } = useForceUpdate();
 
-  if (checking) {
+  // Bloqueia o render das telas até o tema persistido ser aplicado em
+  // GameColors (via onRehydrateStorage do themeStore). Sem isso, telas
+  // montariam com o tema classic (default) e só atualizariam no próximo
+  // reload.
+  const themePersist = (useThemeStore as any).persist;
+  const [themeHydrated, setThemeHydrated] = useState<boolean>(() => !!themePersist?.hasHydrated?.());
+  useEffect(() => {
+    if (themeHydrated) return;
+    return themePersist?.onFinishHydration?.(() => setThemeHydrated(true));
+  }, [themeHydrated]);
+
+  if (checking || !themeHydrated) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#FFD600" />
@@ -46,6 +60,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
+      <ThemedAlertHost />
       <StatusBar style="auto" />
     </ThemeProvider>
   );

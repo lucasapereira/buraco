@@ -23,6 +23,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { getRank } from '../../game/achievements';
 import { useProfileStore, UserProfile, MonthlyChampion } from '../../store/profileStore';
+import { ScreenBackground } from '../../components/ScreenBackground';
+import { GameColors, Radius, Elevation } from '../../constants/colors';
 
 type Board = 'bot' | 'online';
 
@@ -106,7 +108,8 @@ export default function RankingScreen() {
   }, [profiles, board]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenBackground>
+      <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
 
       <View style={styles.header}>
@@ -207,7 +210,8 @@ export default function RankingScreen() {
         myProfile={profiles.find(p => p.uid === myUid) ?? null}
         championMonths={selected ? champions.filter(c => c.uid === selected.uid).map(c => c.month) : []}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
@@ -373,118 +377,154 @@ function Stat({ label, value }: { label: string; value: number | string }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A1C30' },
+  container: { flex: 1, backgroundColor: 'transparent' },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
   },
   backBtn: { paddingVertical: 6, paddingHorizontal: 12 },
-  backText: { color: '#FFD600', fontSize: 16, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  backText: { color: GameColors.gold, fontSize: 16, fontWeight: '700' },
+  headerTitle: { color: GameColors.text.primary, fontSize: 22, fontWeight: '900' },
 
-  tabs: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 8 },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' },
-  tabActive: { backgroundColor: '#FFD600' },
-  tabText: { color: 'rgba(255,255,255,0.7)', fontSize: 15, fontWeight: '700' },
-  tabTextActive: { color: '#0A1C30', fontWeight: '900' },
+  tabs: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 10 },
+  tab: {
+    flex: 1, paddingVertical: 11, borderRadius: Radius.sm,
+    backgroundColor: GameColors.surface.low,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: GameColors.surface.border,
+  },
+  tabActive: { backgroundColor: GameColors.gold, borderColor: GameColors.gold, ...Elevation.goldGlow },
+  tabText: { color: GameColors.text.secondary, fontSize: 15, fontWeight: '700' },
+  tabTextActive: { color: GameColors.text.onGold, fontWeight: '900' },
 
   list: { flex: 1 },
   listContent: { padding: 16, paddingTop: 8 },
   row: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, paddingHorizontal: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 10, marginBottom: 6, gap: 12,
+    paddingVertical: 12, paddingHorizontal: 14,
+    backgroundColor: GameColors.surface.low,
+    borderRadius: Radius.md,
+    marginBottom: 8,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: GameColors.surface.border,
   },
-  rowMe: { backgroundColor: 'rgba(255,214,0,0.18)', borderWidth: 1, borderColor: 'rgba(255,214,0,0.4)' },
-  rank: { color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: '900', minWidth: 26, textAlign: 'right' },
-  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  rowMe: {
+    backgroundColor: GameColors.goldSoft,
+    borderColor: GameColors.goldBorder,
+  },
+  rank: { color: GameColors.text.muted, fontSize: 16, fontWeight: '900', minWidth: 26, textAlign: 'right' },
+  avatar: {
+    width: 42, height: 42, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.18)',
+  },
+  avatarText: { color: GameColors.text.primary, fontSize: 18, fontWeight: '900' },
   nameCol: { flex: 1 },
-  name: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  name: { color: GameColors.text.primary, fontSize: 16, fontWeight: '800' },
   fire: { fontSize: 16 },
-  meTag: { color: '#FFD600', fontSize: 13, fontWeight: '700' },
-  subText: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 },
+  meTag: { color: GameColors.gold, fontSize: 13, fontWeight: '700' },
+  subText: { color: GameColors.text.muted, fontSize: 12, marginTop: 2 },
   scoreCol: { alignItems: 'flex-end' },
-  scoreMain: { color: '#B9F6CA', fontSize: 17, fontWeight: '900' },
-  scoreSub: { color: 'rgba(255,255,255,0.5)', fontSize: 11 },
+  scoreMain: { color: GameColors.successSoft, fontSize: 17, fontWeight: '900' },
+  scoreSub: { color: GameColors.text.muted, fontSize: 11 },
 
   championsBar: {
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: GameColors.surface.border,
   },
-  championsTitle: { color: '#FFD600', fontSize: 12, fontWeight: '900', letterSpacing: 1, marginBottom: 6 },
+  championsTitle: { color: GameColors.gold, fontSize: 12, fontWeight: '900', letterSpacing: 1, marginBottom: 6 },
   championsRow: { gap: 8, paddingRight: 16 },
   championChip: {
-    backgroundColor: 'rgba(255,214,0,0.12)',
+    backgroundColor: GameColors.goldSoft,
     borderWidth: 1,
-    borderColor: 'rgba(255,214,0,0.4)',
-    borderRadius: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    borderColor: GameColors.goldBorder,
+    borderRadius: Radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     minWidth: 120,
     maxWidth: 160,
   },
-  championMonth: { color: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: '700' },
-  championName: { color: '#fff', fontSize: 13, fontWeight: '800', marginTop: 2 },
-  championRating: { color: '#B9F6CA', fontSize: 11, fontWeight: '700', marginTop: 1 },
+  championMonth: { color: GameColors.text.muted, fontSize: 10, fontWeight: '700' },
+  championName: { color: GameColors.text.primary, fontSize: 13, fontWeight: '800', marginTop: 2 },
+  championRating: { color: GameColors.successSoft, fontSize: 11, fontWeight: '700', marginTop: 1 },
 
   loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: 'rgba(255,255,255,0.7)', marginTop: 12 },
-  emptyText: { color: 'rgba(255,255,255,0.6)', fontSize: 16, textAlign: 'center', paddingHorizontal: 40 },
+  loadingText: { color: GameColors.text.secondary, marginTop: 12 },
+  emptyText: { color: GameColors.text.secondary, fontSize: 16, textAlign: 'center', paddingHorizontal: 40 },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 16 },
-  modalBox: { backgroundColor: '#1B5E20', borderRadius: 16, maxHeight: '90%' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: GameColors.overlay.modalDeep,
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalBox: {
+    backgroundColor: GameColors.bg.surfaceSoft,
+    borderRadius: Radius.lg,
+    maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: GameColors.surface.border,
+    ...Elevation.modal,
+  },
   modalScroll: { padding: 20 },
   detailHeader: { alignItems: 'center', marginBottom: 16 },
-  detailAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  detailAvatarText: { color: '#fff', fontSize: 36, fontWeight: '900' },
-  detailName: { color: '#fff', fontSize: 24, fontWeight: '900' },
-  detailRank: { color: '#FFD600', fontSize: 14, fontWeight: '700', marginTop: 4 },
-  detailLastSeen: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 },
-
-  section: { marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' },
-  sectionTitle: { color: '#FFD600', fontSize: 16, fontWeight: '900', marginBottom: 8 },
-  statRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  statLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
-  statValue: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  invictoBadge: {
-    marginTop: 10, padding: 10,
-    backgroundColor: 'rgba(255,214,0,0.15)',
-    borderWidth: 1, borderColor: '#FFD600', borderRadius: 8,
+  detailAvatar: {
+    width: 84, height: 84, borderRadius: 42,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 10,
+    borderWidth: 3, borderColor: GameColors.goldBorder,
   },
-  invictoText: { color: '#FFD600', fontSize: 13, fontWeight: '900', textAlign: 'center' },
+  detailAvatarText: { color: GameColors.text.primary, fontSize: 36, fontWeight: '900' },
+  detailName: { color: GameColors.text.primary, fontSize: 24, fontWeight: '900' },
+  detailRank: { color: GameColors.gold, fontSize: 14, fontWeight: '700', marginTop: 4 },
+  detailLastSeen: { color: GameColors.text.muted, fontSize: 12, marginTop: 2 },
+
+  section: { marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: GameColors.surface.border },
+  sectionTitle: { color: GameColors.gold, fontSize: 16, fontWeight: '900', marginBottom: 10, letterSpacing: 0.5 },
+  statRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
+  statLabel: { color: GameColors.text.secondary, fontSize: 14 },
+  statValue: { color: GameColors.text.primary, fontSize: 14, fontWeight: '700' },
+  invictoBadge: {
+    marginTop: 12, padding: 12,
+    backgroundColor: GameColors.goldSoft,
+    borderWidth: 1, borderColor: GameColors.gold,
+    borderRadius: Radius.sm,
+  },
+  invictoText: { color: GameColors.gold, fontSize: 13, fontWeight: '900', textAlign: 'center' },
 
   trophyRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   trophyBadge: {
-    backgroundColor: 'rgba(255,214,0,0.15)',
+    backgroundColor: GameColors.goldSoft,
     borderWidth: 1,
-    borderColor: 'rgba(255,214,0,0.5)',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    borderColor: GameColors.goldBorder,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     alignItems: 'center',
   },
   trophyEmoji: { fontSize: 18 },
-  trophyMonth: { color: '#FFD600', fontSize: 10, fontWeight: '700' },
+  trophyMonth: { color: GameColors.gold, fontSize: 10, fontWeight: '700' },
 
   h2hBox: { alignItems: 'center', paddingVertical: 8 },
-  h2hLine: { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '700' },
+  h2hLine: { color: GameColors.text.secondary, fontSize: 14, fontWeight: '700' },
   h2hScore: { fontSize: 28, fontWeight: '900', marginVertical: 6 },
-  h2hSub: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
+  h2hSub: { color: GameColors.text.muted, fontSize: 12 },
 
-  matchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 10 },
+  matchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, gap: 10 },
   matchResult: { fontSize: 18, fontWeight: '900', minWidth: 20, textAlign: 'center' },
-  matchScore: { color: '#fff', fontSize: 13 },
-  matchOpps: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 1 },
-  matchTime: { color: 'rgba(255,255,255,0.4)', fontSize: 11 },
+  matchScore: { color: GameColors.text.primary, fontSize: 13 },
+  matchOpps: { color: GameColors.text.muted, fontSize: 11, marginTop: 1 },
+  matchTime: { color: GameColors.text.faint, fontSize: 11 },
 
   closeBtn: {
-    marginTop: 20, paddingVertical: 12, borderRadius: 10,
-    backgroundColor: '#FFD600', alignItems: 'center',
+    marginTop: 22, paddingVertical: 14, borderRadius: Radius.sm,
+    backgroundColor: GameColors.gold, alignItems: 'center',
+    ...Elevation.goldGlow,
   },
-  closeBtnText: { color: '#0A1C30', fontSize: 16, fontWeight: '900' },
+  closeBtnText: { color: GameColors.text.onGold, fontSize: 16, fontWeight: '900', letterSpacing: 1 },
 });

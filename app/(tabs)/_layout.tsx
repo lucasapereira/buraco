@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Tabs, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 
@@ -23,10 +24,20 @@ export default function TabLayout() {
 
   useEffect(() => {
     if (!hydrated || !mounted) return;
-    const isGameInProgress = gameLog.length > 0 || players.some(p => p.hand.length !== 11);
-    if (isGameInProgress) {
-      router.replace('/(tabs)/explore' as any);
-    }
+    (async () => {
+      // Flag gravada pelo themeStore antes de DevSettings.reload(). Ao
+      // trocar tema na home com partida em andamento, não queremos que o
+      // auto-resume jogue o usuário pro explore no reload.
+      const skip = await AsyncStorage.getItem('skip-autoresume-once');
+      if (skip === '1') {
+        await AsyncStorage.removeItem('skip-autoresume-once');
+        return;
+      }
+      const isGameInProgress = gameLog.length > 0 || players.some(p => p.hand.length !== 11);
+      if (isGameInProgress) {
+        router.replace('/(tabs)/explore' as any);
+      }
+    })();
   }, [hydrated, mounted]);
 
   return (

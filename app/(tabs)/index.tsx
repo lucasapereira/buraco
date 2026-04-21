@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform, Alert, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform, ScrollView } from 'react-native';
+import { showAlert } from '../../components/ThemedAlert';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { useStatsStore, DailyRewardInfo } from '../../store/statsStore';
@@ -7,6 +8,11 @@ import { useOnlineStore } from '../../store/onlineStore';
 import { GameMode } from '../../game/engine';
 import * as NavigationBar from 'expo-navigation-bar';
 import Constants from 'expo-constants';
+import { ScreenBackground } from '../../components/ScreenBackground';
+import { GameColors, Radius, Elevation } from '../../constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useThemeStore } from '../../store/themeStore';
+import { THEME_LABELS, type ThemeName } from '../../constants/themes';
 
 const APP_VERSION = Constants.expoConfig?.version ?? '?';
 
@@ -14,12 +20,16 @@ const TARGETS = [1500, 3000, 5000];
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId } = useGameStore();
   const { level, checkDailyReward, claimDailyReward } = useStatsStore();
   const { resetRoom, roomStatus } = useOnlineStore();
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
   const [dailyReward, setDailyReward] = useState<DailyRewardInfo | null>(null);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const currentTheme = useThemeStore(s => s.theme);
+  const setTheme = useThemeStore(s => s.setTheme);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -41,7 +51,7 @@ export default function HomeScreen() {
   };
 
   const handleRestart = () => {
-    Alert.alert('Reiniciar', 'Tem certeza que deseja apagar a partida atual?', [
+    showAlert('Reiniciar', 'Tem certeza que deseja apagar a partida atual?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Sim, Apagar', style: 'destructive', onPress: () => {
           if (roomStatus !== 'idle') resetRoom();
@@ -56,7 +66,8 @@ export default function HomeScreen() {
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#1B5E20' }} contentContainerStyle={styles.container} bounces={false}>
+    <ScreenBackground>
+    <ScrollView style={{ flex: 1, backgroundColor: 'transparent' }} contentContainerStyle={styles.container} bounces={false}>
       {/* Modal Recompensa Diária */}
       <Modal visible={!!dailyReward} transparent animationType="fade">
         <View style={styles.dailyOverlay}>
@@ -85,7 +96,7 @@ export default function HomeScreen() {
 
       {/* Botão de Perfil */}
       <TouchableOpacity
-        style={styles.profileBtn}
+        style={[styles.profileBtn, { top: insets.top + 8 }]}
         onPress={() => router.replace('/(tabs)/stats' as any)}
         activeOpacity={0.8}
       >
@@ -93,9 +104,60 @@ export default function HomeScreen() {
         <Text style={styles.profileBtnIcon}>👤</Text>
       </TouchableOpacity>
 
+      {/* Botão de Tema */}
+      <TouchableOpacity
+        style={[styles.themeBtn, { top: insets.top + 8 }]}
+        onPress={() => setThemePickerOpen(true)}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.themeBtnIcon}>🎨</Text>
+      </TouchableOpacity>
+
+      {/* Modal Seletor de Tema */}
+      <Modal visible={themePickerOpen} transparent animationType="fade" onRequestClose={() => setThemePickerOpen(false)}>
+        <TouchableOpacity style={styles.themeOverlay} activeOpacity={1} onPress={() => setThemePickerOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.themeBox}>
+            <Text style={styles.themeTitle}>Escolha o tema</Text>
+            <Text style={styles.themeSubtitle}>O app vai recarregar pra aplicar.</Text>
+            {(Object.keys(THEME_LABELS) as ThemeName[]).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.themeOption, currentTheme === t && styles.themeOptionActive]}
+                onPress={() => {
+                  setThemePickerOpen(false);
+                  if (t !== currentTheme) setTheme(t);
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.themeOptionText, currentTheme === t && styles.themeOptionTextActive]}>
+                  {THEME_LABELS[t]}
+                </Text>
+                {currentTheme === t && <Text style={styles.themeCheck}>✓</Text>}
+              </TouchableOpacity>
+            ))}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Título */}
       <View style={styles.titleBox}>
-        <Text style={styles.title}>♠ BURACO ♠</Text>
+        <View style={styles.cardFan}>
+          <View style={[styles.miniCard, styles.miniCardLeft]}>
+            <Text style={[styles.miniCardRank, styles.suitBlack]}>K</Text>
+            <Text style={[styles.miniCardSuit, styles.suitBlack]}>♠</Text>
+          </View>
+          <View style={[styles.miniCard, styles.miniCardCenter]}>
+            <Text style={[styles.miniCardRank, styles.suitRed]}>Q</Text>
+            <Text style={[styles.miniCardSuit, styles.suitRed]}>♥</Text>
+          </View>
+          <View style={[styles.miniCard, styles.miniCardRight]}>
+            <Text style={[styles.miniCardRank, styles.suitRed]}>A</Text>
+            <Text style={[styles.miniCardSuit, styles.suitRed]}>♦</Text>
+          </View>
+        </View>
+        <Text style={styles.titleCursive}>Queti's</Text>
+        <Text style={styles.title}>BURACO</Text>
+        <View style={styles.titleDivider} />
       </View>
 
       {/* Seletor de Modo de Jogo */}
@@ -178,42 +240,112 @@ export default function HomeScreen() {
 
       <Text style={styles.version}>v{APP_VERSION}</Text>
     </ScrollView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: '#1B5E20',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 50,
+    paddingTop: 80,
+    paddingBottom: 50,
   },
   titleBox: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 28,
   },
   title: {
-    fontSize: 45,
+    fontSize: 52,
     fontWeight: '900',
-    color: '#FFD600',
-    letterSpacing: 4,
+    color: GameColors.gold,
+    letterSpacing: 6,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 10,
+    marginTop: -2,
+  },
+  titleCursive: {
+    fontSize: 26,
+    color: GameColors.gold,
+    fontStyle: 'italic',
+    fontWeight: '700',
+    letterSpacing: 1.5,
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
+    marginTop: 8,
+  },
+  titleDivider: {
+    marginTop: 10,
+    width: 120,
+    height: 2,
+    backgroundColor: GameColors.goldBorder,
+    borderRadius: 2,
   },
   subtitle: {
     fontSize: 18,
-    color: 'rgba(255,255,255,0.6)',
+    color: GameColors.text.secondary,
     letterSpacing: 2,
     marginTop: 4,
   },
+  cardFan: {
+    flexDirection: 'row',
+    height: 64,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  miniCard: {
+    width: 42,
+    height: 60,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.15)',
+    paddingTop: 4,
+    paddingLeft: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  miniCardLeft: {
+    transform: [{ rotate: '-14deg' }, { translateY: 4 }, { translateX: 8 }],
+    zIndex: 1,
+  },
+  miniCardCenter: {
+    transform: [{ translateY: -4 }],
+    zIndex: 2,
+  },
+  miniCardRight: {
+    transform: [{ rotate: '14deg' }, { translateY: 4 }, { translateX: -8 }],
+    zIndex: 1,
+  },
+  miniCardRank: {
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 16,
+  },
+  miniCardSuit: {
+    fontSize: 14,
+    lineHeight: 16,
+    marginTop: -1,
+  },
+  suitBlack: {
+    color: '#1F2430',
+  },
+  suitRed: {
+    color: '#D32F2F',
+  },
   sectionTitle: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 1.5,
+    color: GameColors.text.secondary,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 2,
     textTransform: 'uppercase',
     alignSelf: 'flex-start',
     marginBottom: 10,
@@ -223,28 +355,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     width: '100%',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   modeBtn: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 14,
+    borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: 'transparent',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderColor: GameColors.surface.border,
+    backgroundColor: GameColors.surface.low,
   },
   modeBtnActive: {
-    backgroundColor: '#FFD600',
-    borderColor: '#FFD600',
+    backgroundColor: GameColors.gold,
+    borderColor: GameColors.gold,
+    ...Elevation.goldGlow,
   },
   modeText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 17,
+    color: GameColors.text.secondary,
+    fontSize: 16,
     fontWeight: '700',
   },
   modeTextActive: {
-    color: '#1B5E20',
+    color: GameColors.text.onGold,
     fontWeight: '900',
   },
   diffRow: {
@@ -257,84 +390,84 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     padding: 12,
-    borderRadius: 14,
+    borderRadius: Radius.md,
     borderWidth: 2,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    backgroundColor: GameColors.surface.dark,
   },
   diffEmoji: {
     fontSize: 25,
     marginBottom: 4,
   },
   diffLabel: {
-    color: 'rgba(255,255,255,0.8)',
+    color: GameColors.text.primary,
     fontSize: 17,
     fontWeight: '700',
   },
   diffDesc: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 15,
+    color: GameColors.text.muted,
+    fontSize: 14,
     textAlign: 'center',
-    marginBottom: 28,
+    marginBottom: 30,
     paddingHorizontal: 8,
+    lineHeight: 20,
   },
   targetRow: {
     flexDirection: 'row',
     gap: 10,
     width: '100%',
-    marginBottom: 36,
+    marginBottom: 38,
   },
   targetBtn: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: 12,
+    borderRadius: Radius.sm,
+    backgroundColor: GameColors.surface.low,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: GameColors.surface.border,
   },
   targetBtnActive: {
-    backgroundColor: '#FFD600',
-    borderColor: '#FFD600',
+    backgroundColor: GameColors.gold,
+    borderColor: GameColors.gold,
+    ...Elevation.goldGlow,
   },
   targetText: {
-    color: 'rgba(255,255,255,0.7)',
+    color: GameColors.text.secondary,
     fontSize: 18,
     fontWeight: '700',
   },
   targetTextActive: {
-    color: '#1B5E20',
+    color: GameColors.text.onGold,
     fontWeight: '900',
   },
   playBtn: {
-    backgroundColor: '#FFD600',
-    paddingVertical: 14,
+    backgroundColor: GameColors.gold,
+    paddingVertical: 16,
     paddingHorizontal: 40,
-    borderRadius: 30,
-    shadowColor: '#FFD600',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8,
+    borderRadius: Radius.pill,
+    ...Elevation.goldGlow,
+    width: '100%',
+    alignItems: 'center',
   },
   playText: {
-    color: '#1B5E20',
+    color: GameColors.text.onGold,
     fontSize: 20,
     fontWeight: '900',
-    letterSpacing: 1.5,
+    letterSpacing: 2,
   },
   layoutBtn: {
     position: 'absolute',
     bottom: 14,
     left: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 8,
+    backgroundColor: GameColors.surface.low,
+    borderRadius: Radius.xs,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: GameColors.surface.border,
   },
   layoutBtnText: {
-    color: 'rgba(255,255,255,0.35)',
+    color: GameColors.text.faint,
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1,
@@ -343,7 +476,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 16,
     right: 20,
-    color: 'rgba(255,255,255,0.25)',
+    color: GameColors.text.faint,
     fontSize: 13,
     fontWeight: '600',
     letterSpacing: 1,
@@ -356,16 +489,16 @@ const styles = StyleSheet.create({
     right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255,214,0,0.15)',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    gap: 6,
+    backgroundColor: GameColors.goldSoft,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderWidth: 1,
-    borderColor: 'rgba(255,214,0,0.4)',
+    borderColor: GameColors.goldBorder,
   },
   profileBtnLevel: {
-    color: '#FFD600',
+    color: GameColors.gold,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -373,70 +506,147 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
 
+  // Botão de tema (canto esquerdo superior)
+  themeBtn: {
+    position: 'absolute',
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GameColors.goldSoft,
+    borderWidth: 1,
+    borderColor: GameColors.goldBorder,
+  },
+  themeBtnIcon: {
+    fontSize: 20,
+  },
+
+  // Modal seletor de tema
+  themeOverlay: {
+    flex: 1,
+    backgroundColor: GameColors.overlay.modal,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  themeBox: {
+    backgroundColor: GameColors.bg.surfaceSoft,
+    borderRadius: Radius.lg,
+    padding: 22,
+    width: '100%',
+    maxWidth: 340,
+    borderWidth: 1,
+    borderColor: GameColors.surface.border,
+    ...Elevation.modal,
+  },
+  themeTitle: {
+    color: GameColors.gold,
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 1,
+  },
+  themeSubtitle: {
+    color: GameColors.text.muted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  themeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: Radius.sm,
+    backgroundColor: GameColors.surface.low,
+    borderWidth: 1,
+    borderColor: GameColors.surface.border,
+    marginBottom: 8,
+  },
+  themeOptionActive: {
+    backgroundColor: GameColors.goldSoft,
+    borderColor: GameColors.goldBorder,
+  },
+  themeOptionText: {
+    color: GameColors.text.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  themeOptionTextActive: {
+    color: GameColors.gold,
+    fontWeight: '900',
+  },
+  themeCheck: {
+    color: GameColors.gold,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
   // Modal diário
   dailyOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: GameColors.overlay.modal,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dailyBox: {
-    backgroundColor: '#1B5E20',
-    borderRadius: 24,
-    padding: 30,
+    backgroundColor: GameColors.bg.surfaceSoft,
+    borderRadius: Radius.xl,
+    padding: 32,
     alignItems: 'center',
-    width: '80%',
+    width: '82%',
     borderWidth: 2,
-    borderColor: '#FFD600',
-    shadowColor: '#FFD600',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 16,
+    borderColor: GameColors.gold,
+    ...Elevation.goldGlow,
   },
-  dailyEmoji: { fontSize: 56, marginBottom: 8 },
+  dailyEmoji: { fontSize: 58, marginBottom: 10 },
   dailyTitle: {
-    color: '#FFD600',
+    color: GameColors.gold,
     fontSize: 24,
     fontWeight: '900',
     letterSpacing: 1,
     marginBottom: 6,
   },
   dailyStreak: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 17,
-    marginBottom: 20,
+    color: GameColors.text.secondary,
+    fontSize: 16,
+    marginBottom: 22,
   },
   dailyXPBadge: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,214,0,0.15)',
-    borderRadius: 16,
-    paddingHorizontal: 28,
-    paddingVertical: 10,
+    backgroundColor: GameColors.goldSoft,
+    borderRadius: Radius.md,
+    paddingHorizontal: 30,
+    paddingVertical: 12,
     borderWidth: 1.5,
-    borderColor: '#FFD600',
-    marginBottom: 24,
+    borderColor: GameColors.gold,
+    marginBottom: 26,
   },
   dailyXPText: {
-    color: '#FFD600',
-    fontSize: 40,
+    color: GameColors.gold,
+    fontSize: 42,
     fontWeight: '900',
-    lineHeight: 44,
+    lineHeight: 46,
   },
   dailyXPLabel: {
-    color: '#FFD600',
+    color: GameColors.gold,
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 2,
   },
   dailyBtn: {
-    backgroundColor: '#FFD600',
+    backgroundColor: GameColors.gold,
     paddingVertical: 14,
-    paddingHorizontal: 48,
-    borderRadius: 28,
+    paddingHorizontal: 50,
+    borderRadius: Radius.pill,
+    ...Elevation.goldGlow,
   },
   dailyBtnText: {
-    color: '#1B5E20',
+    color: GameColors.text.onGold,
     fontSize: 20,
     fontWeight: '900',
     letterSpacing: 2,

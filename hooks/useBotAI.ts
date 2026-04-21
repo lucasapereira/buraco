@@ -142,6 +142,19 @@ function canCleanCandidateGrow(game: Card[], allTableGames: Card[][], botHand: C
   return false; // Não há cartas livres suficientes para completar a canastra
 }
 
+/**
+ * Retorna true se o time pode bater AGORA: tem canastra adequada e já pegou o morto.
+ * Clássico exige canastra limpa; Araujo Pereira aceita qualquer canastra.
+ */
+function canTeamBater(teamGames: Card[][], gameMode: GameMode, hasGottenDead: boolean): boolean {
+  if (!hasGottenDead) return false;
+  return teamGames.some(g => {
+    if (g.length < 7) return false;
+    if (gameMode === 'araujo_pereira') return true;
+    return checkCanasta(g) === 'clean';
+  });
+}
+
 /** Encontra todas as sequências válidas (e trincas) possíveis dentro de uma mão */
 function findBestSequences(hand: Card[], gameMode: GameMode = 'classic'): Card[][] {
   const sequences: Card[][] = [];
@@ -830,7 +843,10 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const game = useGameStore.getState().teams[bot.teamId].games[gi];
       if (!game) continue;
       if (topCard.isJoker && wouldDirtyGame(topCard, game)) continue;
-      if (validateSequence([...game, topCard], s.gameMode)) {
+      const combined = [...game, topCard];
+      if (validateSequence(combined, s.gameMode)) {
+        // Carta NORMAL também pode sujar canastra limpa (gap força coringa natural a sair)
+        if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
         animate();
         if (useGameStore.getState().addToExistingGame(botId, [pileTopId], gi)) return;
       }
@@ -847,7 +863,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
 
       for (const c of freshBot.hand) {
         if (c.id === pileTopId) continue;
-        if (validateSequence([...game, topCard, c], freshState.gameMode)) {
+        const combined = [...game, topCard, c];
+        if (validateSequence(combined, freshState.gameMode)) {
+          if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
           animate();
           if (useGameStore.getState().addToExistingGame(botId, [pileTopId, c.id], gi)) return;
         }
@@ -856,7 +874,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         if (freshBot.hand[i].id === pileTopId) continue;
         for (let j = i + 1; j < freshBot.hand.length; j++) {
           if (freshBot.hand[j].id === pileTopId) continue;
-          if (validateSequence([...game, topCard, freshBot.hand[i], freshBot.hand[j]], freshState.gameMode)) {
+          const combined = [...game, topCard, freshBot.hand[i], freshBot.hand[j]];
+          if (validateSequence(combined, freshState.gameMode)) {
+            if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
             animate();
             if (useGameStore.getState().addToExistingGame(botId, [pileTopId, freshBot.hand[i].id, freshBot.hand[j].id], gi)) return;
           }
@@ -891,7 +911,10 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         const game = useGameStore.getState().teams[bot.teamId].games[gi];
         if (!game) continue;
         if (pass === 0 && topCard.isJoker && wouldDirtyGame(topCard, game) && checkCanasta(game) === 'clean') continue;
-        if (validateSequence([...game, topCard], s.gameMode)) {
+        const combined = [...game, topCard];
+        if (validateSequence(combined, s.gameMode)) {
+          // Carta normal pode degradar canastra limpa também — protege no pass 0
+          if (pass === 0 && checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
           animate();
           if (useGameStore.getState().addToExistingGame(botId, [pileTopId], gi)) return;
         }
@@ -910,7 +933,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
 
         for (const c of freshBot.hand) {
           if (c.id === pileTopId) continue;
-          if (validateSequence([...game, topCard, c], freshState.gameMode)) {
+          const combined = [...game, topCard, c];
+          if (validateSequence(combined, freshState.gameMode)) {
+            if (pass === 0 && checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
             animate();
             if (useGameStore.getState().addToExistingGame(botId, [pileTopId, c.id], gi)) return;
           }
@@ -919,7 +944,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           if (freshBot.hand[i].id === pileTopId) continue;
           for (let j = i + 1; j < freshBot.hand.length; j++) {
             if (freshBot.hand[j].id === pileTopId) continue;
-            if (validateSequence([...game, topCard, freshBot.hand[i], freshBot.hand[j]], freshState.gameMode)) {
+            const combined = [...game, topCard, freshBot.hand[i], freshBot.hand[j]];
+            if (validateSequence(combined, freshState.gameMode)) {
+              if (pass === 0 && checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
               animate();
               if (useGameStore.getState().addToExistingGame(botId, [pileTopId, freshBot.hand[i].id, freshBot.hand[j].id], gi)) return;
             }
@@ -989,6 +1016,12 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const bot = s.players.find(p => p.id === botId);
       if (!bot || bot.hand.length === 0) return;
 
+      const teamState = s.teams[bot.teamId];
+      // Endgame: se o time já pode bater e a mão é pequena, acelera — não retém
+      // cartas pra evitar duplicate-suit, esvazia tudo pra bater o quanto antes.
+      const accelerating = canTeamBater(teamState.games, s.gameMode, teamState.hasGottenDead)
+        && bot.hand.length <= 5;
+
       const sequences = findBestSequences(bot.hand, s.gameMode);
 
       for (const seq of sequences) {
@@ -1017,7 +1050,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           const remainingCards = bot.hand.length - seq.length;
           const goingToBaterOrDead = remainingCards <= 1;
 
-          if (hasDuplicateGame && seq.length < 6 && !goingToBaterOrDead) {
+          if (hasDuplicateGame && seq.length < 6 && !goingToBaterOrDead && !accelerating) {
             continue; // Retém as cartas, não "mata" a canastra ou cria jogo duplicado!
           }
         }
@@ -1231,6 +1264,16 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
 
         const combined = [...game, card];
         if (validateSequence(combined, freshState.gameMode)) {
+          // Proteção extra: carta NORMAL também pode sujar canastra limpa
+          // (ex.: jogar 9♠ num [A♠..7♠] força o 2♠ natural a sair da posição).
+          // Bloqueia a menos que esteja indo bater AGORA e ainda sobre outra canastra limpa.
+          if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') {
+            const freshBotNow = freshState.players.find(p => p.id === botId);
+            const goingOutNext = (freshBotNow?.hand.length ?? 99) <= 2;
+            const otherCleanCanastas = freshState.teams[bot.teamId].games
+              .filter((g, idx) => idx !== gi && checkCanasta(g) === 'clean');
+            if (!goingOutNext || otherCleanCanastas.length === 0) continue;
+          }
           animate();
           useGameStore.getState().addToExistingGame(botId, [card.id], gi);
           await delay(600); // Visualiza o adding

@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Card as CardType } from '../game/deck';
+import { GameColors } from '../constants/colors';
 
 interface CardProps {
   card: CardType;
@@ -63,7 +64,7 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
   }
 
   const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
-  const color = card.isJoker ? '#9C27B0' : isRed ? '#D32F2F' : '#212121';
+  const color = card.isJoker ? GameColors.card.wild : isRed ? GameColors.card.red : GameColors.card.black;
 
   const suitSymbols: Record<string, string> = {
     hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠',
@@ -107,29 +108,29 @@ export const Card: React.FC<CardProps> = ({ card, selected, onPress, isHidden = 
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 6,
+    backgroundColor: GameColors.card.face,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#ccc',
-    elevation: 3,
+    borderColor: GameColors.card.faceBorder,
+    elevation: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
     justifyContent: 'flex-start',
     paddingVertical: 3,
-    paddingLeft: 1,
+    paddingLeft: 2,
     paddingRight: 5,
     overflow: 'hidden',
   },
   selectedCard: {
-    borderColor: '#FFD600',
-    borderWidth: 4,
-    backgroundColor: '#FFFDE7',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
+    borderColor: GameColors.card.selectedBorder,
+    borderWidth: 3,
+    backgroundColor: GameColors.card.selectedBg,
+    shadowColor: '#FFD600',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 10,
     elevation: 16,
     transform: [{ scale: 1.1 }, { translateY: -10 }],
   },
@@ -137,7 +138,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -8,
     right: -8,
-    backgroundColor: '#1565C0',
+    backgroundColor: GameColors.gold,
     borderRadius: 12,
     width: 22,
     height: 22,
@@ -149,20 +150,21 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
   selectedBadgeText: {
-    color: '#fff',
+    color: GameColors.text.onGold,
     fontSize: 13,
     fontWeight: '900',
     lineHeight: 15,
   },
   hiddenCard: {
-    backgroundColor: '#1565C0',
-    borderColor: '#0D47A1',
+    backgroundColor: GameColors.card.back,
+    borderColor: GameColors.card.backAccent,
+    borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
   },
   jokerCard: {
-    backgroundColor: '#FFF8E1',
-    borderColor: '#FFD600',
+    backgroundColor: GameColors.card.jokerBg,
+    borderColor: GameColors.card.jokerBorder,
     borderWidth: 2,
     justifyContent: 'space-between',
     paddingVertical: 2,

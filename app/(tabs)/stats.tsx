@@ -11,6 +11,8 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ACHIEVEMENTS, getRank, LEVEL_THRESHOLDS } from '../../game/achievements';
 import { useStatsStore } from '../../store/statsStore';
+import { ScreenBackground } from '../../components/ScreenBackground';
+import { GameColors, Radius, Elevation } from '../../constants/colors';
 
 const CATEGORY_LABELS: Record<string, string> = {
   victories: '🏆 Vitórias',
@@ -39,7 +41,8 @@ export default function StatsScreen() {
     : 0;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenBackground>
+      <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
 
       {/* Header */}
@@ -95,19 +98,19 @@ export default function StatsScreen() {
         <Text style={styles.sectionTitle}>Estatísticas</Text>
         <View style={styles.statsGrid}>
           <StatBox label="Partidas" value={stats.matchesPlayed.toString()} />
-          <StatBox label="Vitórias" value={stats.matchesWon.toString()} color="#4CAF50" />
-          <StatBox label="Taxa" value={`${winRate}%`} color="#FFD600" />
+          <StatBox label="Vitórias" value={stats.matchesWon.toString()} color={GameColors.success} />
+          <StatBox label="Taxa" value={`${winRate}%`} color={GameColors.gold} />
           <StatBox label="Rodadas" value={stats.roundsPlayed.toString()} />
-          <StatBox label="Pts Totais" value={stats.totalPointsEarned.toLocaleString()} color="#FFD600" />
-          <StatBox label="Melhor Rdada" value={stats.biggestRoundScore.toLocaleString()} color="#FF9800" />
+          <StatBox label="Pts Totais" value={stats.totalPointsEarned.toLocaleString()} color={GameColors.gold} />
+          <StatBox label="Melhor Rdada" value={stats.biggestRoundScore.toLocaleString()} color={GameColors.warning} />
           <StatBox label="Canastas" value={stats.totalCanastas.toString()} />
-          <StatBox label="Limpas" value={stats.totalCleanCanastas.toString()} color="#4CAF50" />
-          <StatBox label="+500" value={stats.total500Canastas.toString()} color="#FFD600" />
-          <StatBox label="+1000" value={stats.total1000Canastas.toString()} color="#FF5722" />
+          <StatBox label="Limpas" value={stats.totalCleanCanastas.toString()} color={GameColors.success} />
+          <StatBox label="+500" value={stats.total500Canastas.toString()} color={GameColors.gold} />
+          <StatBox label="+1000" value={stats.total1000Canastas.toString()} color={GameColors.canasta.c1000Border} />
           <StatBox label="Batidas" value={stats.totalBatidas.toString()} />
           <StatBox label="Seq. Vitórias" value={`${stats.currentWinStreak} / ${stats.longestWinStreak}`} />
-          <StatBox label="Rating Online" value={stats.onlineRating.toString()} color="#00BCD4" />
-          <StatBox label="Online V/D" value={`${stats.onlineMatchesWon}/${stats.onlineMatchesPlayed - stats.onlineMatchesWon}`} color="#2196F3" />
+          <StatBox label="Rating Online" value={stats.onlineRating.toString()} color={GameColors.info} />
+          <StatBox label="Online V/D" value={`${stats.onlineMatchesWon}/${stats.onlineMatchesPlayed - stats.onlineMatchesWon}`} color={GameColors.info} />
         </View>
 
         {/* ── CONQUISTAS ────────────────────────────────────────────────── */}
@@ -144,7 +147,8 @@ export default function StatsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
@@ -158,79 +162,84 @@ function StatBox({ label, value, color }: { label: string; value: string; color?
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1B5E20' },
+  container: { flex: 1, backgroundColor: 'transparent' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#0D3B1E',
+    paddingVertical: 14,
+    backgroundColor: GameColors.bg.header,
+    borderBottomWidth: 1,
+    borderBottomColor: GameColors.surface.border,
   },
   backBtn: { padding: 4 },
-  backText: { color: '#FFD600', fontSize: 15, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 1 },
+  backText: { color: GameColors.gold, fontSize: 15, fontWeight: '700' },
+  headerTitle: { color: GameColors.text.primary, fontSize: 18, fontWeight: '900', letterSpacing: 1.5 },
 
   scroll: { paddingHorizontal: 16, paddingTop: 16 },
 
   // Level card
   levelCard: {
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: GameColors.surface.dark,
+    borderRadius: Radius.lg,
+    padding: 18,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,214,0,0.3)',
+    borderColor: GameColors.goldBorder,
+    ...Elevation.card,
   },
-  levelRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  levelRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 },
   levelBadge: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#FFD600',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: GameColors.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Elevation.goldGlow,
   },
-  levelNum: { fontSize: 24, fontWeight: '900', color: '#1B5E20' },
+  levelNum: { fontSize: 26, fontWeight: '900', color: GameColors.text.onGold },
   levelInfo: { flex: 1 },
-  rankText: { color: '#FFD600', fontSize: 18, fontWeight: '900' },
-  xpText: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 },
-  totalXPLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10, textAlign: 'right' },
-  totalXPValue: { color: '#fff', fontSize: 16, fontWeight: '900', textAlign: 'right' },
+  rankText: { color: GameColors.gold, fontSize: 18, fontWeight: '900' },
+  xpText: { color: GameColors.text.muted, fontSize: 12, marginTop: 2 },
+  totalXPLabel: { color: GameColors.text.muted, fontSize: 10, textAlign: 'right' },
+  totalXPValue: { color: GameColors.text.primary, fontSize: 16, fontWeight: '900', textAlign: 'right' },
   progressBg: {
-    height: 8,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 4,
+    height: 9,
+    backgroundColor: GameColors.surface.high,
+    borderRadius: 5,
     overflow: 'hidden',
   },
   progressFill: {
-    height: 8,
-    backgroundColor: '#FFD600',
-    borderRadius: 4,
+    height: 9,
+    backgroundColor: GameColors.gold,
+    borderRadius: 5,
   },
-  nextLevel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 4 },
+  nextLevel: { color: GameColors.text.muted, fontSize: 11, marginTop: 6 },
 
   // Streak card
   streakCard: {
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 20,
+    backgroundColor: GameColors.surface.dark,
+    borderRadius: Radius.md,
+    padding: 16,
+    marginBottom: 22,
     borderWidth: 1,
-    borderColor: 'rgba(255,152,0,0.3)',
+    borderColor: 'rgba(255,167,38,0.3)',
+    ...Elevation.card,
   },
-  streakRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  streakIcon: { fontSize: 32 },
+  streakRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  streakIcon: { fontSize: 34 },
   streakTexts: { flex: 1 },
-  streakValue: { color: '#FF9800', fontSize: 18, fontWeight: '900' },
-  streakSub: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 },
+  streakValue: { color: GameColors.warning, fontSize: 18, fontWeight: '900' },
+  streakSub: { color: GameColors.text.muted, fontSize: 12, marginTop: 2 },
 
   // Section
   sectionTitle: {
-    color: 'rgba(255,255,255,0.7)',
+    color: GameColors.text.secondary,
     fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1.5,
+    fontWeight: '800',
+    letterSpacing: 2,
     textTransform: 'uppercase',
     marginBottom: 12,
   },
@@ -244,24 +253,24 @@ const styles = StyleSheet.create({
   },
   statBox: {
     width: '30.5%',
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    borderRadius: 12,
-    paddingVertical: 12,
+    backgroundColor: GameColors.surface.dark,
+    borderRadius: Radius.sm,
+    paddingVertical: 14,
     paddingHorizontal: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: GameColors.surface.border,
   },
-  statValue: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  statLabel: { color: 'rgba(255,255,255,0.45)', fontSize: 10, marginTop: 2, textAlign: 'center' },
+  statValue: { color: GameColors.text.primary, fontSize: 18, fontWeight: '900' },
+  statLabel: { color: GameColors.text.muted, fontSize: 10, marginTop: 3, textAlign: 'center', letterSpacing: 0.3 },
 
   // Achievements
-  categoryBlock: { marginBottom: 20 },
+  categoryBlock: { marginBottom: 22 },
   categoryTitle: {
-    color: 'rgba(255,255,255,0.6)',
+    color: GameColors.text.secondary,
     fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontWeight: '800',
+    letterSpacing: 1.5,
     marginBottom: 10,
   },
   achievementsGrid: {
@@ -271,28 +280,28 @@ const styles = StyleSheet.create({
   },
   achievementBadge: {
     width: '30.5%',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: GameColors.surface.dark,
+    borderRadius: Radius.sm,
+    padding: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: GameColors.surface.border,
   },
   achievementUnlocked: {
-    backgroundColor: 'rgba(255,214,0,0.1)',
-    borderColor: 'rgba(255,214,0,0.4)',
+    backgroundColor: GameColors.goldSoft,
+    borderColor: GameColors.goldBorder,
   },
-  achievementIcon: { fontSize: 26, marginBottom: 4 },
-  achievementIconLocked: { opacity: 0.4 },
+  achievementIcon: { fontSize: 28, marginBottom: 4 },
+  achievementIconLocked: { opacity: 0.35 },
   achievementTitle: {
-    color: '#fff',
+    color: GameColors.text.primary,
     fontSize: 10,
     fontWeight: '700',
     textAlign: 'center',
   },
-  achievementTitleLocked: { color: 'rgba(255,255,255,0.3)' },
+  achievementTitleLocked: { color: GameColors.text.faint },
   achievementXP: {
-    color: '#FFD600',
+    color: GameColors.gold,
     fontSize: 9,
     fontWeight: '700',
     marginTop: 2,
