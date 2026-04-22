@@ -476,23 +476,33 @@ export function shouldTakePile(
  * - Pontos de sequências NOVAS que podem ser baixadas da mão
  * - Bônus agressivo por proximidade de canastra (6 cartas → +200 se for virar limpa, +100 suja)
  */
+function canastaBonusValue(game: Card[]): number {
+  const ct = checkCanasta(game);
+  if (ct === 'none') return 0;
+  if (ct === 'dirty') return 100;
+  if (game.length >= 14) return 1000;
+  if (game.length === 13) return 500;
+  return 200;
+}
+
 function evaluateHandPotential(hand: Card[], teamGames: Card[][], gameMode: GameMode): number {
   let score = 0;
 
-  // 1) Adições diretas a jogos existentes (valor da carta + bônus de fechar canastra)
+  // 1) Adições diretas a jogos existentes (valor da carta + delta de bônus de canastra).
+  //    Delta cobre: 6→7 (nenhuma → clean/dirty), dirty→clean por reposicionamento de coringa
+  //    em qualquer tamanho, e upgrades de clean→canastra real (13/14).
   const usedIds = new Set<string>();
   for (const game of teamGames) {
     let growingGame = [...game];
+    let prevBonus = canastaBonusValue(growingGame);
     for (const c of hand) {
       if (usedIds.has(c.id)) continue;
       if (validateSequence([...growingGame, c], gameMode)) {
         score += getCardPoints(c);
-        if (growingGame.length === 6) {
-          const ct = checkCanasta([...growingGame, c]);
-          if (ct === 'clean') score += 200;
-          else if (ct === 'dirty') score += 100;
-        }
         growingGame = [...growingGame, c];
+        const newBonus = canastaBonusValue(growingGame);
+        if (newBonus > prevBonus) score += (newBonus - prevBonus);
+        prevBonus = newBonus;
         usedIds.add(c.id);
       }
     }
