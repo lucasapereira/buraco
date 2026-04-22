@@ -10,6 +10,7 @@ Resumo dos experimentos de IA do bot conduzidos com o harness headless `scripts/
 | 2 | Smart pile take (1-ply lookahead) | ✅ Mergeado |
 | 3 | Wild-card discipline (3-card rule) | ✅ Mergeado |
 | 4 | SMART_CLOSE (6→7 dirty close) | ❌ Descartado — EV-wash |
+| 5 | Evaluator delta-based (dirty→clean + canastra real) | ✅ Mergeado |
 
 ---
 
@@ -55,6 +56,33 @@ Regra testada: bloqueia sujar canastra no fechamento (size 6→7) quando candida
 **Mecanicamente funciona, mas EV-wash:** adds em 6→7 caíram 584 → 211 (-63%), mas win rate mal se mexeu. Interpretação: dirty close é roughly EV-equivalente a segurar o coringa pro próximo turno — não é leak, é tradeoff neutro.
 
 Toggle `TEAM_SMART_CLOSE` em `scripts/botSim.ts` preservado (comentado) caso queira re-rodar; produção (`useBotAI.ts`) nunca recebeu.
+
+---
+
+## Item #5 — Evaluator delta-based (canastaBonusValue)
+
+**Bug reportado pelo usuário:** descartou uma carta que, se pega pelo bot, upgradaria uma canastra dirty pra clean (o 2 coringa reposicionado pra posição natural no começo da sequência, com a carta natural ocupando o slot do coringa). Bot ignorou o lixo.
+
+**Causa raiz:** `evaluateHandPotential` em `game/botHelpers.ts` só reconhecia bônus de canastra na transição **6→7**. Para uma canasta já de 7+ cartas, crescer ou mudar tipo não gerava bônus — então o delta do `shouldTakePileSmart` via o upgrade como apenas +10 pontos (valor da carta), abaixo do threshold.
+
+**Fix:** helper `canastaBonusValue(game)` retorna o bônus corrente (0 / 100 dirty / 200 clean / 500 13-clean / 1000 14-clean). Evaluator agora acumula delta a cada carta adicionada, cobrindo:
+
+- 6→7 (criação de canastra) — comportamento antigo preservado
+- **dirty→clean em qualquer tamanho** (+100 delta) — caso do bug reportado
+- **clean 12→13** (+300 delta) — canastra real de 13
+- **clean 13→14** (+500 delta) — canastra real de 14
+
+**Validação:** swap test n=500 vs baseline (mesmo código sem fix):
+
+| Métrica | Baseline | Com fix | Δ |
+|---|---|---|---|
+| Rodadas com bater | 282 | 298 | **+5.7%** |
+| %gotDead (avg T1/T2) | 44 | 47 | **+3pp** |
+| Clean canastras/rod (avg) | 0.585 | 0.62 | +0.035 |
+| Stranded wilds/rod | 1.27 | 1.26 | wash |
+| Score médio (avg) | 1600 | 1600 | 0 (esperado em sim simétrico) |
+
+Bot fecha rodadas mais rápido e pega o morto com mais frequência. Sem regressões mensuráveis.
 
 ---
 
