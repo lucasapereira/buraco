@@ -238,15 +238,16 @@ export const useStatsStore = create<StatsState & StatsActions>()(
           }
 
           // Histórico das últimas 10 partidas
+          // Omite chaves undefined — Firebase Realtime DB rejeita `undefined`.
           const newMatch: RecentMatch = {
             ts: Date.now(),
             mode: data.isOnline ? 'online' : 'bot',
             won: data.matchWon,
             myScore: data.myMatchScore,
             theirScore: data.theirMatchScore,
-            partnerName: data.partnerName,
-            opponentNames: data.opponentNames,
-            ratingDelta: data.isOnline ? ratingDelta : undefined,
+            ...(data.partnerName ? { partnerName: data.partnerName } : {}),
+            ...(data.opponentNames ? { opponentNames: data.opponentNames } : {}),
+            ...(data.isOnline ? { ratingDelta } : {}),
           };
           recentMatches = [newMatch, ...s.recentMatches].slice(0, 10);
         }

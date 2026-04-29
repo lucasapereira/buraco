@@ -208,7 +208,8 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
           const now = Date.now();
           const joinedAt = get().joinedAt ?? now;
           const profile = snapshotStatsForFirebase(uid, display, lower, joinedAt, null);
-          await dbSet(ref(db, `users/${uid}`), profile);
+          // JSON round-trip remove undefined (Firebase rejeita)
+          await dbSet(ref(db, `users/${uid}`), JSON.parse(JSON.stringify(profile)));
 
           set({
             myUid: uid,

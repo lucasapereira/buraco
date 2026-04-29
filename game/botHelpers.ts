@@ -346,6 +346,46 @@ export function chooseBestDiscard(
   return scored[0].card;
 }
 
+/**
+ * Estratégia de descarte "envenenadora" — simula o que um humano experiente faz
+ * quando percebe que o oponente tá pegando muito lixo. Prioriza descartar cartas:
+ *   - de pontos baixos (3-7 = 5 pts cada)
+ *   - sem conexão com a própria mão (cardUtility baixa)
+ *   - sem conexão com jogos VISÍVEIS do oponente (opponentDangerScore baixo)
+ *
+ * Diferença vs chooseBestDiscard normal: pesos MUITO mais altos em danger e utility,
+ * de forma que mesmo perdendo uma carta "boa em pontos" mas perigosa, prefere
+ * descartar uma carta morta de 5 pts. Usado SÓ no sim, pra modelar humano adversário.
+ */
+export function chooseBestDiscardPoison(
+  hand: Card[],
+  gameMode: GameMode,
+  teamGames: Card[][],
+  pileTopId: string | null,
+  opponentGames: Card[][],
+  lastDrawnCardId: string | null = null
+): Card {
+  let nonJokers = hand.filter(c => !c.isJoker);
+  if (nonJokers.length === 0) return hand[0]; // forçado a descartar coringa
+  if (lastDrawnCardId && nonJokers.length > 1) {
+    nonJokers = nonJokers.filter(c => c.id !== lastDrawnCardId);
+  }
+  if (pileTopId && nonJokers.length > 1) {
+    nonJokers = nonJokers.filter(c => c.id !== pileTopId);
+  }
+
+  const scored = nonJokers.map(c => {
+    const points = getCardPoints(c);
+    const util = cardUtility(c, hand, gameMode, teamGames);
+    const danger = opponentDangerScore(c, opponentGames, gameMode);
+    // Pesos: danger é o mais importante (humano evita ALIMENTAR oponente),
+    // depois utility própria, depois pontos. Carta envenenada ideal: 3-7 desconectado.
+    return { card: c, score: points + util * 0.7 + danger * 2.5 };
+  });
+  scored.sort((a, b) => a.score - b.score);
+  return scored[0].card;
+}
+
 /** Decisão heurística de pegar o lixo (baseline — conta "cartas úteis"). */
 export function shouldTakePile(
   pile: Card[], hand: Card[], difficulty: BotDifficulty, teamGames: Card[][] = [], gameMode: GameMode = 'classic'
@@ -649,7 +689,12 @@ export function chooseBestDiscardSmart(
  * só substitui a decisão final "pega ou não" pela comparação de valores.
  */
 export function shouldTakePileSmart(
-  pile: Card[], hand: Card[], difficulty: BotDifficulty, teamGames: Card[][] = [], gameMode: GameMode = 'classic'
+  pile: Card[],
+  hand: Card[],
+  difficulty: BotDifficulty,
+  teamGames: Card[][] = [],
+  gameMode: GameMode = 'classic',
+  aggressiveness: number = 1.0
 ): boolean {
   if (pile.length === 0) return false;
 
@@ -690,7 +735,9 @@ export function shouldTakePileSmart(
   // Threshold calibrado para competir com a heurística atual:
   // - pilhas grandes (5+ cartas): basta ganho modesto (30), pois a massa de cartas tem valor
   // - pilhas pequenas (1-2 cartas): exige ganho significativo (80+) para compensar handicap
-  const threshold = Math.max(20, 90 - pileSize * 12);
+  // aggressiveness > 1 = pega lixo mais facilmente (threshold reduzido). Default 1.0.
+  const baseThreshold = Math.max(20, 90 - pileSize * 12);
+  const threshold = baseThreshold / aggressiveness;
 
   return delta >= threshold;
 }

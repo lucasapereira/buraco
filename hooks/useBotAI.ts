@@ -17,6 +17,25 @@ import { useGameStore } from '../store/gameStore';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
+// Aggressiveness no pile-take por jogador. Threshold do shouldTakePileSmart é
+// dividido por esse valor — maior = bot pega lixo com mais facilidade.
+// Validado no scripts/botSim.ts (n=4500, 8 variantes): especialização "só bot-3
+// agressivo" (1.0/1.7) é robusta contra humano envenenando lixo (54% win T2),
+// equivalente ao simétrico 1.5/1.5 (55%) com a metade da agressão. Variante
+// 1.3/1.7 (assimetria moderada) PIORA sob poison (51%) — bot-1 fica preso com
+// lixos pisados sem leverage suficiente. Bot-2 (parceiro do user) mantido em
+// 1.0 pra não roubar lixo do humano (UX).
+//
+// IMPORTANTE: aplicado APENAS no modo offline (single-player). Em multiplayer
+// online, todos os bots/AFK-takeovers usam 1.0 — fair entre os jogadores
+// humanos sentados em qualquer "cadeira" da mesa.
+const PILE_AGGRESSIVENESS_OFFLINE: Record<PlayerId, number> = {
+  'user': 1.0,
+  'bot-1': 1.0,
+  'bot-2': 1.0,
+  'bot-3': 1.7,
+};
+
 
 // ──────────────────────────────────────
 // HOOK PRINCIPAL
@@ -88,9 +107,15 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     // Verifica a cada 2 segundos o status da mesa
     const watchdog = setInterval(checkStuckBot, 2000);
 
-    // Quando o app volta do background, verifica imediatamente
+    // Quando o app volta do background, reseta o timer de AFK — tempo parado em
+    // background não deve contar como AFK do humano, senão o host ao voltar
+    // dispara takeover em cima de estado local desatualizado (antes do Firebase
+    // sincronizar) e gera desync entre os devices.
     const appStateListener = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
+        lastActionTimeRef.current = Date.now();
+        // Ainda dispara o check imediato para bots travados (não afeta humanos,
+        // já que o reset acima zerou a janela de 30s de AFK).
         setTimeout(checkStuckBot, 500);
       }
     });
@@ -126,7 +151,8 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         if (!freshBot) return;
         const pile = fresh.pile;
         const teamGames = fresh.teams[freshBot.teamId].games;
-        const takePile = shouldTakePileSmart(pile, freshBot.hand, difficulty, teamGames, fresh.gameMode);
+        const aggressiveness = options.isOnline ? 1.0 : (PILE_AGGRESSIVENESS_OFFLINE[botId] ?? 1.0);
+        const takePile = shouldTakePileSmart(pile, freshBot.hand, difficulty, teamGames, fresh.gameMode, aggressiveness);
 
         animate(); // Animação de compra
         if (takePile) {

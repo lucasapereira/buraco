@@ -20,6 +20,7 @@ import {
   findBestSequences,
   chooseBestDiscard,
   chooseBestDiscardSmart,
+  chooseBestDiscardPoison,
   canTeamBater,
   wouldDirtyGame,
   canCleanCandidateGrow,
@@ -28,6 +29,9 @@ import {
 
 // ─── Config ───────────────────────────────────────────────
 const N_GAMES = 500;
+// (deixei SMART_PILE: false acima, mas em produção a heurística smart já é
+// padrão. Pra testar uma feature nova, ative SMART_PILE em ambos pra refletir
+// o estado real e isolar o efeito da feature em teste.)
 const TARGET_SCORE = 1500;
 const GAME_MODE: GameMode = 'classic';
 const MAX_RESHUFFLES = 99; // sem cap prático, como a engine real
@@ -36,8 +40,8 @@ const MAX_RESHUFFLES = 99; // sem cap prático, como a engine real
 // SMART_PILE  = item #2 (shouldTakePileSmart, lookahead 1-ply ao pegar lixo)
 // SMART_DISCARD = item #1 (chooseBestDiscardSmart, modelo de oponente por jogador)
 const TEAM_SMART_PILE: Record<TeamId, boolean> = {
-  'team-1': false,
-  'team-2': false,
+  'team-1': true,
+  'team-2': true,
 };
 const TEAM_SMART_DISCARD: Record<TeamId, boolean> = {
   'team-1': false,
@@ -53,6 +57,26 @@ const TEAM_SMART_WILD: Record<TeamId, boolean> = {
 const TEAM_SMART_CLOSE: Record<TeamId, boolean> = {
   'team-1': false,
   'team-2': false,
+};
+
+// Aggressiveness no pile-take por jogador. Threshold do shouldTakePileSmart é
+// dividido por esse valor — maior = pega lixo com mais facilidade.
+// Variantes pra testar especialização de papel dentro de uma dupla:
+//  - baseline (todos 1.0): controle
+//  - specialized (bot-3=1.7, bot-1=1.0): bot-3 agressivo, bot-1 conservador
+//  - both-aggressive (bot-3=1.7, bot-1=1.7): controle pra isolar especialização
+const PILE_AGGRESSIVENESS: Record<PlayerId, number> = {
+  'user': 1.0,
+  'bot-1': 1.3,
+  'bot-2': 1.0,
+  'bot-3': 1.7,
+};
+
+const USES_POISON_DISCARD: Record<PlayerId, boolean> = {
+  'user': true,
+  'bot-1': false,
+  'bot-2': false,
+  'bot-3': false,
 };
 
 // ─── Inicialização ────────────────────────────────────────
@@ -226,6 +250,14 @@ function resetPerPlayerHistories(): void {
   }
 }
 
+// Stats de pile-take por jogador (acumulado no run inteiro)
+const pileTakeStats: Record<PlayerId, { taken: number; cardsAbsorbed: number }> = {
+  'user': { taken: 0, cardsAbsorbed: 0 },
+  'bot-1': { taken: 0, cardsAbsorbed: 0 },
+  'bot-2': { taken: 0, cardsAbsorbed: 0 },
+  'bot-3': { taken: 0, cardsAbsorbed: 0 },
+};
+
 // ─── Discriminador de item #1 ─────────────────────────────
 // Conta quantas vezes chooseBestDiscardSmart escolhe carta DIFERENTE de chooseBestDiscard
 // no mesmo estado de mão/histórico. Ativo quando um dos times tem TEAM_SMART_DISCARD=true.
@@ -279,6 +311,8 @@ function drawFromPile(s: GameState, playerId: PlayerId): boolean {
     if (!canTakePile(p.hand, s.pile, teamGames, s.gameMode)) return false;
   }
   const topCard = s.pile[s.pile.length - 1];
+  pileTakeStats[playerId].taken += 1;
+  pileTakeStats[playerId].cardsAbsorbed += s.pile.length;
   perPlayerPickedUp[playerId].push(...s.pile);
   updatePlayerHand(s, playerId, [...p.hand, ...s.pile]);
   s.pile = [];
@@ -379,8 +413,11 @@ function chooseTakePile(s: GameState, playerId: PlayerId): boolean {
   const p = playerOf(s, playerId);
   const team = teamOf(s, playerId);
   const useSmart = TEAM_SMART_PILE[team.id];
-  const fn = useSmart ? shouldTakePileSmart : shouldTakePile;
-  return fn(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode);
+  if (useSmart) {
+    const aggr = PILE_AGGRESSIVENESS[playerId] ?? 1.0;
+    return shouldTakePileSmart(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode, aggr);
+  }
+  return shouldTakePile(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode);
 }
 
 /** Tenta jogar uma meld contendo o pileTopId (obrigatório após pegar lixo clássico). */
@@ -622,8 +659,11 @@ function runBotTurn(s: GameState, playerId: PlayerId): void {
     const oppIds = s.players.filter(pl => pl.teamId === oppTeamId).map(pl => pl.id);
     const tookPile = opponentRecentlyTookPile(s.gameLog as any, oppIds);
     const useSmartDiscard = TEAM_SMART_DISCARD[team.id];
+    const usePoison = USES_POISON_DISCARD[playerId];
     let card: Card;
-    if (useSmartDiscard) {
+    if (usePoison) {
+      card = chooseBestDiscardPoison(p.hand, s.gameMode, team.games, null, oppGames, s.lastDrawnCardId);
+    } else if (useSmartDiscard) {
       const oppPickedUp: Record<string, Card[]> = {};
       const oppDiscarded: Record<string, Card[]> = {};
       for (const oid of oppIds) {
@@ -902,6 +942,16 @@ function main() {
       const parts = sizes.map(sz => `${sz}→${sz + 1}:${sizeHisto[sz]}`).join(' ');
       console.log(`  add-at sizes:        ${parts}`);
     }
+  }
+
+  // ─── Stats de pile-take por jogador ─────────────────────────────
+  console.log(`\n─── PILE TAKES (por jogador, total no run) ─────────────`);
+  for (const pid of ['user', 'bot-1', 'bot-2', 'bot-3'] as PlayerId[]) {
+    const st = pileTakeStats[pid];
+    const aggr = PILE_AGGRESSIVENESS[pid];
+    const avgSize = st.taken > 0 ? (st.cardsAbsorbed / st.taken).toFixed(1) : '-';
+    const perRound = (st.taken / totalRounds).toFixed(2);
+    console.log(`${pid} (aggr=${aggr}): pegou lixo ${st.taken}x  (${perRound}/rod)  cards absorvidos=${st.cardsAbsorbed}  avg pile size=${avgSize}`);
   }
 
   // ─── Discriminador item #1 ─────────────────────────────
