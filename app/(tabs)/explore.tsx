@@ -168,8 +168,23 @@ export default function GameScreen() {
   }, [currentTurnPlayerId, lastEventId]);
 
   // ── Modo Online ────────────────────────────────────────────────────────────
-  const { mySeat, roomStatus, seats, taunts, sendTaunt } = useOnlineStore();
+  const { mySeat, roomStatus, seats, taunts, sendTaunt, roomHostLastSeen } = useOnlineStore();
   const isOnlineMode = roomStatus === 'playing';
+
+  // Staleness do host: re-renderiza a cada 5s pra atualizar o banner
+  // "host parece offline há Xs" sem precisar de nova ação no jogo.
+  const [stalenessTick, setStalenessTick] = useState(0);
+  useEffect(() => {
+    if (!isOnlineMode || mySeat === 0) return; // só guests precisam disso
+    const id = setInterval(() => setStalenessTick(t => t + 1), 5000);
+    return () => clearInterval(id);
+  }, [isOnlineMode, mySeat]);
+  const hostStaleSeconds = (() => {
+    if (!isOnlineMode || mySeat === 0 || roomHostLastSeen == null) return 0;
+    void stalenessTick; // dependência implícita pro re-render
+    return Math.max(0, Math.floor((Date.now() - roomHostLastSeen) / 1000));
+  })();
+  const showHostOfflineBanner = isOnlineMode && mySeat !== 0 && hostStaleSeconds > 60;
   const [tauntPickerOpen, setTauntPickerOpen] = useState(false);
   // Em modo offline sempre sou 'user' (seat 0); online, uso o assento atribuído
   const myPlayerId = isOnlineMode && mySeat !== null ? SEAT_PLAYER_IDS[mySeat] : 'user';
@@ -1406,6 +1421,28 @@ export default function GameScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Banner não-bloqueante: host parece offline (heartbeat > 60s).
+          NÃO mata a sala — só dá opção de sair pro guest. Some sozinho
+          quando o host volta e o heartbeat atualiza. */}
+      {showHostOfflineBanner && (
+        <View style={styles.hostOfflineBanner} pointerEvents="box-none">
+          <View style={styles.hostOfflineBox} pointerEvents="auto">
+            <Text style={styles.hostOfflineTitle}>
+              ⚠️ Host parece offline há {hostStaleSeconds < 120 ? `${hostStaleSeconds}s` : `${Math.floor(hostStaleSeconds / 60)}min`}
+            </Text>
+            <Text style={styles.hostOfflineMsg}>
+              A partida fica esperando o host voltar. Você pode sair quando quiser.
+            </Text>
+            <TouchableOpacity style={styles.hostOfflineBtn} onPress={async () => {
+              await useOnlineStore.getState().leaveRoom();
+              router.replace('/(tabs)' as any);
+            }}>
+              <Text style={styles.hostOfflineBtnText}>Sair da partida</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
     </ScreenBackground>
   );
@@ -1917,6 +1954,27 @@ const styles = StyleSheet.create({
   },
   modalBtnText: { color: GameColors.text.onGold, fontWeight: '900', fontSize: 20, letterSpacing: 1 },
   modalWaiting: { color: GameColors.text.muted, fontSize: 16, textAlign: 'center', marginTop: 8 },
+
+  // Banner não-bloqueante: host parece offline (mas sala ainda viva)
+  hostOfflineBanner: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'flex-start', alignItems: 'center',
+    paddingTop: 80,
+  },
+  hostOfflineBox: {
+    backgroundColor: GameColors.bg.surfaceSoft,
+    borderRadius: Radius.lg, padding: 16,
+    width: '90%', maxWidth: 480, alignItems: 'center',
+    borderWidth: 2, borderColor: '#FFA000',
+    ...Elevation.modal,
+  },
+  hostOfflineTitle: { color: '#FFA000', fontSize: 17, fontWeight: '900', textAlign: 'center', marginBottom: 6 },
+  hostOfflineMsg: { color: GameColors.text.secondary, fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  hostOfflineBtn: {
+    backgroundColor: '#FFA000', paddingHorizontal: 22, paddingVertical: 10,
+    borderRadius: Radius.pill,
+  },
+  hostOfflineBtnText: { color: '#1B1B1B', fontWeight: '900', fontSize: 15, letterSpacing: 0.5 },
 
   undoButtonText: {
     color: GameColors.gold,

@@ -11,7 +11,7 @@
  */
 
 import { auth, db } from '../config/firebase';
-import { onValue, ref, set as dbSet } from 'firebase/database';
+import { onValue, ref, set as dbSet, update } from 'firebase/database';
 import { useEffect, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useOnlineStore, SEAT_PLAYER_IDS } from '../store/onlineStore';
@@ -82,7 +82,7 @@ export function useOnlineSync() {
     const unsubMeta = onValue(metaRef, (snapshot) => {
       const meta = snapshot.val();
       if (!meta) return;
-      const { applyRoomSnapshot, roomMode, roomTarget, seats: currentSeats } = useOnlineStore.getState();
+      const { applyRoomSnapshot, applyHostHeartbeat, roomMode, roomTarget, seats: currentSeats } = useOnlineStore.getState();
       if (meta.status !== useOnlineStore.getState().roomStatus) {
         applyRoomSnapshot({
           status: meta.status,
@@ -90,6 +90,9 @@ export function useOnlineSync() {
           mode: meta.mode ?? roomMode,
           target: meta.targetScore ?? roomTarget,
         });
+      }
+      if (typeof meta.hostLastSeen === 'number') {
+        applyHostHeartbeat(meta.hostLastSeen);
       }
     });
 
@@ -178,8 +181,28 @@ export function useOnlineSync() {
       dbSet(ref(db, `rooms/${roomCode}/gameState`), payload)
         .then(() => console.log('[sync] push OK', lastEvent.type))
         .catch(err => console.warn('[sync] push FAIL', err?.code, err?.message, 'auth=', auth.currentUser?.uid ?? 'NULL'));
+      // Heartbeat piggyback: a cada ação local, host atualiza meta/hostLastSeen
+      // pros guests saberem que tá vivo. Guests não escrevem (dispatch raro,
+      // ruído baixo).
+      if (isHost) {
+        update(ref(db, `rooms/${roomCode}/meta`), { hostLastSeen: Date.now() }).catch(() => {});
+      }
     });
 
     return () => unsubscribe();
   }, [isOnline, roomCode, myPlayerIds.join(',')]);
+
+  // ── 4. Heartbeat ocioso do host ─────────────────────────────────────────
+  // Mesmo sem ação no jogo (esperando jogada de outro), o host pulsa pra que
+  // guests saibam que ele tá presente. Guests checam staleness via banner em
+  // explore.tsx (ver useStalenessTick + roomHostLastSeen).
+  useEffect(() => {
+    if (!isOnline || !roomCode || !isHost) return;
+    const tick = () => {
+      update(ref(db, `rooms/${roomCode}/meta`), { hostLastSeen: Date.now() }).catch(() => {});
+    };
+    tick(); // bate logo na entrada — fecha buraco entre startGame e o 1º interval
+    const id = setInterval(tick, 15000);
+    return () => clearInterval(id);
+  }, [isOnline, roomCode, isHost]);
 }

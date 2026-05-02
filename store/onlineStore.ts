@@ -82,6 +82,11 @@ interface OnlineState {
   // Malhação (zoeira) — 1 mensagem ativa por assento, auto-expira em 4s
   taunts: Record<number, TauntEntry | undefined>;
 
+  // Heartbeat do host — última vez que o host escreveu pra Firebase (ms epoch).
+  // Atualizado pelo próprio host a cada ação + a cada 15s ocioso. Guests usam
+  // staleness > 60s pra mostrar banner "host parece offline" sem matar a sala.
+  roomHostLastSeen: number | null;
+
   error: string | null;
   isLoading: boolean;
 }
@@ -122,6 +127,9 @@ interface OnlineActions {
   sendTaunt: (msg: string) => Promise<void>;
   applyTauntsSnapshot: (taunts: Record<number, TauntEntry | undefined>) => void;
 
+  // Heartbeat — chamado pelo hook ao receber meta/hostLastSeen do Firebase
+  applyHostHeartbeat: (lastSeen: number | null) => void;
+
   resetRoom: () => void;
 }
 
@@ -132,6 +140,7 @@ const ROOM_DEFAULTS = {
   mySeat: null,
   seats: [null, null, null, null],
   taunts: {} as Record<number, TauntEntry | undefined>,
+  roomHostLastSeen: null,
   error: null,
   isLoading: false,
 };
@@ -352,9 +361,11 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           updates[`seats/${mySeat}`] = null;
           updates[`seats/${targetSeatIdx}`] = { uid, name: displayName || 'Jogador' };
           await update(ref(db, `rooms/${roomCode}`), updates);
-          // Realoca o auto-remove no disconnect pro novo seat
+          // NÃO setamos onDisconnect pro novo seat — Firebase detecta disconnect
+          // muito agressivo (ir pro WhatsApp 5s já dispara), e o jogador perdia
+          // o lugar. Cancelamos qualquer onDisconnect remanescente do seat antigo.
           onDisconnect(ref(db, `rooms/${roomCode}/seats/${mySeat}`)).cancel().catch(() => {});
-          onDisconnect(ref(db, `rooms/${roomCode}/seats/${targetSeatIdx}`)).set(null).catch(() => {});
+          onDisconnect(ref(db, `rooms/${roomCode}/seats/${targetSeatIdx}`)).cancel().catch(() => {});
           set({ mySeat: targetSeatIdx, error: null });
         } catch (e: any) {
           set({ error: 'Erro ao trocar de assento: ' + e?.message });
@@ -369,15 +380,19 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           const cleanState = JSON.parse(JSON.stringify({ ...initialGameState, _writerUid: uid }));
           await update(ref(db, `rooms/${roomCode}`), {
             'meta/status': 'playing',
+            'meta/hostLastSeen': Date.now(),
             gameState: cleanState,
           });
-          // Game começou: substitui o auto-remove por um auto-marca-abandonado.
-          // Se o host perder conexão ou fechar o app, os guests recebem o flag
-          // e podem sair sem ficar travados.
+          // NÃO usamos onDisconnect pra marcar 'abandoned' — o Firebase detecta
+          // disconnect agressivo (host abre WhatsApp por 5s e a sala morre,
+          // quebrando a partida pra todos). Em vez disso, host escreve
+          // meta/hostLastSeen periodicamente (useOnlineSync); guests checam
+          // staleness > 60s e mostram banner "host offline, sair?" sem
+          // forçar abandono. leaveRoom explícito ainda marca abandoned.
           onDisconnect(ref(db, `rooms/${roomCode}`)).cancel().catch(() => {});
-          onDisconnect(ref(db, `rooms/${roomCode}/meta/status`)).set('abandoned').catch(() => {});
+          onDisconnect(ref(db, `rooms/${roomCode}/meta/status`)).cancel().catch(() => {});
           remove(ref(db, `publicRooms/${roomCode}`)).catch(() => {});
-          set({ roomStatus: 'playing' });
+          set({ roomStatus: 'playing', roomHostLastSeen: Date.now() });
         } catch (e: any) {
           set({ error: e.message ?? 'Erro ao iniciar jogo' });
         }
@@ -451,6 +466,15 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
 
       applyTauntsSnapshot: (taunts) => {
         set({ taunts });
+      },
+
+      applyHostHeartbeat: (lastSeen) => {
+        // Só atualiza se o novo timestamp for mais recente — evita rollback
+        // se um snapshot atrasado chegar do Firebase.
+        const cur = get().roomHostLastSeen;
+        if (lastSeen == null) return;
+        if (cur != null && lastSeen <= cur) return;
+        set({ roomHostLastSeen: lastSeen });
       },
 
       resetRoom: () => set(ROOM_DEFAULTS),
