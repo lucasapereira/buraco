@@ -45,3 +45,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# release build artifacts (APKs/AABs muito grandes pro git)
+/builds

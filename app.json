@@ -2,7 +2,7 @@
   "expo": {
     "name": "Queti's Buraco",
     "slug": "buraco",
-    "version": "1.47.0",
+    "version": "1.48.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "buraco",
@@ -17,7 +17,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.lucasapereira.buraco",
-      "versionCode": 47
+      "versionCode": 48
     },
     "web": {
       "output": "static",
