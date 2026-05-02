@@ -570,6 +570,11 @@ export const useGameStore = create<GameState & GameActions>()(
       let hasAtLeastOneEscape = false;
 
       // Testa melds de 2 cartas da mão + topCard (mínimo de 3)
+      // Pegar morto exige AMBOS: time não pegou ainda (!hasGottenDead) E morto disponível (hasDead).
+      // Antes era OR — falsamente liberava take quando deads=0 mas team-1 não tinha pego morto
+      // (team-2 tinha pego os dois, ou state corrompido). Espelha wouldStrandPlayer (linha 155).
+      const canStillGetDead = hasDead && !hasGottenDead;
+
       for (let i = 0; i < handWithoutTop.length && !hasAtLeastOneEscape; i++) {
         for (let j = i + 1; j < handWithoutTop.length && !hasAtLeastOneEscape; j++) {
           const meld = [topCard, handWithoutTop[i], handWithoutTop[j]];
@@ -577,7 +582,7 @@ export const useGameStore = create<GameState & GameActions>()(
             const remaining = futureHand.filter(c => !meld.some(m => m.id === c.id));
             // "escape" = sobram 2+ cartas (pelo menos 1 para jogar depois + 1 para descartar)
             // ou pode pegar morto, ou tem canastra
-            if (remaining.length >= 2 || hasDead || !hasGottenDead) {
+            if (remaining.length >= 2 || canStillGetDead) {
               hasAtLeastOneEscape = true;
             } else if (remaining.length === 1) {
               // Ficaria com 1 carta p/ descartar e bater: só ok se tiver canastra limpa
@@ -594,7 +599,7 @@ export const useGameStore = create<GameState & GameActions>()(
             const combined = [...game, topCard, handWithoutTop[i]];
             if (validateSequence(combined, state.gameMode)) {
               const remaining = futureHand.filter(c => c.id !== topCard.id && c.id !== handWithoutTop[i].id);
-              if (remaining.length >= 2 || hasDead || !hasGottenDead || teamHasCleanCanasta(state, player.teamId)) {
+              if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId)) {
                 hasAtLeastOneEscape = true;
               }
             }
@@ -603,7 +608,7 @@ export const useGameStore = create<GameState & GameActions>()(
             const combined = [...game, topCard];
             if (validateSequence(combined, state.gameMode)) {
               const remaining = futureHand.filter(c => c.id !== topCard.id);
-              if (remaining.length >= 2 || hasDead || !hasGottenDead || teamHasCleanCanasta(state, player.teamId)) {
+              if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId)) {
                 hasAtLeastOneEscape = true;
               }
             }

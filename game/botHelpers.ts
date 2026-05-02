@@ -516,7 +516,7 @@ export function shouldTakePile(
  * - Pontos de sequências NOVAS que podem ser baixadas da mão
  * - Bônus agressivo por proximidade de canastra (6 cartas → +200 se for virar limpa, +100 suja)
  */
-function canastaBonusValue(game: Card[]): number {
+export function canastaBonusValue(game: Card[]): number {
   const ct = checkCanasta(game);
   if (ct === 'none') return 0;
   if (ct === 'dirty') return 100;

@@ -11,6 +11,7 @@ import {
   chooseBestDiscard,
   opponentRecentlyTookPile,
   shouldTakePileSmart,
+  canastaBonusValue,
 } from '../game/botHelpers';
 import { useGameStore } from '../store/gameStore';
 
@@ -258,6 +259,14 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     if (!topCard) return;
 
     const teamGames = s.teams[bot.teamId].games;
+    // Pre-computa delta de bônus de canastra que o topCard provoca em cada jogo.
+    // Ex.: 7♣ entrando em [3,4,5,6, 2♣(wild), 8,9] desloca o coringa para a posição
+    // natural do "2", subindo a canastra de suja (+100) → limpa (+200): delta = +100.
+    // Só conta se a adição for válida — caso contrário, delta = 0 (sort cai pros tiebreakers).
+    const topCardDelta = teamGames.map(g => {
+      if (!validateSequence([...g, topCard], s.gameMode)) return 0;
+      return canastaBonusValue([...g, topCard]) - canastaBonusValue(g);
+    });
     // Ordena jogos: naipe natural do topo primeiro (2♦ prefere jogo de ouros), canastras limpas por último.
     const sortedGameIndices = Array.from({ length: teamGames.length }, (_, i) => i).sort((a, b) => {
       const aGame = teamGames[a];
@@ -270,7 +279,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         const bMatch = bNormal.length > 0 && bNormal[0].suit === topCard.suit ? 1 : 0;
         if (aMatch !== bMatch) return bMatch - aMatch;
       }
-      // Prioridade 2: canastras limpas por último (para não sujá-las desnecessariamente)
+      // Prioridade 2: jogo onde o topo provoca o MAIOR upgrade de canastra (suja→limpa, fechamento)
+      if (topCardDelta[a] !== topCardDelta[b]) return topCardDelta[b] - topCardDelta[a];
+      // Prioridade 3: canastras limpas por último (para não sujá-las desnecessariamente)
       const aCleanCanasta = checkCanasta(aGame) === 'clean' ? 1 : 0;
       const bCleanCanasta = checkCanasta(bGame) === 'clean' ? 1 : 0;
       return aCleanCanasta - bCleanCanasta;
@@ -571,6 +582,22 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     // Prioriza jogos perto de canastra (mais cartas = mais urgente para completar)
     // IMPORTANTE: jogos LIMPOS antes de sujos — canastra limpa (+200) > suja (+100)
     const jokerSuits = new Set(bot.hand.filter(c => c.isJoker && c.suit !== 'joker').map(c => c.suit));
+    // Para cada jogo, calcula o MAIOR delta de bônus de canastra alcançável adicionando
+    // qualquer carta natural (não-coringa) da mão. Captura oportunidades de "limpar"
+    // canastra suja (coringa cai na posição 2 natural quando o naipe se completa) que
+    // a sort baseada só em tamanho/limpo não enxergava.
+    const gameUpgradeDelta = teamGames.map(g => {
+      const base = canastaBonusValue(g);
+      let maxDelta = 0;
+      for (const c of bot.hand) {
+        if (c.isJoker) continue; // coringa nunca limpa; só naturais provocam upgrade
+        if (validateSequence([...g, c], s.gameMode)) {
+          const delta = canastaBonusValue([...g, c]) - base;
+          if (delta > maxDelta) maxDelta = delta;
+        }
+      }
+      return maxDelta;
+    });
     const sortedIndices = Array.from({ length: teamGames.length }, (_, i) => i).sort((a, b) => {
       const aLen = teamGames[a].length;
       const bLen = teamGames[b].length;
@@ -580,7 +607,11 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const aClosingClean = (aLen === 6 && aClean) ? 1 : 0;
       const bClosingClean = (bLen === 6 && bClean) ? 1 : 0;
       if (aClosingClean !== bClosingClean) return bClosingClean - aClosingClean;
-      // Prioridade 2: jogo de 6 cartas (sujo) → fechar canastra suja (+100)
+      // Prioridade 2: jogo onde alguma carta da mão provoca upgrade de canastra
+      // (suja→limpa, fechamento, 13/14 cartas). Vem ANTES de "fechar canastra suja"
+      // porque limpar uma canastra suja vale mais (+100 de bônus) que estendê-la sem upgrade.
+      if (gameUpgradeDelta[a] !== gameUpgradeDelta[b]) return gameUpgradeDelta[b] - gameUpgradeDelta[a];
+      // Prioridade 3: jogo de 6 cartas (sujo) → fechar canastra suja (+100)
       const aClosing = aLen === 6 ? 1 : 0;
       const bClosing = bLen === 6 ? 1 : 0;
       if (aClosing !== bClosing) return bClosing - aClosing;

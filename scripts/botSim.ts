@@ -25,6 +25,7 @@ import {
   wouldDirtyGame,
   canCleanCandidateGrow,
   opponentRecentlyTookPile,
+  canastaBonusValue,
 } from '../game/botHelpers';
 
 // ─── Config ───────────────────────────────────────────────
@@ -427,7 +428,13 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string): v
   const topCard = p.hand.find(c => c.id === pileTopId);
   if (!topCard) { s.mustPlayPileTopId = null; return; }
 
+  const topCardDelta = team.games.map(g => {
+    if (!validateSequence([...g, topCard], s.gameMode)) return 0;
+    return canastaBonusValue([...g, topCard]) - canastaBonusValue(g);
+  });
   const gameIndices = team.games.map((_, i) => i).sort((a, b) => {
+    // Maior upgrade de canastra primeiro (limpar suja, fechar canastra, 13/14 cartas)
+    if (topCardDelta[a] !== topCardDelta[b]) return topCardDelta[b] - topCardDelta[a];
     const aClean = checkCanasta(team.games[a]) === 'clean' ? 1 : 0;
     const bClean = checkCanasta(team.games[b]) === 'clean' ? 1 : 0;
     return aClean - bClean; // limpas por último
@@ -539,6 +546,18 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
   const team = teamOf(s, playerId);
   const p = playerOf(s, playerId);
   const jokerSuits = new Set(p.hand.filter(c => c.isJoker && c.suit !== 'joker').map(c => c.suit));
+  const gameUpgradeDelta = team.games.map(g => {
+    const base = canastaBonusValue(g);
+    let maxDelta = 0;
+    for (const c of p.hand) {
+      if (c.isJoker) continue;
+      if (validateSequence([...g, c], s.gameMode)) {
+        const delta = canastaBonusValue([...g, c]) - base;
+        if (delta > maxDelta) maxDelta = delta;
+      }
+    }
+    return maxDelta;
+  });
   const sortedIndices = team.games.map((_, i) => i).sort((a, b) => {
     const aLen = team.games[a].length;
     const bLen = team.games[b].length;
@@ -547,6 +566,7 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
     const aClosingClean = (aLen === 6 && aClean) ? 1 : 0;
     const bClosingClean = (bLen === 6 && bClean) ? 1 : 0;
     if (aClosingClean !== bClosingClean) return bClosingClean - aClosingClean;
+    if (gameUpgradeDelta[a] !== gameUpgradeDelta[b]) return gameUpgradeDelta[b] - gameUpgradeDelta[a];
     const aClosing = aLen === 6 ? 1 : 0;
     const bClosing = bLen === 6 ? 1 : 0;
     if (aClosing !== bClosing) return bClosing - aClosing;
