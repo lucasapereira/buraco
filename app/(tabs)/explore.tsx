@@ -148,7 +148,8 @@ export default function GameScreen() {
     startNewRound, startNewGame,
     gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode,
     animatingDiscard, animatingDrawPlayerId,
-    turnHistory, undoLastPlay
+    turnHistory, undoLastPlay,
+    roundStatsRecorded, markRoundStatsRecorded
   } = useGameStore();
 
   // Timer de AFK (30 segundos)
@@ -215,7 +216,6 @@ export default function GameScreen() {
   const router = useRouter();
   const { playSound } = useGameSounds();
   const { recordRound, newlyUnlocked, shiftNewlyUnlocked } = useStatsStore();
-  const roundRecorded = useRef(false);
   const prevSeatsRef = useRef(seats);
 
   // Sincronização Firebase ↔ gameStore (não faz nada em modo offline)
@@ -302,12 +302,11 @@ export default function GameScreen() {
 
   // ── Registrar estatísticas quando a rodada termina ──────────────────────
   useEffect(() => {
-    if (!roundOver) {
-      roundRecorded.current = false;
-      return;
-    }
-    if (roundRecorded.current) return;
-    roundRecorded.current = true;
+    if (!roundOver) return;
+    // Trava persistida: se a rodada já foi registrada (mesmo numa sessão
+    // anterior, antes de fechar o app), não reconta no ranking.
+    if (roundStatsRecorded) return;
+    markRoundStatsRecorded();
 
     // Canastas do meu time nesta rodada
     let cleanCanastas = 0, dirtyCanastas = 0, canastas500 = 0, canastas1000 = 0;
@@ -337,17 +336,21 @@ export default function GameScreen() {
         const oppSeats = [0, 1, 2, 3].filter(i => TEAM_OF_SEAT[i] === opTeamId);
         partnerName = myTeamSeats.length > 0 ? (seats[myTeamSeats[0]]?.name ?? undefined) : undefined;
         opponentNames = oppSeats.map(i => seats[i]?.name ?? `Adversário`);
-        // Média de rating dos adversários (humanos têm uid; bots não têm — usa default 1000)
-        const oppRatings: number[] = [];
-        for (const seatIdx of oppSeats) {
-          const seat = seats[seatIdx];
-          if (seat?.uid) {
+        // Média de rating dos adversários (humanos têm uid; bots não têm — usa default 1000).
+        // Limita a busca em 3s — se a rede tiver falhando no momento do fim de partida,
+        // o ELO fica aproximado mas o recordRound ainda dispara (senão o jogador perdia a vitória).
+        const fetchRating = async (seat: { uid?: string } | null): Promise<number> => {
+          if (!seat?.uid) return 1000;
+          try {
             const prof = await useProfileStore.getState().loadProfile(seat.uid);
-            oppRatings.push(prof?.onlineRating ?? 1000);
-          } else {
-            oppRatings.push(1000);
+            return prof?.onlineRating ?? 1000;
+          } catch (_) {
+            return 1000;
           }
-        }
+        };
+        const ratingsPromise = Promise.all(oppSeats.map(i => fetchRating(seats[i])));
+        const timeout = new Promise<number[]>(resolve => setTimeout(() => resolve([]), 3000));
+        const oppRatings = await Promise.race([ratingsPromise, timeout]);
         opponentTeamAvgRating = oppRatings.length > 0
           ? oppRatings.reduce((a, b) => a + b, 0) / oppRatings.length
           : 1000;
@@ -372,10 +375,69 @@ export default function GameScreen() {
         opponentNames,
         partnerName,
       });
+
+      // Online: tenta forçar um sync imediato pro Firebase pra fechar a janela
+      // entre recordRound e o debounce de 1s no profileStore (se o app for
+      // backgrounded nesse intervalo, o setTimeout não dispara confiável).
+      if (isOnlineMode && isMatchEnd) {
+        useProfileStore.getState().syncProfileToFirebase().catch(err => {
+          console.warn('[stats] sync online win failed:', err?.message);
+        });
+      }
     })();
   }, [roundOver]);
 
   useBotAI({ disabled: botAIDisabled, humanPlayerIds, isOnline: isOnlineMode });
+
+  // Desistência vs bot: se largar a partida perdendo por mais de 200 pontos
+  // (placar acumulado + jogos na mesa), conta como derrota. Online tem fluxo
+  // próprio de abandono (leaveRoom marca a sala como 'abandoned').
+  const handleSurrender = (action: 'restart' | 'leave') => {
+    const inProgress = (gameLog.length > 0 || players.some(p => p.hand.length !== 11)) && winnerTeamId === null;
+    const myTotal = matchScores[myTeamId] + calculateLiveScore(teams[myTeamId]);
+    const opTotal = matchScores[opTeamId] + calculateLiveScore(teams[opTeamId]);
+    const diff = myTotal - opTotal;
+    const wouldCountAsLoss = !isOnlineMode && inProgress && diff < -200;
+
+    const runAction = () => {
+      if (wouldCountAsLoss) {
+        recordRound({
+          matchEnded: true,
+          matchWon: false,
+          myRoundScore: 0,
+          myMatchScore: myTotal,
+          theirMatchScore: opTotal,
+          cleanCanastas: 0,
+          dirtyCanastas: 0,
+          canastas500: 0,
+          canastas1000: 0,
+          userBated: false,
+          isOnline: false,
+          opponentNames: players.filter(p => p.teamId === opTeamId).map(p => p.name),
+          partnerName: players.find(p => p.teamId === myTeamId && p.id !== myPlayerId)?.name,
+        });
+      }
+      if (action === 'restart') {
+        startNewGame(targetScore, gameMode);
+        setSelectedCards([]);
+      } else {
+        router.replace('/(tabs)' as any);
+      }
+    };
+
+    const title = action === 'restart' ? 'Reiniciar Partida' : 'Sair';
+    const msg = wouldCountAsLoss
+      ? `Você está perdendo por ${Math.abs(diff)} pontos. ${action === 'restart' ? 'Reiniciar' : 'Sair'} agora vai contar como DERROTA.`
+      : (action === 'restart' ? 'Tem certeza? O progresso atual será perdido.' : 'Deseja sair para o menu principal?');
+    const confirmLabel = wouldCountAsLoss
+      ? (action === 'restart' ? 'Reiniciar mesmo assim' : 'Sair mesmo assim')
+      : (action === 'restart' ? 'Reiniciar' : 'Sair');
+
+    showAlert(title, msg, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: confirmLabel, style: 'destructive', onPress: runAction },
+    ]);
+  };
 
   const isMyTurn = currentTurnPlayerId === myPlayerId;
 
@@ -1217,33 +1279,13 @@ export default function GameScreen() {
             <Text style={styles.menuTitle}>Menu</Text>
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                showAlert(
-                  'Reiniciar Partida',
-                  'Tem certeza? O progresso atual será perdido.',
-                  [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Reiniciar', style: 'destructive', onPress: () => { startNewGame(targetScore, gameMode); setSelectedCards([]); } },
-                  ]
-                );
-              }}
+              onPress={() => { setShowMenu(false); handleSurrender('restart'); }}
             >
               <Text style={styles.menuItemText}>🔄 Reiniciar Partida</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                showAlert(
-                  'Sair',
-                  'Deseja sair para o menu principal?',
-                  [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Sair', onPress: () => router.replace('/(tabs)' as any) },
-                  ]
-                );
-              }}
+              onPress={() => { setShowMenu(false); handleSurrender('leave'); }}
             >
               <Text style={styles.menuItemText}>🚪 Sair do Jogo</Text>
             </TouchableOpacity>

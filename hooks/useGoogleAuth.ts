@@ -120,6 +120,47 @@ export async function signOutGoogle() {
   } catch (_) {}
 }
 
+export type BootstrapResult = 'already' | 'google' | 'anon' | 'needs-relogin';
+
+/**
+ * Garante uma sessão Firebase no startup. Necessário porque reinstalar o app
+ * apaga o token de auth (guardado no AsyncStorage) — sem isso toda leitura do
+ * Firebase (ranking, perfis) cai em permission_denied.
+ *
+ * Ordem segura:
+ * 1. Já tem auth → nada a fazer.
+ * 2. Tenta restaurar o Google SEM interação (a conta dele já está no aparelho).
+ * 3. Sem Google e SEM perfil local → anon (usuário novo, sem risco).
+ * 4. Sem Google MAS com perfil local → NÃO cria anon (criaria uid novo e
+ *    orfanaria o perfil Google). Sinaliza que precisa relogar.
+ */
+export async function bootstrapAuth(): Promise<BootstrapResult> {
+  if (auth.currentUser) return 'already';
+
+  try {
+    ensureConfigured();
+    const res: any = await GoogleSignin.signInSilently();
+    const idToken: string | null = res?.data?.idToken ?? res?.idToken ?? null;
+    if (idToken) {
+      const credential = GoogleAuthProvider.credential(idToken);
+      const result = await signInWithCredential(auth, credential);
+      await hydrateFromRemoteProfile(result.user.uid);
+      return 'google';
+    }
+  } catch (_) {
+    // Sem credencial salva / não logado no Google no device → fallback abaixo.
+  }
+
+  const localUid = useProfileStore.getState().myUid;
+  if (!localUid) {
+    try {
+      await signInAnonymously(auth);
+      return 'anon';
+    } catch (_) {}
+  }
+  return 'needs-relogin';
+}
+
 /**
  * Desvincula Google: sai do Google, sai do Firebase, limpa profile local e volta
  * pra uma sessão anônima fresca. Os stats do perfil Google ficam salvos no

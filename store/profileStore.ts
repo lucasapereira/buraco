@@ -24,6 +24,12 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { auth, db } from '../config/firebase';
 import { useStatsStore, RecentMatch } from './statsStore';
 
+// Diagnóstico temporário (v1.51.1): última tentativa de carregar o ranking.
+// Exibido na tela de Ranking quando a lista vem vazia, pra distinguir
+// "sem auth" de "permission denied" de "sem dados" sem precisar de logcat.
+export let rankingDiag = 'ainda não carregou';
+export function getRankingDiag() { return rankingDiag; }
+
 const NAME_CHANGE_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface MonthlyChampion {
@@ -288,7 +294,10 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
 
       syncProfileToFirebase: async () => {
         const { myUid, myUsername, myUsernameLower, joinedAt, lastNameChangeAt } = get();
-        if (!myUid || !myUsername || !myUsernameLower) return;
+        if (!myUid || !myUsername || !myUsernameLower) {
+          console.log('[profile] sync skipped: missing uid/username', { hasUid: !!myUid, hasName: !!myUsername });
+          return;
+        }
         try {
           const profile = snapshotStatsForFirebase(
             myUid,
@@ -299,22 +308,31 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
           );
           // JSON round-trip remove undefined (Firebase rejeita)
           await dbSet(ref(db, `users/${myUid}`), JSON.parse(JSON.stringify(profile)));
-        } catch (_) {
-          // Falha silenciosa — próxima rodada tenta de novo
+        } catch (e: any) {
+          // Não bloqueia o jogo, mas loga pra diagnosticar (antes era catch silencioso
+          // e perdíamos vitórias online sem deixar rastro)
+          console.warn('[profile] sync FAIL', e?.code, e?.message, 'uid=', myUid);
         }
       },
 
       loadAllProfiles: async () => {
+        const u = auth.currentUser;
         try {
           const snap = await dbGet(ref(db, 'users'));
-          if (!snap.exists()) return [];
+          if (!snap.exists()) {
+            rankingDiag = `vazio: nenhum perfil. auth=${u ? (u.isAnonymous ? 'anon' : 'google') : 'NENHUM'}`;
+            return [];
+          }
           const profiles: UserProfile[] = [];
           snap.forEach((child) => {
             const v = child.val();
             if (v && v.displayName) profiles.push(v as UserProfile);
           });
+          rankingDiag = `ok: ${profiles.length} perfis. auth=${u ? (u.isAnonymous ? 'anon' : 'google') : 'NENHUM'}`;
           return profiles;
-        } catch (_) {
+        } catch (e: any) {
+          rankingDiag = `ERRO [${e?.code ?? '?'}] ${e?.message ?? 'desconhecido'}. auth=${u ? (u.isAnonymous ? 'anon' : 'google') : 'NENHUM'}`;
+          console.warn('[ranking] loadAllProfiles FAIL', e?.code, e?.message, 'auth=', u?.uid, 'anon=', u?.isAnonymous);
           return [];
         }
       },
@@ -418,6 +436,11 @@ useStatsStore.subscribe((state, prev) => {
   if (state === prev) return;
   const { myUid } = useProfileStore.getState();
   if (!myUid) return;
+  // Defesa: se a sessão de auth atual não bate com o myUid (ex.: caiu numa
+  // sessão anônima nova após reinstalar), NÃO sincroniza — escreveria o
+  // perfil sob o uid errado e orfanaria a conta Google real.
+  const cur = auth.currentUser;
+  if (cur && cur.uid !== myUid) return;
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     useProfileStore.getState().syncProfileToFirebase();

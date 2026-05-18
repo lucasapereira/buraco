@@ -59,6 +59,15 @@ const TEAM_SMART_CLOSE: Record<TeamId, boolean> = {
   'team-1': false,
   'team-2': false,
 };
+// SMART_PROXIMITY = bônus de progresso rumo à canastra limpa obrigatória no
+// evaluateHandPotential (report do usuário: bot não pegou 6ª carta que estendia
+// meld limpa de 5→6 rumo à canastra real). Mergeado: swap test n=500 deu +37
+// vit/500 (+7.4pp) SIMÉTRICO em ambas posições, stranded wash, bater +.
+// Default true em produção → deixar ambos TRUE pra baseline refletir estado atual.
+const TEAM_SMART_PROXIMITY: Record<TeamId, boolean> = {
+  'team-1': true,
+  'team-2': true,
+};
 
 // Aggressiveness no pile-take por jogador. Threshold do shouldTakePileSmart é
 // dividido por esse valor — maior = pega lixo com mais facilidade.
@@ -104,6 +113,7 @@ function freshState(gameMode: GameMode): GameState {
     turnPhase: 'draw',
     winnerTeamId: null,
     roundOver: false,
+    roundStatsRecorded: false,
     targetScore: TARGET_SCORE,
     matchScores: { 'team-1': 0, 'team-2': 0 },
     gameLog: [],
@@ -264,6 +274,14 @@ const pileTakeStats: Record<PlayerId, { taken: number; cardsAbsorbed: number }> 
 // no mesmo estado de mão/histórico. Ativo quando um dos times tem TEAM_SMART_DISCARD=true.
 const discardDiff = { total: 0, diff: 0 };
 
+// ─── Diagnóstico do leak "proximidade de canastra limpa" ──────────
+// Shape do report do usuário: clássico, time AINDA não tem canastra limpa,
+// existe meld LIMPA do time de tamanho >= 5 que o topo do lixo estende
+// naturalmente (sem sujar), lixo pequeno (1-2 cartas) — e shouldTakePileSmart
+// retornou FALSE (delta abaixo do threshold por só contar o face value da carta,
+// cego ao progresso rumo à canastra limpa OBRIGATÓRIA pra bater no clássico).
+const proximityLeak = { decisions: 0, shapeFalse: 0, shapeTrue: 0 };
+
 // ─── Instrumentação de leak de coringa (item #3 diagnóstico) ──────
 // Conta, por time, onde coringas entram em mesa e quantos ficam encalhados na mão
 // ao final da rodada. Natural-slot (2 de copas numa seq de copas) NÃO conta como leak.
@@ -416,7 +434,27 @@ function chooseTakePile(s: GameState, playerId: PlayerId): boolean {
   const useSmart = TEAM_SMART_PILE[team.id];
   if (useSmart) {
     const aggr = PILE_AGGRESSIVENESS[playerId] ?? 1.0;
-    return shouldTakePileSmart(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode, aggr);
+    const useProximity = TEAM_SMART_PROXIMITY[team.id];
+    const decision = shouldTakePileSmart(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode, aggr, useProximity);
+
+    // Diagnóstico: o shape do report cai no leak quando a decisão é FALSE.
+    if (s.gameMode === 'classic' && s.pile.length >= 1 && s.pile.length <= 2) {
+      const top = s.pile[s.pile.length - 1];
+      const teamHasCleanCanasta = team.games.some(g => checkCanasta(g) === 'clean');
+      const extendsCleanNearMeld = !teamHasCleanCanasta && !top.isJoker && team.games.some(g =>
+        g.length >= 5 &&
+        checkCanasta(g) !== 'clean' &&        // ainda não é canastra (len 5-6)
+        !g.some(c => c.isJoker) &&            // meld limpa → rumo a canastra LIMPA
+        !wouldDirtyGame(top, g) &&
+        validateSequence([...g, top], s.gameMode)
+      );
+      if (extendsCleanNearMeld) {
+        proximityLeak.decisions += 1;
+        if (decision) proximityLeak.shapeTrue += 1;
+        else proximityLeak.shapeFalse += 1;
+      }
+    }
+    return decision;
   }
   return shouldTakePile(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode);
 }
@@ -982,6 +1020,16 @@ function main() {
     console.log(`escolheu carta DIFERENTE:   ${discardDiff.diff}  (${pct}%)`);
     console.log(`escolheu carta IGUAL:       ${discardDiff.total - discardDiff.diff}`);
   }
+
+  // ─── Diagnóstico leak "proximidade de canastra limpa" ─────────────
+  console.log(`\n─── LEAK proximidade canastra limpa (shape do report) ─────────────`);
+  const shapeTotal = proximityLeak.shapeFalse + proximityLeak.shapeTrue;
+  const ratePerRound = (proximityLeak.shapeFalse / totalRounds).toFixed(3);
+  const falsePct = shapeTotal > 0 ? (100 * proximityLeak.shapeFalse / shapeTotal).toFixed(1) : '-';
+  console.log(`decisões com shape (lixo 1-2, estende meld limpa len>=5, sem canastra limpa): ${shapeTotal}`);
+  console.log(`  → NÃO pegou (LEAK candidato): ${proximityLeak.shapeFalse}  (${falsePct}% do shape, ${ratePerRound}/rod)`);
+  console.log(`  → pegou (já capturado):       ${proximityLeak.shapeTrue}`);
+  console.log(`rodadas totais no run: ${totalRounds}  (critério merge: leak >= ~5% das rodadas)`);
 }
 
 main();

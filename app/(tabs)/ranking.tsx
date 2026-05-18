@@ -22,7 +22,9 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { getRank } from '../../game/achievements';
-import { useProfileStore, UserProfile, MonthlyChampion } from '../../store/profileStore';
+import { useProfileStore, UserProfile, MonthlyChampion, getRankingDiag } from '../../store/profileStore';
+import { getDailyDiag } from '../../store/statsStore';
+import { bootstrapAuth, signInWithGoogle } from '../../hooks/useGoogleAuth';
 import { ScreenBackground } from '../../components/ScreenBackground';
 import { GameColors, Radius, Elevation } from '../../constants/colors';
 
@@ -72,21 +74,36 @@ export default function RankingScreen() {
   const [champions, setChampions] = useState<MonthlyChampion[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<UserProfile | null>(null);
+  const [needsRelogin, setNeedsRelogin] = useState(false);
+  const [reloginBusy, setReloginBusy] = useState(false);
+
+  const reload = React.useCallback(async () => {
+    setLoading(true);
+    // Garante sessão Firebase antes de ler (reinstalar apaga o token).
+    const authState = await bootstrapAuth().catch(() => 'needs-relogin' as const);
+    setNeedsRelogin(authState === 'needs-relogin');
+    await finalizePastMonthlyChampions();
+    const [list, champs] = await Promise.all([loadAllProfiles(), loadMonthlyChampions()]);
+    setProfiles(list);
+    setChampions(champs);
+    setLoading(false);
+  }, [finalizePastMonthlyChampions, loadAllProfiles, loadMonthlyChampions]);
 
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
-    (async () => {
-      await finalizePastMonthlyChampions();
-      const [list, champs] = await Promise.all([loadAllProfiles(), loadMonthlyChampions()]);
-      if (mounted) {
-        setProfiles(list);
-        setChampions(champs);
-        setLoading(false);
-      }
-    })();
+    (async () => { if (mounted) await reload(); })();
     return () => { mounted = false; };
-  }, []);
+  }, [reload]);
+
+  const handleRelogin = async () => {
+    setReloginBusy(true);
+    try {
+      const res = await signInWithGoogle();
+      if (res.ok) await reload();
+    } finally {
+      setReloginBusy(false);
+    }
+  };
 
   // Conta troféus por uid
   const trophiesByUid = useMemo(() => {
@@ -158,9 +175,29 @@ export default function RankingScreen() {
       ) : sorted.length === 0 ? (
         <View style={styles.loadingBox}>
           <Text style={styles.emptyText}>
-            {board === 'bot'
+            {needsRelogin
+              ? 'Sua sessão expirou (você reinstalou o app). Entre de novo com o Google para recuperar seu perfil e ver o ranking.'
+              : board === 'bot'
               ? 'Ninguém tem partidas vs bot ainda.'
               : 'Ninguém tem partidas online ainda.'}
+          </Text>
+          {needsRelogin && (
+            <TouchableOpacity
+              style={[styles.reloginBtn, reloginBusy && { opacity: 0.6 }]}
+              onPress={handleRelogin}
+              disabled={reloginBusy}
+              activeOpacity={0.85}
+            >
+              {reloginBusy
+                ? <ActivityIndicator color="#0A1C30" />
+                : <Text style={styles.reloginBtnText}>🔐 Entrar com Google</Text>}
+            </TouchableOpacity>
+          )}
+          <Text style={styles.diagText} selectable>
+            diag ranking: {getRankingDiag()}
+          </Text>
+          <Text style={styles.diagText} selectable>
+            diag prêmio: {getDailyDiag()}
           </Text>
         </View>
       ) : (
@@ -455,6 +492,9 @@ const styles = StyleSheet.create({
   loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: GameColors.text.secondary, marginTop: 12 },
   emptyText: { color: GameColors.text.secondary, fontSize: 16, textAlign: 'center', paddingHorizontal: 40 },
+  diagText: { color: GameColors.text.muted, fontSize: 11, textAlign: 'center', paddingHorizontal: 24, marginTop: 14 },
+  reloginBtn: { backgroundColor: '#FFFFFF', borderRadius: Radius.md, paddingVertical: 14, paddingHorizontal: 28, marginTop: 20 },
+  reloginBtnText: { color: '#0A1C30', fontSize: 16, fontWeight: '700' },
 
   // Modal
   modalOverlay: {

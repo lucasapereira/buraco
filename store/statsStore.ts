@@ -1,6 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+
+// Diagnóstico temporário (v1.51.1): rastreia o ciclo do prêmio diário pra
+// distinguir "write não persiste" de "race de rehydration".
+export let dailyDiag = 'sem dados';
+export function getDailyDiag() { return dailyDiag; }
 import {
   ACHIEVEMENTS,
   CheckableStats,
@@ -368,6 +373,7 @@ export const useStatsStore = create<StatsState & StatsActions>()(
           unlockedAchievements: [...s.unlockedAchievements, ...newAchievements],
           newlyUnlocked: [...s.newlyUnlocked, ...newAchievements],
         });
+        dailyDiag = `resgatou ${today}; pós-set lido=${get().lastDailyRewardDate}`;
       },
 
       shiftNewlyUnlocked: () => {
@@ -379,6 +385,15 @@ export const useStatsStore = create<StatsState & StatsActions>()(
     {
       name: 'buraco-stats-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          dailyDiag = `REHYDRATE ERRO: ${String((error as any)?.message ?? error)}`;
+          console.warn('[daily] rehydrate error', error);
+          return;
+        }
+        const v = state?.lastDailyRewardDate ?? '(sem state)';
+        dailyDiag = `rehydrated lastDailyRewardDate=${v || '(vazio)'} @${new Date().toISOString().slice(11, 19)}`;
+      },
     },
   ),
 );

@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { useStatsStore, DailyRewardInfo } from '../../store/statsStore';
 import { useOnlineStore } from '../../store/onlineStore';
-import { GameMode } from '../../game/engine';
+import { GameMode, calculateLiveScore } from '../../game/engine';
 import * as NavigationBar from 'expo-navigation-bar';
 import Constants from 'expo-constants';
 import { ScreenBackground } from '../../components/ScreenBackground';
@@ -21,8 +21,8 @@ const TARGETS = [1500, 3000, 5000];
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId } = useGameStore();
-  const { level, checkDailyReward, claimDailyReward } = useStatsStore();
+  const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId, teams, matchScores } = useGameStore();
+  const { level, checkDailyReward, claimDailyReward, recordRound } = useStatsStore();
   const { resetRoom, roomStatus } = useOnlineStore();
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
@@ -37,9 +37,20 @@ export default function HomeScreen() {
     }
   }, []);
 
+  // Só checa o prêmio diário DEPOIS que o statsStore reidratou do AsyncStorage.
+  // Sem isso, checkDailyReward roda com lastDailyRewardDate='' (default) antes
+  // da reidratação e mostra o modal todo acesso, mesmo já tendo resgatado hoje.
   useEffect(() => {
-    const reward = checkDailyReward();
-    if (reward.available) setDailyReward(reward);
+    const statsPersist = (useStatsStore as any).persist;
+    const runCheck = () => {
+      const reward = checkDailyReward();
+      if (reward.available) setDailyReward(reward);
+    };
+    if (statsPersist?.hasHydrated?.()) {
+      runCheck();
+      return;
+    }
+    return statsPersist?.onFinishHydration?.(runCheck);
   }, []);
 
   const isGameInProgress = (gameLog.length > 0 || players.some(p => p.hand.length !== 11)) && !winnerTeamId;
@@ -51,12 +62,44 @@ export default function HomeScreen() {
   };
 
   const handleRestart = () => {
-    showAlert('Reiniciar', 'Tem certeza que deseja apagar a partida atual?', [
+    // Desistência vs bot: se largar a partida perdendo por mais de 200 pontos
+    // (placar acumulado + jogos na mesa), conta como derrota.
+    const isOfflineGame = roomStatus === 'idle';
+    const myTotal = matchScores['team-1'] + calculateLiveScore(teams['team-1']);
+    const opTotal = matchScores['team-2'] + calculateLiveScore(teams['team-2']);
+    const diff = myTotal - opTotal;
+    const wouldCountAsLoss = isOfflineGame && isGameInProgress && diff < -200;
+
+    const runRestart = () => {
+      if (wouldCountAsLoss) {
+        recordRound({
+          matchEnded: true,
+          matchWon: false,
+          myRoundScore: 0,
+          myMatchScore: myTotal,
+          theirMatchScore: opTotal,
+          cleanCanastas: 0,
+          dirtyCanastas: 0,
+          canastas500: 0,
+          canastas1000: 0,
+          userBated: false,
+          isOnline: false,
+          opponentNames: players.filter(p => p.teamId === 'team-2').map(p => p.name),
+          partnerName: players.find(p => p.teamId === 'team-1' && p.id !== 'user')?.name,
+        });
+      }
+      if (roomStatus !== 'idle') resetRoom();
+      startNewGame(targetScore, gameMode);
+    };
+
+    const msg = wouldCountAsLoss
+      ? `Você está perdendo por ${Math.abs(diff)} pontos. Reiniciar agora vai contar como DERROTA.`
+      : 'Tem certeza que deseja apagar a partida atual?';
+    const confirmLabel = wouldCountAsLoss ? 'Reiniciar mesmo assim' : 'Sim, Apagar';
+
+    showAlert('Reiniciar', msg, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Sim, Apagar', style: 'destructive', onPress: () => {
-          if (roomStatus !== 'idle') resetRoom();
-          startNewGame(targetScore, gameMode);
-      }}
+      { text: confirmLabel, style: 'destructive', onPress: runRestart },
     ]);
   };
 

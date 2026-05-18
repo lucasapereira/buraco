@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useForceUpdate } from '@/hooks/useForceUpdate';
 import { ThemedAlertHost } from '../components/ThemedAlert';
 import { useThemeStore } from '../store/themeStore';
+import { bootstrapAuth } from '../hooks/useGoogleAuth';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.lucasapereira.buraco';
 
@@ -30,6 +31,13 @@ export default function RootLayout() {
     if (themeHydrated) return;
     return themePersist?.onFinishHydration?.(() => setThemeHydrated(true));
   }, [themeHydrated]);
+
+  // Restaura a sessão Firebase no startup (reinstalar apaga o token e quebra
+  // todas as leituras do Firebase — ranking, perfis). Fire-and-forget; telas
+  // que leem cedo (ex.: Ranking) também aguardam isso por conta própria.
+  useEffect(() => {
+    bootstrapAuth().catch(() => {});
+  }, []);
 
   if (checking || !themeHydrated) {
     return (

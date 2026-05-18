@@ -525,8 +525,33 @@ export function canastaBonusValue(game: Card[]): number {
   return 200;
 }
 
-function evaluateHandPotential(hand: Card[], teamGames: Card[][], gameMode: GameMode): number {
+/**
+ * Bônus de PROGRESSO rumo a uma canastra limpa OBRIGATÓRIA (clássico, sem bater
+ * sem canastra limpa). `canastaBonusValue` só recompensa ao ATINGIR o threshold
+ * (len 7); uma meld limpa de 5-6 cartas que o lixo estende fica avaliada só pelo
+ * face value da carta (~5 pts) e nunca supera o threshold de pile-take em lixos
+ * pequenos — o bot ignora um descarte que o deixaria a 1 carta da canastra
+ * limpa que ele PRECISA pra bater. Damos crédito parcial proporcional à
+ * proximidade, gated estritamente (só meld limpa, só clássico, só sem canastra
+ * limpa ainda, só len 5-6). Aplicado 1x por meld (no tamanho final), nunca
+ * acumulado por carta.
+ */
+function cleanCanastaProximityBonus(game: Card[], gameMode: GameMode): number {
+  if (gameMode !== 'classic') return 0;
+  if (game.some(c => c.isJoker)) return 0;        // só meld rumo a canastra LIMPA
+  if (game.length === 6) return 90;               // 1 carta da canastra limpa exigida
+  if (game.length === 5) return 45;               // 2 cartas
+  return 0;
+}
+
+function evaluateHandPotential(
+  hand: Card[],
+  teamGames: Card[][],
+  gameMode: GameMode,
+  proximityBonus: boolean = true
+): number {
   let score = 0;
+  const teamHasCleanCanasta = teamGames.some(g => checkCanasta(g) === 'clean');
 
   // 1) Adições diretas a jogos existentes (valor da carta + delta de bônus de canastra).
   //    Delta cobre: 6→7 (nenhuma → clean/dirty), dirty→clean por reposicionamento de coringa
@@ -535,6 +560,8 @@ function evaluateHandPotential(hand: Card[], teamGames: Card[][], gameMode: Game
   for (const game of teamGames) {
     let growingGame = [...game];
     let prevBonus = canastaBonusValue(growingGame);
+    const prevProximity = (proximityBonus && !teamHasCleanCanasta)
+      ? cleanCanastaProximityBonus(growingGame, gameMode) : 0;
     for (const c of hand) {
       if (usedIds.has(c.id)) continue;
       if (validateSequence([...growingGame, c], gameMode)) {
@@ -545,6 +572,11 @@ function evaluateHandPotential(hand: Card[], teamGames: Card[][], gameMode: Game
         prevBonus = newBonus;
         usedIds.add(c.id);
       }
+    }
+    // Crédito de progresso rumo à canastra limpa exigida (1x, no tamanho final).
+    if (proximityBonus && !teamHasCleanCanasta) {
+      const newProximity = cleanCanastaProximityBonus(growingGame, gameMode);
+      if (newProximity > prevProximity) score += (newProximity - prevProximity);
     }
   }
 
@@ -694,7 +726,8 @@ export function shouldTakePileSmart(
   difficulty: BotDifficulty,
   teamGames: Card[][] = [],
   gameMode: GameMode = 'classic',
-  aggressiveness: number = 1.0
+  aggressiveness: number = 1.0,
+  proximityBonus: boolean = true
 ): boolean {
   if (pile.length === 0) return false;
 
@@ -726,8 +759,8 @@ export function shouldTakePileSmart(
   }
 
   // Comparação por potencial: avalia mão atual vs mão+lixo, escolhe se ganhar acima do threshold
-  const baseline = evaluateHandPotential(hand, teamGames, gameMode);
-  const withPile = evaluateHandPotential([...hand, ...pile], teamGames, gameMode);
+  const baseline = evaluateHandPotential(hand, teamGames, gameMode, proximityBonus);
+  const withPile = evaluateHandPotential([...hand, ...pile], teamGames, gameMode, proximityBonus);
   const delta = withPile - baseline;
 
   // Custo implícito de pegar lixo: mão maior = mais difícil de bater, adversário vê crescimento

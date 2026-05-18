@@ -50,6 +50,7 @@ export interface GameState {
   turnPhase: TurnPhase;
   winnerTeamId: TeamId | null;
   roundOver: boolean;
+  roundStatsRecorded: boolean;       // Trava persistida: impede recontar a rodada ao reabrir o app
   targetScore: number;
   matchScores: Record<TeamId, number>;
   gameLog: GameEvent[];
@@ -107,6 +108,7 @@ export function createInitialGameState(targetScore: number = 1500, gameMode: Gam
     turnPhase: 'draw',
     winnerTeamId: null,
     roundOver: false,
+    roundStatsRecorded: false,
     targetScore,
     matchScores: { 'team-1': 0, 'team-2': 0 },
     gameLog: [],

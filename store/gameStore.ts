@@ -26,6 +26,7 @@ interface GameActions {
   addToExistingGame: (playerId: PlayerId, cardIds: string[], gameIndex: number) => boolean;
   undoLastPlay: (playerId: PlayerId) => boolean;
   applyRemoteState: (remoteState: Record<string, unknown>) => void;
+  markRoundStatsRecorded: () => void;
 }
 
 let eventCounter = 0;
@@ -170,6 +171,8 @@ export const useGameStore = create<GameState & GameActions>()(
     set(createInitialGameState(targetScore, gameMode));
   },
 
+  markRoundStatsRecorded: () => set({ roundStatsRecorded: true }),
+
   // Usado pelo modo online: aplica estado recebido do Firebase
   applyRemoteState: (remoteState: Record<string, unknown>) => {
     const { animatingDrawPlayerId, animatingDiscard, lastDrawnCardId: _ld, _writerUid, _writerInstanceId, ...rest } = remoteState as any;
@@ -275,6 +278,14 @@ export const useGameStore = create<GameState & GameActions>()(
         };
       });
     }
+
+    // Protege contra reversão: se já registramos a rodada localmente nesta
+    // mesma rodada, não deixamos um pacote do host (que pode ainda ter a flag
+    // falsa) reabrir a janela de recontagem no ranking.
+    if (isSameRound && localState.roundStatsRecorded && !rest.roundStatsRecorded) {
+      rest.roundStatsRecorded = true;
+    }
+
     set(rest);
   },
 
@@ -584,9 +595,12 @@ export const useGameStore = create<GameState & GameActions>()(
             // ou pode pegar morto, ou tem canastra
             if (remaining.length >= 2 || canStillGetDead) {
               hasAtLeastOneEscape = true;
-            } else if (remaining.length === 1) {
-              // Ficaria com 1 carta p/ descartar e bater: só ok se tiver canastra limpa
-              if (teamHasCleanCanasta(state, player.teamId)) hasAtLeastOneEscape = true;
+            } else if (remaining.length === 1 || remaining.length === 0) {
+              // remaining===1: descarta a última e bater. remaining===0: meld usou toda a
+              // mão futura, bater direto sem descarte (checkRoundEnd dispara com hand=0).
+              // Em ambos precisa de canastra limpa — espelha wouldStrandPlayer (linha 156)
+              // passando o meld como extraGame caso ele próprio feche uma canastra.
+              if (teamHasCleanCanasta(state, player.teamId, meld)) hasAtLeastOneEscape = true;
             }
           }
         }
@@ -956,6 +970,14 @@ export const useGameStore = create<GameState & GameActions>()(
     if (state) {
       (state as any).animatingDrawPlayerId = null;
       (state as any).animatingDiscard = null;
+      // Migração: estado finalizado já persistido (de antes desta trava)
+      // conta como já registrado, senão o primeiro relaunch após o update
+      // ainda recontaria a rodada no ranking.
+      if (state.roundOver || state.winnerTeamId) {
+        state.roundStatsRecorded = true;
+      } else if (typeof state.roundStatsRecorded !== 'boolean') {
+        state.roundStatsRecorded = false;
+      }
     }
   },
 }));
