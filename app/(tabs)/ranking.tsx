@@ -22,7 +22,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { getRank } from '../../game/achievements';
-import { useProfileStore, UserProfile, MonthlyChampion, getRankingDiag } from '../../store/profileStore';
+import { useProfileStore, UserProfile, MonthlyChampion, getRankingDiag, localStatsSnapshot } from '../../store/profileStore';
 import { getDailyDiag } from '../../store/statsStore';
 import { bootstrapAuth, signInWithGoogle } from '../../hooks/useGoogleAuth';
 import { ScreenBackground } from '../../components/ScreenBackground';
@@ -56,6 +56,34 @@ function fmtScore(p: UserProfile, board: Board): { wins: number; losses: number;
   }
 }
 
+/**
+ * Sobrepõe os stats locais (statsStore) na própria linha do jogador.
+ * O Ranking lê o snapshot do Firebase, que fica ~1s + round-trip atrás logo
+ * após terminar uma partida (sync com debounce). Sem isso, a contagem do
+ * jogador no Ranking não bate com a do Perfil. Também cobre o caso de o sync
+ * ter falhado de vez (ex.: sessão de auth perdida pós-reinstalação): sintetiza
+ * a linha a partir do estado local pra ele ainda se ver.
+ */
+function overlayMine(list: UserProfile[]): UserProfile[] {
+  const { myUid, myUsername, myUsernameLower, joinedAt } = useProfileStore.getState();
+  if (!myUid) return list;
+  const local = localStatsSnapshot();
+  const base = list.find(p => p.uid === myUid);
+  if (base) {
+    return list.map(p => (p.uid === myUid ? { ...p, ...local } : p));
+  }
+  if (!myUsername) return list;
+  const synthetic: UserProfile = {
+    uid: myUid,
+    displayName: myUsername,
+    displayNameLower: myUsernameLower ?? myUsername.toLowerCase(),
+    joinedAt: joinedAt ?? Date.now(),
+    lastSeen: Date.now(),
+    ...local,
+  };
+  return [...list, synthetic];
+}
+
 function timeAgo(ts: number): string {
   const sec = Math.floor((Date.now() - ts) / 1000);
   if (sec < 60) return 'agora';
@@ -67,7 +95,7 @@ function timeAgo(ts: number): string {
 export default function RankingScreen() {
   useKeepAwake();
   const router = useRouter();
-  const { loadAllProfiles, loadMonthlyChampions, finalizePastMonthlyChampions, myUid } = useProfileStore();
+  const { loadAllProfiles, loadMonthlyChampions, finalizePastMonthlyChampions, syncProfileToFirebase, myUid } = useProfileStore();
 
   const [board, setBoard] = useState<Board>('bot');
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
@@ -82,12 +110,16 @@ export default function RankingScreen() {
     // Garante sessão Firebase antes de ler (reinstalar apaga o token).
     const authState = await bootstrapAuth().catch(() => 'needs-relogin' as const);
     setNeedsRelogin(authState === 'needs-relogin');
+    // Empurra o estado local pro Firebase ANTES de ler (o auto-sync tem
+    // debounce de 1s; sem este flush o Ranking lê o snapshot da partida
+    // anterior). Não bloqueia se falhar — o overlay local cobre o caller.
+    await syncProfileToFirebase().catch(() => {});
     await finalizePastMonthlyChampions();
     const [list, champs] = await Promise.all([loadAllProfiles(), loadMonthlyChampions()]);
-    setProfiles(list);
+    setProfiles(overlayMine(list));
     setChampions(champs);
     setLoading(false);
-  }, [finalizePastMonthlyChampions, loadAllProfiles, loadMonthlyChampions]);
+  }, [finalizePastMonthlyChampions, loadAllProfiles, loadMonthlyChampions, syncProfileToFirebase]);
 
   useEffect(() => {
     let mounted = true;
@@ -229,6 +261,8 @@ export default function RankingScreen() {
                   <Text style={styles.subText}>
                     Nível {p.level ?? 1} · {getRank(p.level ?? 1)}
                     {board === 'online' && ` · ${Math.round(p.onlineRating ?? 1000)} pts`}
+                    {board === 'bot' && (p.expertMatchesPlayed ?? 0) > 0 &&
+                      ` · 🧠 ${p.expertWins ?? 0}/${p.expertMatchesPlayed} · ${Math.round(100 * (p.expertWins ?? 0) / (p.expertMatchesPlayed ?? 1))}%`}
                   </Text>
                 </View>
                 <View style={styles.scoreCol}>
@@ -296,6 +330,10 @@ function ProfileDetailModal({ profile, onClose, myProfile, championMonths }: { p
               <Stat label="Partidas" value={botTotal} />
               <Stat label="Vitórias" value={botWon} />
               <Stat label="Derrotas" value={botLost} />
+              <Stat
+                label="🧠 IA Difícil (PIMC)"
+                value={`${p.expertWins ?? 0}/${p.expertMatchesPlayed ?? 0}${(p.expertMatchesPlayed ?? 0) > 0 ? `  ·  ${Math.round(100 * (p.expertWins ?? 0) / (p.expertMatchesPlayed ?? 1))}%` : ''}`}
+              />
               <Stat label="Streak atual" value={`${p.currentBotWinStreak ?? 0} 🔥`} />
               <Stat label="Maior streak" value={p.longestBotWinStreak ?? 0} />
               {invicto && (

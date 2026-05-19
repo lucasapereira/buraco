@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import { useStatsStore, DailyRewardInfo } from '../../store/statsStore';
 import { useOnlineStore } from '../../store/onlineStore';
-import { GameMode, calculateLiveScore } from '../../game/engine';
+import { GameMode, BotDifficulty, calculateLiveScore } from '../../game/engine';
 import * as NavigationBar from 'expo-navigation-bar';
 import Constants from 'expo-constants';
 import { ScreenBackground } from '../../components/ScreenBackground';
@@ -21,11 +21,12 @@ const TARGETS = [1500, 3000, 5000];
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId, teams, matchScores } = useGameStore();
+  const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId, teams, matchScores, botDifficulty: gameBotDifficulty } = useGameStore();
   const { level, checkDailyReward, claimDailyReward, recordRound } = useStatsStore();
   const { resetRoom, roomStatus } = useOnlineStore();
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('expert');
   const [dailyReward, setDailyReward] = useState<DailyRewardInfo | null>(null);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const currentTheme = useThemeStore(s => s.theme);
@@ -57,7 +58,7 @@ export default function HomeScreen() {
 
   const handleStart = () => {
     if (roomStatus !== 'idle') resetRoom();
-    startNewGame(targetScore, gameMode);
+    startNewGame(targetScore, gameMode, botDifficulty);
     router.replace('/(tabs)/explore' as any);
   };
 
@@ -84,12 +85,13 @@ export default function HomeScreen() {
           canastas1000: 0,
           userBated: false,
           isOnline: false,
+          botDifficulty: gameBotDifficulty,
           opponentNames: players.filter(p => p.teamId === 'team-2').map(p => p.name),
           partnerName: players.find(p => p.teamId === 'team-1' && p.id !== 'user')?.name,
         });
       }
       if (roomStatus !== 'idle') resetRoom();
-      startNewGame(targetScore, gameMode);
+      startNewGame(targetScore, gameMode, botDifficulty);
     };
 
     const msg = wouldCountAsLoss
@@ -225,6 +227,30 @@ export default function HomeScreen() {
         {gameMode === 'classic' ? 'Regras originais: sem trincas, bater limpo.' : 'Regras da família: trincas liberadas, lixo livre, bate sujo.'}
       </Text>
 
+      {/* Seletor de Dificuldade dos Bots */}
+      <Text style={styles.sectionTitle}>Dificuldade</Text>
+      <View style={styles.modeRow}>
+        <TouchableOpacity
+          style={[styles.modeBtn, botDifficulty === 'hard' && styles.modeBtnActive]}
+          onPress={() => setBotDifficulty('hard')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.modeText, botDifficulty === 'hard' && styles.modeTextActive]}>Normal</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeBtn, botDifficulty === 'expert' && styles.modeBtnActive]}
+          onPress={() => setBotDifficulty('expert')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.modeText, botDifficulty === 'expert' && styles.modeTextActive]}>Difícil</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.diffDesc}>
+        {botDifficulty === 'hard'
+          ? 'Bot heurístico — bom pra aprender e jogar rápido.'
+          : 'Bot com busca (PIMC): planeja jogadas à frente. Pensa ~1s por vez.'}
+      </Text>
+
       {/* Seletor de Meta */}
       <Text style={styles.sectionTitle}>Meta de Pontos</Text>
       <View style={styles.targetRow}>
@@ -293,12 +319,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingTop: 80,
-    paddingBottom: 50,
+    paddingTop: 60,
+    paddingBottom: 28,
   },
   titleBox: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 16,
   },
   title: {
     fontSize: 52,
@@ -391,19 +417,19 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     alignSelf: 'flex-start',
-    marginBottom: 10,
-    marginTop: 4,
+    marginBottom: 6,
+    marginTop: 2,
   },
   modeRow: {
     flexDirection: 'row',
     gap: 10,
     width: '100%',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   modeBtn: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 11,
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: GameColors.surface.border,
@@ -448,22 +474,22 @@ const styles = StyleSheet.create({
   },
   diffDesc: {
     color: GameColors.text.muted,
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
-    marginBottom: 30,
+    marginBottom: 14,
     paddingHorizontal: 8,
-    lineHeight: 20,
+    lineHeight: 17,
   },
   targetRow: {
     flexDirection: 'row',
     gap: 10,
     width: '100%',
-    marginBottom: 38,
+    marginBottom: 20,
   },
   targetBtn: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderRadius: Radius.sm,
     backgroundColor: GameColors.surface.low,
     borderWidth: 1,

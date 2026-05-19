@@ -5,6 +5,7 @@ import {
   GameEvent,
   GameMode,
   GameState,
+  BotDifficulty,
   UndoState,
   PlayerId, TeamId,
   calculateRoundScore,
@@ -16,7 +17,7 @@ import { canTakePile, sortCardsBySuitAndValue, sortGameCards, validateSequence, 
 type TurnPhase = 'draw' | 'play' | 'discard';
 
 interface GameActions {
-  startNewGame: (targetScore?: number, gameMode?: GameMode) => void;
+  startNewGame: (targetScore?: number, gameMode?: GameMode, botDifficulty?: BotDifficulty) => void;
   startNewRound: () => void;
   startLayoutTest: () => void;
   drawFromDeck: (playerId: PlayerId) => void;
@@ -166,9 +167,9 @@ export const useGameStore = create<GameState & GameActions>()(
     (set, get) => ({
       ...createInitialGameState(),
 
-  startNewGame: (targetScore = 3000, gameMode = 'classic' as GameMode) => {
+  startNewGame: (targetScore = 3000, gameMode = 'classic' as GameMode, botDifficulty = 'hard' as BotDifficulty) => {
     eventCounter = 0;
-    set(createInitialGameState(targetScore, gameMode));
+    set(createInitialGameState(targetScore, gameMode, botDifficulty));
   },
 
   markRoundStatsRecorded: () => set({ roundStatsRecorded: true }),
@@ -307,6 +308,7 @@ export const useGameStore = create<GameState & GameActions>()(
       gameLog: [roundStartEvent],
       matchScores: state.matchScores,
       gameMode: state.gameMode,
+      botDifficulty: state.botDifficulty,
       roundNumber: state.roundNumber + 1,
       gameId: state.gameId, // preserva o ID da partida entre rodadas
     });

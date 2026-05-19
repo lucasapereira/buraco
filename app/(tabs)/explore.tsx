@@ -146,7 +146,7 @@ export default function GameScreen() {
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
     drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
     startNewRound, startNewGame,
-    gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode,
+    gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode, botDifficulty,
     animatingDiscard, animatingDrawPlayerId,
     turnHistory, undoLastPlay,
     roundStatsRecorded, markRoundStatsRecorded
@@ -371,6 +371,7 @@ export default function GameScreen() {
         canastas1000,
         userBated,
         isOnline: isOnlineMode,
+        botDifficulty,
         opponentTeamAvgRating,
         opponentNames,
         partnerName,
@@ -413,6 +414,7 @@ export default function GameScreen() {
           canastas1000: 0,
           userBated: false,
           isOnline: false,
+          botDifficulty,
           opponentNames: players.filter(p => p.teamId === opTeamId).map(p => p.name),
           partnerName: players.find(p => p.teamId === myTeamId && p.id !== myPlayerId)?.name,
         });
@@ -1328,6 +1330,16 @@ export default function GameScreen() {
                 : 'Rodada Encerrada'
               }
             </Text>
+
+            {/* Selo: venceu o bot Difícil (PIMC) — XP em dobro */}
+            {winnerTeamId === myTeamId && !isOnlineMode && botDifficulty === 'expert' && (
+              <Text style={{
+                color: '#FFD700', fontWeight: '800', fontSize: 15, textAlign: 'center',
+                marginTop: 6, marginBottom: 2,
+              }}>
+                🧠 Você derrotou a IA (Difícil)!  XP em dobro 🔥
+              </Text>
+            )}
 
             {/* Quem bateu */}
             {gameLog.slice().reverse().find(e => e.type === 'round_end') && (

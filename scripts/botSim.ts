@@ -27,9 +27,12 @@ import {
   opponentRecentlyTookPile,
   canastaBonusValue,
 } from '../game/botHelpers';
+import { proxyAdjustTakePile, proxyChooseDiscard } from './proxyBot';
+import { horizonEval, determinize, _evalSelfCheck } from './pimcBot';
+import { pimcDecideSync } from '../game/pimc';
 
 // ─── Config ───────────────────────────────────────────────
-const N_GAMES = 500;
+const N_GAMES = process.env.N ? parseInt(process.env.N, 10) : 500;
 // (deixei SMART_PILE: false acima, mas em produção a heurística smart já é
 // padrão. Pra testar uma feature nova, ative SMART_PILE em ambos pra refletir
 // o estado real e isolar o efeito da feature em teste.)
@@ -68,6 +71,35 @@ const TEAM_SMART_PROXIMITY: Record<TeamId, boolean> = {
   'team-1': true,
   'team-2': true,
 };
+// Disciplina de coringa no caminho da OBRIGAÇÃO do lixo (espelha o fix de
+// produção useBotAI/headlessEngine). A/B limpo: ligar num time só, mesmo motor,
+// sem PIMC/proxy — mede se a regra melhora ou só "embeleza e enfraquece".
+const TEAM_PILETOP_WILD_DISC: Record<TeamId, boolean> = {
+  'team-1': false,
+  'team-2': false,
+};
+
+// PROXY = adversário-alvo "humano forte" (scripts/proxyBot.ts). Sobrepõe
+// pile-take e descarte com planner de distância-de-bater + modelo de oponente.
+// Usado pra MEDIR o gap do bot de produção contra jogo estratégico (o sim
+// bot-vs-bot-igual não prevê win rate vs humano). GATE: ligar só num time.
+const TEAM_PROXY: Record<TeamId, boolean> = {
+  'team-1': false,
+  'team-2': false,
+};
+
+// PIMC = Stage 1 (scripts/pimcBot.ts). Busca por determinização na decisão de
+// pegar-lixo (binária). Rollout truncado 8-ply + horizonEval. A/B: ligar num
+// time, produção no outro, swap-tested.
+// Resultado registrado: swap test n=100, +39pp SIMÉTRICO vs produção (PIMC
+// esmaga o teto heurístico). Ainda NÃO portado pra produção (useBotAI) —
+// experimental no harness. Deixar ambos false (não reflete produção).
+const TEAM_PIMC: Record<TeamId, boolean> = {
+  'team-1': false,
+  'team-2': false,
+};
+const PIMC_DETERMINIZATIONS = 30;
+const PIMC_DEPTH = 8;
 
 // Aggressiveness no pile-take por jogador. Threshold do shouldTakePileSmart é
 // dividido por esse valor — maior = pega lixo com mais facilidade.
@@ -90,7 +122,7 @@ const USES_POISON_DISCARD: Record<PlayerId, boolean> = {
 };
 
 // ─── Inicialização ────────────────────────────────────────
-function freshState(gameMode: GameMode): GameState {
+export function freshState(gameMode: GameMode): GameState {
   const allCards = shuffle(generateDeck(gameMode === 'classic'));
   const deads: Card[][] = [allCards.splice(0, 11), allCards.splice(0, 11)];
   const players: Player[] = [
@@ -119,6 +151,7 @@ function freshState(gameMode: GameMode): GameState {
     gameLog: [],
     lastDrawnCardId: null,
     gameMode,
+    botDifficulty: 'hard',
     discardedCardHistory: [],
     mustPlayPileTopId: null,
     deckReshuffleCount: 0,
@@ -141,10 +174,10 @@ function newRound(prev: GameState): GameState {
 }
 
 // ─── Mecânica de turno (versão enxuta, sem animações) ─────
-function playerOf(s: GameState, id: PlayerId): Player {
+export function playerOf(s: GameState, id: PlayerId): Player {
   return s.players.find(p => p.id === id)!;
 }
-function teamOf(s: GameState, id: PlayerId): TeamState {
+export function teamOf(s: GameState, id: PlayerId): TeamState {
   return s.teams[playerOf(s, id).teamId];
 }
 function updatePlayerHand(s: GameState, id: PlayerId, newHand: Card[], hasGottenDead?: boolean): void {
@@ -216,12 +249,13 @@ function endRound(s: GameState, wentOut: boolean, lastPlayerTeamId?: TeamId): vo
   s.matchScores['team-1'] += t1Score;
   s.matchScores['team-2'] += t2Score;
   s.roundOver = true;
+  if (wentOut && lastPlayerTeamId) teamBater[lastPlayerTeamId] += 1;
   if (s.matchScores['team-1'] >= s.targetScore || s.matchScores['team-2'] >= s.targetScore) {
     s.winnerTeamId = s.matchScores['team-1'] >= s.matchScores['team-2'] ? 'team-1' : 'team-2';
   }
 }
 
-function drawFromDeck(s: GameState, playerId: PlayerId): boolean {
+export function drawFromDeck(s: GameState, playerId: PlayerId): boolean {
   // Monte esgotado
   while (s.deck.length === 0) {
     if (s.deads.length > 0) {
@@ -282,6 +316,13 @@ const discardDiff = { total: 0, diff: 0 };
 // cego ao progresso rumo à canastra limpa OBRIGATÓRIA pra bater no clássico).
 const proximityLeak = { decisions: 0, shapeFalse: 0, shapeTrue: 0 };
 
+// ─── Instrumentação do GATE (por que o proxy ganha) ──────────────
+// teamBater: quantas rodadas cada time bateu (saiu). proxyPileRefusals:
+// vezes que o proxy recusou um pile-take que o smart pegaria, por estar
+// perto de bater (o mecanismo central do proxy).
+const teamBater: Record<TeamId, number> = { 'team-1': 0, 'team-2': 0 };
+const proxyPileRefusals = { count: 0 };
+
 // ─── Instrumentação de leak de coringa (item #3 diagnóstico) ──────
 // Conta, por time, onde coringas entram em mesa e quantos ficam encalhados na mão
 // ao final da rodada. Natural-slot (2 de copas numa seq de copas) NÃO conta como leak.
@@ -322,7 +363,7 @@ function countNonNaturalWilds(seq: Card[], gameMode: GameMode): number {
   return wilds;
 }
 
-function drawFromPile(s: GameState, playerId: PlayerId): boolean {
+export function drawFromPile(s: GameState, playerId: PlayerId): boolean {
   if (s.pile.length === 0) return false;
   const p = playerOf(s, playerId);
   const teamGames = teamOf(s, playerId).games;
@@ -343,7 +384,7 @@ function drawFromPile(s: GameState, playerId: PlayerId): boolean {
   return true;
 }
 
-function playCards(s: GameState, playerId: PlayerId, cardIds: string[]): boolean {
+export function playCards(s: GameState, playerId: PlayerId, cardIds: string[]): boolean {
   if (s.turnPhase !== 'play') return false;
   const p = playerOf(s, playerId);
   if (s.gameMode !== 'araujo_pereira' && s.mustPlayPileTopId && !cardIds.includes(s.mustPlayPileTopId)) return false;
@@ -368,7 +409,7 @@ function playCards(s: GameState, playerId: PlayerId, cardIds: string[]): boolean
   return true;
 }
 
-function addToExistingGame(s: GameState, playerId: PlayerId, cardIds: string[], gameIndex: number): boolean {
+export function addToExistingGame(s: GameState, playerId: PlayerId, cardIds: string[], gameIndex: number): boolean {
   if (s.turnPhase !== 'play') return false;
   const p = playerOf(s, playerId);
   const team = teamOf(s, playerId);
@@ -398,7 +439,7 @@ function addToExistingGame(s: GameState, playerId: PlayerId, cardIds: string[], 
   return true;
 }
 
-function discard(s: GameState, playerId: PlayerId, cardId: string): boolean {
+export function discard(s: GameState, playerId: PlayerId, cardId: string): boolean {
   if (s.turnPhase !== 'play') return false;
   if (s.mustPlayPileTopId !== null) return false;
   const p = playerOf(s, playerId);
@@ -428,9 +469,76 @@ function discard(s: GameState, playerId: PlayerId, cardId: string): boolean {
 // ─── Orquestração do turno do bot ─────────────────────────
 const DIFFICULTY = 'hard' as const;
 
+// ─── PIMC (Stage 1) ──────────────────────────────────────────────
+// pimcRollout: true enquanto simulamos → impede recursão (a política de
+// rollout usa heurística, não PIMC) e sinaliza "não confie nos diagnósticos".
+// pimcForcedDraw: força a 1ª decisão de draw do rollout (take vs deck) sem
+// precisar mexer no interno de drawFromPile/Deck.
+let pimcRollout = false;
+let pimcForcedDraw: boolean | null = null;
+const pimcStats = { decisions: 0, flippedVsSmart: 0 };
+
+/**
+ * Decisão de pegar-lixo por PIMC: amostra D estados escondidos; pra cada um,
+ * simula AS DUAS ações (pega / não pega) 8 plies à frente com a política
+ * heurística e avalia com horizonEval; escolhe a de maior valor médio.
+ * Mesmo estado escondido p/ as 2 ações (common random numbers — reduz variância).
+ */
+function pimcTakePile(s: GameState, playerId: PlayerId): boolean {
+  const myTeam = playerOf(s, playerId).teamId;
+  const clone = (x: GameState): GameState => JSON.parse(JSON.stringify(x));
+  let sumTake = 0;
+  let sumDeck = 0;
+
+  pimcRollout = true;
+  for (let d = 0; d < PIMC_DETERMINIZATIONS; d++) {
+    const det = determinize(s, playerId); // mesmo hidden state p/ as 2 ações
+    for (const action of [true, false]) {
+      const c = clone(det);
+      pimcForcedDraw = action;
+      let plies = 0;
+      runBotTurn(c, playerId);
+      plies++;
+      while (!c.roundOver && plies < PIMC_DEPTH) {
+        const before = c.currentTurnPlayerId;
+        runBotTurn(c, c.currentTurnPlayerId);
+        plies++;
+        if (c.currentTurnPlayerId === before && !c.roundOver) break; // travou
+      }
+      pimcForcedDraw = null;
+      const v = horizonEval(c, myTeam);
+      if (action) sumTake += v; else sumDeck += v;
+    }
+  }
+  pimcRollout = false;
+
+  pimcStats.decisions += 1;
+  return sumTake >= sumDeck;
+}
+
 function chooseTakePile(s: GameState, playerId: PlayerId): boolean {
+  // Curto-circuito: 1ª draw forçada de um rollout PIMC.
+  if (pimcForcedDraw !== null) { const f = pimcForcedDraw; pimcForcedDraw = null; return f; }
+
   const p = playerOf(s, playerId);
   const team = teamOf(s, playerId);
+
+  // PIMC só na decisão real (nunca dentro de rollout → sem recursão).
+  if (TEAM_PIMC[team.id] && !pimcRollout) {
+    // PROD_PIMC=1 → usa o re-port de produção (game/pimc.ts) p/ confirmar que
+    // reproduz o +39pp do pimcTakePile interno. Mesmo D/DEPTH.
+    const pimcDecision = process.env.PROD_PIMC
+      ? pimcDecideSync(s, playerId, { determinizations: PIMC_DETERMINIZATIONS, depth: PIMC_DEPTH })
+      : pimcTakePile(s, playerId);
+    // Discriminador: com que frequência o PIMC diverge da heurística smart.
+    if (TEAM_SMART_PILE[team.id]) {
+      const aggr = PILE_AGGRESSIVENESS[playerId] ?? 1.0;
+      const smart = shouldTakePileSmart(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode, aggr, TEAM_SMART_PROXIMITY[team.id]);
+      if (smart !== pimcDecision) pimcStats.flippedVsSmart += 1;
+    }
+    return pimcDecision;
+  }
+
   const useSmart = TEAM_SMART_PILE[team.id];
   if (useSmart) {
     const aggr = PILE_AGGRESSIVENESS[playerId] ?? 1.0;
@@ -454,17 +562,41 @@ function chooseTakePile(s: GameState, playerId: PlayerId): boolean {
         else proximityLeak.shapeFalse += 1;
       }
     }
+
+    if (TEAM_PROXY[team.id]) {
+      const adjusted = proxyAdjustTakePile(
+        decision, s.pile, p.hand, team.games, s.gameMode,
+        team.hasGottenDead, s.deads.length
+      );
+      if (decision && !adjusted) proxyPileRefusals.count += 1;
+      return adjusted;
+    }
     return decision;
   }
   return shouldTakePile(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode);
 }
 
 /** Tenta jogar uma meld contendo o pileTopId (obrigatório após pegar lixo clássico). */
-function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string): void {
+function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, allowWild3 = false): void {
   const p = playerOf(s, playerId);
   const team = teamOf(s, playerId);
   const topCard = p.hand.find(c => c.id === pileTopId);
   if (!topCard) { s.mustPlayPileTopId = null; return; }
+
+  const discActive = TEAM_PILETOP_WILD_DISC[team.id] && !allowWild3;
+  const teamHasCleanCanasta = team.games.some(g => checkCanasta(g) === 'clean');
+  const isBadWild3 = (seq: Card[]): boolean => {
+    if (!discActive || s.gameMode !== 'classic' || teamHasCleanCanasta) return false;
+    if (seq.length !== 3) return false;
+    const jk = seq.filter(c => c.isJoker);
+    if (jk.length === 0) return false;
+    const sn = seq.filter(c => !c.isJoker);
+    const seqSuit = sn.length > 0 ? sn[0].suit : null;
+    if (jk.every(j => j.suit !== 'joker' && j.suit === seqSuit)) return false;
+    const remainingAfter = p.hand.length - seq.length;
+    const goingForDead = remainingAfter <= 1 && !team.hasGottenDead;
+    return !goingForDead;
+  };
 
   const topCardDelta = team.games.map(g => {
     if (!validateSequence([...g, topCard], s.gameMode)) return 0;
@@ -505,6 +637,7 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string): v
   const sequences = findBestSequences(p.hand, s.gameMode);
   for (const seq of sequences) {
     if (!seq.some(c => c.id === pileTopId)) continue;
+    if (isBadWild3(seq)) continue;
     if (playCards(s, playerId, seq.map(c => c.id))) return;
   }
   // (4) brute-force — 3 cartas do mesmo naipe com o topo
@@ -514,6 +647,7 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string): v
       if (playCards(s, playerId, [pileTopId, sameSuit[i].id, sameSuit[j].id])) return;
     }
   }
+  if (TEAM_PILETOP_WILD_DISC[team.id] && !allowWild3) { playWithPileTop(s, playerId, pileTopId, true); return; }
   // fallback — limpa obrigação
   s.mustPlayPileTopId = null;
 }
@@ -675,7 +809,7 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
 export let DEBUG_LOG = false;
 function dlog(...args: any[]) { if (DEBUG_LOG) console.log('   ', ...args); }
 
-function runBotTurn(s: GameState, playerId: PlayerId): void {
+export function runBotTurn(s: GameState, playerId: PlayerId): void {
   currentRoundTurnCount++;
   const p0 = playerOf(s, playerId);
   dlog(`turn ${playerId} (hand=${p0.hand.length}, phase=${s.turnPhase}, pile=${s.pile.length}, deck=${s.deck.length}, must=${s.mustPlayPileTopId})`);
@@ -719,7 +853,27 @@ function runBotTurn(s: GameState, playerId: PlayerId): void {
     const useSmartDiscard = TEAM_SMART_DISCARD[team.id];
     const usePoison = USES_POISON_DISCARD[playerId];
     let card: Card;
-    if (usePoison) {
+    if (TEAM_PROXY[team.id]) {
+      // Modelo de oponente (item #1, OK só no proxy) + escolha por distância-de-bater.
+      const oppPickedUp: Record<string, Card[]> = {};
+      const oppDiscarded: Record<string, Card[]> = {};
+      for (const oid of oppIds) {
+        oppPickedUp[oid] = perPlayerPickedUp[oid];
+        oppDiscarded[oid] = perPlayerDiscarded[oid];
+      }
+      const smartCard = chooseBestDiscardSmart(
+        p.hand, s.discardedCardHistory, DIFFICULTY, s.lastDrawnCardId, s.gameMode,
+        team.games, null, oppGames, tookPile, oppPickedUp, oppDiscarded
+      );
+      let cands = p.hand.filter(c => !c.isJoker);
+      if (s.lastDrawnCardId && cands.length > 1) {
+        cands = cands.filter(c => c.id !== s.lastDrawnCardId);
+      }
+      card = proxyChooseDiscard(
+        cands, smartCard, p.hand, team.games, s.gameMode,
+        team.hasGottenDead, s.deads.length
+      );
+    } else if (usePoison) {
       card = chooseBestDiscardPoison(p.hand, s.gameMode, team.games, null, oppGames, s.lastDrawnCardId);
     } else if (useSmartDiscard) {
       const oppPickedUp: Record<string, Card[]> = {};
@@ -882,7 +1036,60 @@ function runOneGame(gameIdx: number, verbose: boolean): { winner: TeamId | null;
   };
 }
 
+/**
+ * Benchmark de throughput de rollout — gate de viabilidade do PIMC (Stage 1).
+ * Um rollout PIMC ≈ jogar 1 rodada determinizada até o fim com política
+ * heurística. Aqui medimos rodadas-completas/seg do motor headless. Rollouts
+ * de meio-de-jogo custam ~metade de uma rodada, então o throughput real do
+ * PIMC ≈ 2× o medido aqui (reporto conservador e otimista).
+ *
+ * Rodar:  BENCH=1 npx tsx scripts/botSim.ts
+ */
+function runRolloutBench(): void {
+  const BUDGET_MS = 5000;
+  // DEPTH=0 → rollout = rodada inteira (terminal). DEPTH=N → trunca em N plies
+  // + chama eval-de-horizonte (custo dominado pelos N turnos + setup do estado).
+  const DEPTH = process.env.DEPTH ? parseInt(process.env.DEPTH, 10) : 8;
+  let rollouts = 0;
+  let turns = 0;
+  const t0 = Date.now();
+  while (Date.now() - t0 < BUDGET_MS) {
+    // freshState ≈ custo de UMA determinização (gera+embaralha baralho, monta estado)
+    const state = freshState(GAME_MODE);
+    let safety = 0;
+    const cap = DEPTH > 0 ? DEPTH : 400;
+    while (!state.roundOver && safety < cap) {
+      safety++;
+      const before = state.currentTurnPlayerId;
+      runBotTurn(state, state.currentTurnPlayerId);
+      turns++;
+      if (state.currentTurnPlayerId === before && !state.roundOver) {
+        state.currentTurnPlayerId = getNextPlayer(before);
+        state.turnPhase = 'draw';
+        state.mustPlayPileTopId = null;
+      }
+    }
+    // eval-de-horizonte (placeholder barato — custo real é desprezível vs turnos)
+    for (const t of ['team-1', 'team-2'] as TeamId[]) {
+      state.teams[t].games.reduce((a, g) => a + canastaBonusValue(g), 0);
+    }
+    rollouts++;
+  }
+  const elapsed = (Date.now() - t0) / 1000;
+  const rps = rollouts / elapsed;
+  console.log(`\n─── BENCHMARK rollout (gate PIMC) — DEPTH=${DEPTH || 'terminal'} ─────────────`);
+  console.log(`elapsed: ${elapsed.toFixed(1)}s   rollouts: ${rollouts}   turnos: ${turns}`);
+  console.log(`rollouts/seg (Node laptop): ${rps.toFixed(0)}`);
+  for (const slow of [4, 8]) {
+    console.log(`  on-device (~${slow}× mais lento): ~${(rps / slow).toFixed(0)} rollouts/seg  →  em 2s budget: ~${(2 * rps / slow).toFixed(0)} rollouts`);
+  }
+  console.log(`necessidade PIMC take-pile-only: ~60/decisão (2 ações × ~30 determinizações)`);
+  console.log(`gate advisor: on-device >= ~25 rollouts/seg → segue; senão repensar`);
+}
+
 function main() {
+  if (process.env.EVALCHECK) { _evalSelfCheck(); return; }
+  if (process.env.BENCH) { runRolloutBench(); return; }
   const label = (t: TeamId) => {
     const bits: string[] = [];
     if (TEAM_SMART_PILE[t]) bits.push('SMART pile');
@@ -1030,6 +1237,36 @@ function main() {
   console.log(`  → NÃO pegou (LEAK candidato): ${proximityLeak.shapeFalse}  (${falsePct}% do shape, ${ratePerRound}/rod)`);
   console.log(`  → pegou (já capturado):       ${proximityLeak.shapeTrue}`);
   console.log(`rodadas totais no run: ${totalRounds}  (critério merge: leak >= ~5% das rodadas)`);
+
+  // ─── GATE: bot de produção vs PROXY ──────────────────────────────
+  const proxyTeam: TeamId | null = TEAM_PROXY['team-1'] ? 'team-1' : (TEAM_PROXY['team-2'] ? 'team-2' : null);
+  if (proxyTeam) {
+    const prodTeam: TeamId = proxyTeam === 'team-1' ? 'team-2' : 'team-1';
+    const proxyWins = proxyTeam === 'team-1' ? t1Wins : t2Wins;
+    const prodWins = prodTeam === 'team-1' ? t1Wins : t2Wins;
+    const gapPp = (100 * (proxyWins - prodWins) / N_GAMES).toFixed(1);
+    console.log(`\n─── GATE: produção (${prodTeam}) vs PROXY (${proxyTeam}) ─────────────`);
+    console.log(`PROXY venceu      : ${proxyWins}/${N_GAMES}   produção: ${prodWins}/${N_GAMES}`);
+    console.log(`gap (proxy−prod)  : ${gapPp}pp   (alvo p/ medir Stage 0: >= 15pp num swap; lembrar viés de assento)`);
+    console.log(`bateu por time    : produção(${prodTeam})=${teamBater[prodTeam]}   PROXY(${proxyTeam})=${teamBater[proxyTeam]}`);
+    console.log(`proxy recusou lixo (perto de bater): ${proxyPileRefusals.count}  (mecanismo central — deve disparar)`);
+  }
+
+  // ─── PIMC (Stage 1): A/B vs produção ─────────────────────────────
+  const pimcTeam: TeamId | null = TEAM_PIMC['team-1'] ? 'team-1' : (TEAM_PIMC['team-2'] ? 'team-2' : null);
+  if (pimcTeam) {
+    const prodTeam: TeamId = pimcTeam === 'team-1' ? 'team-2' : 'team-1';
+    const pimcWins = pimcTeam === 'team-1' ? t1Wins : t2Wins;
+    const prodWins = prodTeam === 'team-1' ? t1Wins : t2Wins;
+    const gapPp = (100 * (pimcWins - prodWins) / N_GAMES).toFixed(1);
+    const flipPct = pimcStats.decisions > 0 ? (100 * pimcStats.flippedVsSmart / pimcStats.decisions).toFixed(1) : '-';
+    console.log(`\n─── PIMC Stage 1: produção (${prodTeam}) vs PIMC (${pimcTeam}) ─────────────`);
+    console.log(`PIMC venceu       : ${pimcWins}/${N_GAMES}   produção: ${prodWins}/${N_GAMES}`);
+    console.log(`gap (pimc−prod)   : ${gapPp}pp   (lembrar viés de assento ~+6pp p/ team-2; comparar MESMO assento no swap)`);
+    console.log(`bateu por time    : produção(${prodTeam})=${teamBater[prodTeam]}   PIMC(${pimcTeam})=${teamBater[pimcTeam]}`);
+    console.log(`decisões PIMC     : ${pimcStats.decisions}   divergiu da heurística smart: ${pimcStats.flippedVsSmart} (${flipPct}%)`);
+    console.log(`config: D=${PIMC_DETERMINIZATIONS} determinizações × 2 ações, rollout ${PIMC_DEPTH}-ply`);
+  }
 }
 
-main();
+if (!process.env.NO_MAIN) main();

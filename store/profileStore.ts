@@ -81,6 +81,8 @@ export interface UserProfile {
   currentBotWinStreak: number;
   longestBotWinStreak: number;
   hardWins: number;
+  expertWins?: number;            // vitórias contra o bot Difícil (PIMC)
+  expertMatchesPlayed?: number;   // partidas terminadas no Difícil
 
   onlineMatchesPlayed: number;
   onlineMatchesWon: number;
@@ -145,15 +147,15 @@ function validateName(name: string): string | null {
   return null;
 }
 
-function snapshotStatsForFirebase(uid: string, displayName: string, displayNameLower: string, joinedAt: number, lastNameChangeAt: number | null): Omit<UserProfile, never> {
+/**
+ * Porção "estatística" do perfil, derivada do statsStore local.
+ * Fonte única de verdade — usada tanto pra escrever no Firebase quanto pra
+ * sobrepor a própria linha no Ranking (que senão mostraria o snapshot
+ * defasado do Firebase logo após terminar uma partida).
+ */
+export function localStatsSnapshot() {
   const s = useStatsStore.getState();
   return {
-    uid,
-    displayName,
-    displayNameLower,
-    joinedAt,
-    lastSeen: Date.now(),
-    ...(lastNameChangeAt ? { lastNameChangeAt } : {}),
     level: s.level,
     totalXP: s.totalXP,
     matchesPlayed: s.matchesPlayed,
@@ -174,11 +176,25 @@ function snapshotStatsForFirebase(uid: string, displayName: string, displayNameL
     currentBotWinStreak: s.currentBotWinStreak,
     longestBotWinStreak: s.longestBotWinStreak,
     hardWins: s.hardWins,
+    expertWins: s.expertWins ?? 0,
+    expertMatchesPlayed: s.expertMatchesPlayed ?? 0,
     onlineMatchesPlayed: s.onlineMatchesPlayed,
     onlineMatchesWon: s.onlineMatchesWon,
     onlineRating: s.onlineRating,
     unlockedAchievements: s.unlockedAchievements,
     recentMatches: s.recentMatches,
+  };
+}
+
+function snapshotStatsForFirebase(uid: string, displayName: string, displayNameLower: string, joinedAt: number, lastNameChangeAt: number | null): Omit<UserProfile, never> {
+  return {
+    uid,
+    displayName,
+    displayNameLower,
+    joinedAt,
+    lastSeen: Date.now(),
+    ...(lastNameChangeAt ? { lastNameChangeAt } : {}),
+    ...localStatsSnapshot(),
   };
 }
 

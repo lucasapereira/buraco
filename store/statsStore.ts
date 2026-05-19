@@ -13,6 +13,7 @@ import {
   getDailyRewardXP,
   getLevelFromXP,
 } from '../game/achievements';
+import type { BotDifficulty } from '../game/engine';
 
 function generateId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -44,6 +45,7 @@ export interface RoundEndData {
   canastas1000: number;      // canastas limpas de 14 cartas (+1000)
   userBated: boolean;        // o jogador 'user' bateu
   isOnline?: boolean;                  // partida foi PvP online
+  botDifficulty?: BotDifficulty;       // dificuldade do bot (offline) — 'expert' = PIMC
   opponentTeamAvgRating?: number;      // (online) média do rating do time adversário pra calcular ELO
   opponentNames?: string[];            // nomes dos adversários (registro no histórico)
   partnerName?: string;                // nome do parceiro
@@ -96,6 +98,8 @@ interface StatsState {
   currentWinStreak: number;
   longestWinStreak: number;
   hardWins: number;
+  expertWins: number;            // partidas VENCIDAS contra o bot Difícil (PIMC), offline
+  expertMatchesPlayed: number;   // partidas TERMINADAS no Difícil (vit+der+desist)
 
   // ── vs BOT (subset das partidas totais) ───────────────────────
   botMatchesPlayed: number;
@@ -146,6 +150,8 @@ const INITIAL: Omit<StatsState, 'playerId'> = {
   currentWinStreak: 0,
   longestWinStreak: 0,
   hardWins: 0,
+  expertWins: 0,
+  expertMatchesPlayed: 0,
   botMatchesPlayed: 0,
   botMatchesWon: 0,
   currentBotWinStreak: 0,
@@ -178,6 +184,8 @@ export const useStatsStore = create<StatsState & StatsActions>()(
       recordRound: (data: RoundEndData) => {
         const s = get();
         let xp = 0;
+        // Vitória contra o bot Difícil (PIMC), offline, vale o dobro de XP.
+        const isExpertBot = !data.isOnline && data.botDifficulty === 'expert';
 
         // XP por canastas desta rodada
         xp += data.cleanCanastas * 30;
@@ -203,7 +211,7 @@ export const useStatsStore = create<StatsState & StatsActions>()(
         const roundsPlayed = s.roundsPlayed + 1;
 
         // Partidas (só quando a partida termina)
-        let { matchesPlayed, matchesWon, currentWinStreak, longestWinStreak, hardWins, biggestMatchDiff } = s;
+        let { matchesPlayed, matchesWon, currentWinStreak, longestWinStreak, hardWins, expertWins, expertMatchesPlayed, biggestMatchDiff } = s;
         let { botMatchesPlayed, botMatchesWon, currentBotWinStreak, longestBotWinStreak } = s;
         let { onlineMatchesPlayed, onlineMatchesWon, onlineRating } = s;
         let recentMatches = s.recentMatches;
@@ -232,11 +240,13 @@ export const useStatsStore = create<StatsState & StatsActions>()(
             onlineRating = Math.max(0, onlineRating + ratingDelta);
           } else {
             botMatchesPlayed++;
+            if (isExpertBot) expertMatchesPlayed++; // vit+der+desist no Difícil
             if (data.matchWon) {
               botMatchesWon++;
               currentBotWinStreak++;
               longestBotWinStreak = Math.max(longestBotWinStreak, currentBotWinStreak);
               hardWins++;
+              if (isExpertBot) expertWins++;
             } else {
               currentBotWinStreak = 0;
             }
@@ -268,6 +278,7 @@ export const useStatsStore = create<StatsState & StatsActions>()(
           biggestRoundScore,
           biggestMatchDiff,
           hardWins,
+          expertWins,
           currentWinStreak,
           totalBatidas,
           totalCanastas,
@@ -279,6 +290,9 @@ export const useStatsStore = create<StatsState & StatsActions>()(
           const a = ACHIEVEMENTS.find((a) => a.id === id);
           if (a) achXP += a.xpReward;
         });
+
+        // Gracinha: vencer a partida no Difícil dobra o XP de jogo (rodada+partida).
+        if (data.matchEnded && data.matchWon && isExpertBot) xp *= 2;
 
         const finalXP = s.totalXP + xp + achXP;
         const finalLevel = getLevelFromXP(finalXP);
@@ -301,6 +315,8 @@ export const useStatsStore = create<StatsState & StatsActions>()(
           currentWinStreak,
           longestWinStreak,
           hardWins,
+          expertWins,
+          expertMatchesPlayed,
           botMatchesPlayed,
           botMatchesWon,
           currentBotWinStreak,
@@ -349,6 +365,7 @@ export const useStatsStore = create<StatsState & StatsActions>()(
           biggestRoundScore: s.biggestRoundScore,
           biggestMatchDiff: s.biggestMatchDiff,
           hardWins: s.hardWins,
+          expertWins: s.expertWins,
           currentWinStreak: s.currentWinStreak,
           totalBatidas: s.totalBatidas,
           totalCanastas: s.totalCanastas,
@@ -385,6 +402,29 @@ export const useStatsStore = create<StatsState & StatsActions>()(
     {
       name: 'buraco-stats-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      // Os contadores por modo (botMatchesPlayed/onlineMatchesPlayed) só
+      // nasceram no commit que trouxe o Ranking. Partidas anteriores entraram
+      // em matchesPlayed/matchesWon mas em nenhum balde por modo — daí o
+      // Ranking (por modo) nunca fechar com o Perfil (total vitalício).
+      // v1: atribui as partidas órfãs ao bot (online só era contado pelo
+      // próprio contador desde sempre; jogo pré-Ranking era offline vs bot).
+      // Idempotente: depois do backfill o gap é 0; o `version` evita re-rodar.
+      version: 1,
+      migrate: (persisted: any, version: number) => {
+        const ps = persisted ?? {};
+        if (version < 1) {
+          const playedGap =
+            (ps.matchesPlayed ?? 0) - (ps.botMatchesPlayed ?? 0) - (ps.onlineMatchesPlayed ?? 0);
+          if (playedGap > 0) {
+            const wonGap =
+              (ps.matchesWon ?? 0) - (ps.botMatchesWon ?? 0) - (ps.onlineMatchesWon ?? 0);
+            ps.botMatchesPlayed = (ps.botMatchesPlayed ?? 0) + playedGap;
+            ps.botMatchesWon =
+              (ps.botMatchesWon ?? 0) + Math.max(0, Math.min(wonGap, playedGap));
+          }
+        }
+        return ps;
+      },
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           dailyDiag = `REHYDRATE ERRO: ${String((error as any)?.message ?? error)}`;

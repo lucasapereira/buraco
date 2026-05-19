@@ -4,7 +4,10 @@ import { checkCanasta, sortCardsBySuitAndValue } from './rules';
 export type PlayerId = 'user' | 'bot-1' | 'bot-2' | 'bot-3';
 export type TeamId = 'team-1' | 'team-2';
 export type TurnPhase = 'draw' | 'play' | 'discard';
-export type BotDifficulty = 'easy' | 'medium' | 'hard'; // legado: bot sempre joga em 'hard'
+// 'easy'|'medium'|'hard' = política heurística (bot sempre jogou 'hard').
+// 'expert' = busca PIMC (game/pimc.ts) na decisão de pegar-lixo; o resto do
+// turno segue a heurística 'hard'. UI expõe Normal('hard') vs Difícil('expert').
+export type BotDifficulty = 'easy' | 'medium' | 'hard' | 'expert';
 export type GameMode = 'classic' | 'araujo_pereira';
 
 export interface Player {
@@ -56,6 +59,7 @@ export interface GameState {
   gameLog: GameEvent[];
   lastDrawnCardId: string | null;
   gameMode: GameMode;
+  botDifficulty: BotDifficulty;      // tier escolhido no início (por-partida)
   discardedCardHistory: string[];
   mustPlayPileTopId: string | null; // ID da carta do topo do lixo que deve ser baixada
   deckReshuffleCount: number;        // Quantas vezes o lixo foi reembaralhado como novo monte
@@ -73,7 +77,7 @@ export function getNextPlayer(currentId: PlayerId): PlayerId {
   return TURN_ORDER[(idx + 1) % 4];
 }
 
-export function createInitialGameState(targetScore: number = 1500, gameMode: GameMode = 'classic'): GameState {
+export function createInitialGameState(targetScore: number = 1500, gameMode: GameMode = 'classic', botDifficulty: BotDifficulty = 'hard'): GameState {
   const allCards = shuffle(generateDeck(gameMode === 'classic'));
 
   // Separar os 2 mortos (11 cartas cada)
@@ -114,6 +118,7 @@ export function createInitialGameState(targetScore: number = 1500, gameMode: Gam
     gameLog: [],
     lastDrawnCardId: null,
     gameMode,
+    botDifficulty,
     discardedCardHistory: [],
     mustPlayPileTopId: null,
     deckReshuffleCount: 0,

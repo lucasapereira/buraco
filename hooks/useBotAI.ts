@@ -14,6 +14,7 @@ import {
   canastaBonusValue,
 } from '../game/botHelpers';
 import { useGameStore } from '../store/gameStore';
+import { pimcShouldTakePile } from '../game/pimc';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -133,14 +134,22 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       return;
     }
 
+    // PIMC ('expert') só no modo offline (single-player); online usa heurística
+    // pra ser justo entre humanos. O resto do turno segue 'hard' (PIMC só
+    // sobrepõe a decisão de pegar-lixo).
     const difficulty: BotDifficulty = 'hard' as BotDifficulty;
+    const isExpert = !options.isOnline && s.botDifficulty === 'expert';
     const bot = s.players.find(p => p.id === botId);
     if (!bot) return;
 
     try {
       // ── FASE DRAW ──
       if (s.turnPhase === 'draw') {
-        await delay(1500); // Tempo para o bot "pensar" na mesa
+        // Expert: pré-delay curto (o PIMC computa em seguida); piso de tempo
+        // total ~1.5s aplicado depois, pra o bot difícil não agir MAIS RÁPIDO
+        // que o normal (seria um "tell" da dificuldade + estranho na UX).
+        const turnStart = Date.now();
+        await delay(isExpert ? 300 : 1500);
 
         // Re-valida com estado fresco (pode ter mudado durante o delay via applyRemoteState)
         const fresh = useGameStore.getState();
@@ -153,7 +162,21 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         const pile = fresh.pile;
         const teamGames = fresh.teams[freshBot.teamId].games;
         const aggressiveness = options.isOnline ? 1.0 : (PILE_AGGRESSIVENESS_OFFLINE[botId] ?? 1.0);
-        const takePile = shouldTakePileSmart(pile, freshBot.hand, difficulty, teamGames, fresh.gameMode, aggressiveness);
+        let takePile: boolean;
+        if (isExpert) {
+          // Busca PIMC, fatiada (cede o frame) — não trava a UI. Anytime.
+          takePile = await pimcShouldTakePile(fresh, botId, {
+            onYield: async () => { await delay(0); },
+          });
+          // Re-valida: o cômputo é async (~1.2s); estado pode ter mudado.
+          const f2 = useGameStore.getState();
+          if (f2.currentTurnPlayerId !== botId || f2.turnPhase !== 'draw' || f2.roundOver) return;
+          // Piso de UX: garante ~1.5s de "pensar" mesmo se o PIMC for rápido.
+          const elapsed = Date.now() - turnStart;
+          if (elapsed < 1500) await delay(1500 - elapsed);
+        } else {
+          takePile = shouldTakePileSmart(pile, freshBot.hand, difficulty, teamGames, fresh.gameMode, aggressiveness);
+        }
 
         animate(); // Animação de compra
         if (takePile) {
@@ -250,7 +273,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
   }
 
   /** Força jogar uma sequência que inclua o topo do lixo */
-  async function doBotPlayWithPileTop(botId: PlayerId, pileTopId: string) {
+  async function doBotPlayWithPileTop(botId: PlayerId, pileTopId: string, allowWild3 = false) {
     const s = useGameStore.getState();
     const bot = s.players.find(p => p.id === botId);
     if (!bot) return;
@@ -259,6 +282,27 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     if (!topCard) return;
 
     const teamGames = s.teams[bot.teamId].games;
+
+    // Disciplina de coringa no caminho da OBRIGAÇÃO do lixo (espelha item #3,
+    // que só existia em doBotPlaySequencesAsync). No 1º passe (strict) NÃO cria
+    // meld NOVA de 3 cartas com coringa não-natural sem canastra limpa — assim
+    // o bot tenta cumprir a obrigação de forma limpa/natural/maior primeiro.
+    // Se nada mais satisfizer a obrigação, faz um retry relaxado (allowWild3)
+    // pra a regra do Clássico ("baixar o topo") continuar sempre cumprível.
+    const teamHasCleanCanasta = teamGames.some(g => checkCanasta(g) === 'clean');
+    const isBadWild3 = (seq: Card[]): boolean => {
+      if (allowWild3 || s.gameMode !== 'classic' || teamHasCleanCanasta) return false;
+      if (seq.length !== 3) return false;
+      const jk = seq.filter(c => c.isJoker);
+      if (jk.length === 0) return false;
+      const sn = seq.filter(c => !c.isJoker);
+      const seqSuit = sn.length > 0 ? sn[0].suit : null;
+      const allNatural = jk.every(j => j.suit !== 'joker' && j.suit === seqSuit);
+      if (allNatural) return false;
+      const remainingAfter = bot.hand.length - seq.length;
+      const goingForDead = remainingAfter <= 1 && !s.teams[bot.teamId].hasGottenDead;
+      return !goingForDead;
+    };
     // Pre-computa delta de bônus de canastra que o topCard provoca em cada jogo.
     // Ex.: 7♣ entrando em [3,4,5,6, 2♣(wild), 8,9] desloca o coringa para a posição
     // natural do "2", subindo a canastra de suja (+100) → limpa (+200): delta = +100.
@@ -414,6 +458,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     const sequences = findBestSequences(bot.hand, s.gameMode);
     for (const seq of sequences) {
       if (seq.some(c => c.id === pileTopId)) {
+        if (isBadWild3(seq)) continue; // adia meld de 3 com coringa não-natural
         animate();
         if (useGameStore.getState().playCards(botId, seq.map(c => c.id))) return;
       }
@@ -430,7 +475,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         animate();
         if (useGameStore.getState().playCards(botId, [pileTopId, sameSuit[i].id, sameSuit[j].id])) return;
       }
-      if (jokers.length > 0) {
+      if (jokers.length > 0 && !isBadWild3([topCard, sameSuit[i], jokers[0]])) {
         animate();
         if (useGameStore.getState().playCards(botId, [pileTopId, sameSuit[i].id, jokers[0].id])) return;
       }
@@ -449,6 +494,10 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         }
       }
     }
+
+    // Nada satisfez a obrigação no passe strict → retry permitindo coringa-em-3
+    // (a regra do Clássico exige baixar o topo; melhor sujar do que travar).
+    if (!allowWild3) { await doBotPlayWithPileTop(botId, pileTopId, true); return; }
 
     // 4) Fallback: impossível jogar o topo — limpa a obrigação pra não travar o bot
     useGameStore.setState({ mustPlayPileTopId: null });

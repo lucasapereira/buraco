@@ -55,6 +55,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'win_by_1000',   title: 'Esmagador',        description: 'Vença com 1.000+ de diferença',     icon: '💥', xpReward: 300, category: 'special' },
   { id: 'hard_wins_10',  title: 'Mestre do Difícil',description: '10 vitórias no nível Difícil',      icon: '🔴', xpReward: 500, category: 'special' },
   { id: 'win_streak_5',  title: 'Implacável',       description: '5 vitórias consecutivas',           icon: '⚡', xpReward: 400, category: 'special' },
+  { id: 'expert_win_first', title: 'Mente vs Máquina', description: 'Vença o bot Difícil (IA) pela 1ª vez', icon: '🧠', xpReward: 250,  category: 'special' },
+  { id: 'expert_wins_10',   title: 'Caçador de IA',    description: '10 vitórias contra o bot Difícil',    icon: '🤖', xpReward: 700,  category: 'special' },
 ];
 
 // ── NÍVEIS ────────────────────────────────────────────────────────────────────
@@ -142,6 +144,7 @@ export interface CheckableStats {
   biggestRoundScore: number;
   biggestMatchDiff: number;
   hardWins: number;
+  expertWins: number;
   currentWinStreak: number;
   totalBatidas: number;
   totalCanastas: number;
@@ -206,6 +209,8 @@ export function checkNewAchievements(
   check('win_by_1000',  stats.biggestMatchDiff >= 1000);
   check('hard_wins_10', stats.hardWins >= 10);
   check('win_streak_5', stats.currentWinStreak >= 5);
+  check('expert_win_first', stats.expertWins >= 1);
+  check('expert_wins_10', stats.expertWins >= 10);
 
   return newlyUnlocked;
 }

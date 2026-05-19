@@ -109,6 +109,7 @@ export default function StatsScreen() {
           <StatBox label="+1000" value={stats.total1000Canastas.toString()} color={GameColors.canasta.c1000Border} />
           <StatBox label="Batidas" value={stats.totalBatidas.toString()} />
           <StatBox label="Seq. Vitórias" value={`${stats.currentWinStreak} / ${stats.longestWinStreak}`} />
+          <StatBox label="Bot V/D" value={`${stats.botMatchesWon}/${stats.botMatchesPlayed - stats.botMatchesWon}`} color={GameColors.success} />
           <StatBox label="Rating Online" value={stats.onlineRating.toString()} color={GameColors.info} />
           <StatBox label="Online V/D" value={`${stats.onlineMatchesWon}/${stats.onlineMatchesPlayed - stats.onlineMatchesWon}`} color={GameColors.info} />
         </View>
