@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useForceUpdate } from '@/hooks/useForceUpdate';
 import { ThemedAlertHost } from '../components/ThemedAlert';
 import { useThemeStore } from '../store/themeStore';
+import { useLocaleStore, useT } from '../store/localeStore';
 import { bootstrapAuth } from '../hooks/useGoogleAuth';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.lucasapereira.buraco';
@@ -20,6 +21,7 @@ export const unstable_settings = {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { needsUpdate, checking } = useForceUpdate();
+  const t = useT();
 
   // Bloqueia o render das telas até o tema persistido ser aplicado em
   // GameColors (via onRehydrateStorage do themeStore). Sem isso, telas
@@ -32,6 +34,15 @@ export default function RootLayout() {
     return themePersist?.onFinishHydration?.(() => setThemeHydrated(true));
   }, [themeHydrated]);
 
+  // Mesmo padrão pro localeStore: i18n.locale precisa estar setado antes das
+  // telas montarem, ou todo Text vai aparecer com o fallback default.
+  const localePersist = (useLocaleStore as any).persist;
+  const [localeHydrated, setLocaleHydrated] = useState<boolean>(() => !!localePersist?.hasHydrated?.());
+  useEffect(() => {
+    if (localeHydrated) return;
+    return localePersist?.onFinishHydration?.(() => setLocaleHydrated(true));
+  }, [localeHydrated]);
+
   // Restaura a sessão Firebase no startup (reinstalar apaga o token e quebra
   // todas as leituras do Firebase — ranking, perfis). Fire-and-forget; telas
   // que leem cedo (ex.: Ranking) também aguardam isso por conta própria.
@@ -39,7 +50,7 @@ export default function RootLayout() {
     bootstrapAuth().catch(() => {});
   }, []);
 
-  if (checking || !themeHydrated) {
+  if (checking || !themeHydrated || !localeHydrated) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#FFD600" />
@@ -51,12 +62,10 @@ export default function RootLayout() {
     return (
       <View style={styles.center}>
         <Text style={styles.emoji}>🃏</Text>
-        <Text style={styles.title}>Atualização obrigatória</Text>
-        <Text style={styles.body}>
-          Uma nova versão do Buraco está disponível. Atualize para continuar jogando.
-        </Text>
+        <Text style={styles.title}>{t('update.title')}</Text>
+        <Text style={styles.body}>{t('update.body')}</Text>
         <TouchableOpacity style={styles.btn} onPress={() => Linking.openURL(PLAY_STORE_URL)}>
-          <Text style={styles.btnText}>Atualizar agora</Text>
+          <Text style={styles.btnText}>{t('update.btn')}</Text>
         </TouchableOpacity>
       </View>
     );

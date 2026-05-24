@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { Achievement } from '../game/achievements';
+import { useT } from '../store/localeStore';
+import { getAchievementTitle, getAchievementDescription } from '../game/playerNames';
 
 interface Props {
   achievement: Achievement | null;
@@ -8,6 +10,7 @@ interface Props {
 }
 
 export function AchievementToast({ achievement, onDismiss }: Props) {
+  const t = useT();
   const translateY = useRef(new Animated.Value(-120)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -39,12 +42,12 @@ export function AchievementToast({ achievement, onDismiss }: Props) {
 
   return (
     <Animated.View style={[styles.container, { transform: [{ translateY }], opacity }]}>
-      <Text style={styles.label}>CONQUISTA DESBLOQUEADA</Text>
+      <Text style={styles.label}>{t('achievementToast.unlocked').toUpperCase()}</Text>
       <View style={styles.row}>
         <Text style={styles.icon}>{achievement.icon}</Text>
         <View style={styles.texts}>
-          <Text style={styles.title}>{achievement.title}</Text>
-          <Text style={styles.desc}>{achievement.description}</Text>
+          <Text style={styles.title}>{getAchievementTitle(achievement)}</Text>
+          <Text style={styles.desc}>{getAchievementDescription(achievement)}</Text>
         </View>
         <View style={styles.xpBadge}>
           <Text style={styles.xpText}>+{achievement.xpReward}</Text>

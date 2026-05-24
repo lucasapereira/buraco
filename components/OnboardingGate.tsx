@@ -14,6 +14,7 @@ import { GameColors, Radius } from '../constants/colors';
 import { useProfileStore } from '../store/profileStore';
 import { useOnlineStore } from '../store/onlineStore';
 import { signInWithGoogle } from '../hooks/useGoogleAuth';
+import { useT } from '../store/localeStore';
 
 /**
  * Tela bloqueante de primeiro acesso. Só é renderizada (pelo layout das tabs)
@@ -28,6 +29,7 @@ import { signInWithGoogle } from '../hooks/useGoogleAuth';
  */
 export function OnboardingGate() {
   const router = useRouter();
+  const t = useT();
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,13 +41,14 @@ export function OnboardingGate() {
     router.replace('/(tabs)/ranking' as any);
   };
 
+  // Compara contra a string traduzida no locale atual; cobre todos os idiomas.
   const isNameTakenError = (msg: string | null | undefined) =>
-    !!msg && msg.toLowerCase().includes('já está em uso');
+    !!msg && msg === t('profile.nameTaken');
 
   const handleContinue = async () => {
     const trimmed = name.trim();
     if (trimmed.length < 2) {
-      setError('Nome muito curto (mínimo 2 letras)');
+      setError(t('profile.nameTooShort'));
       return;
     }
     setError(null);
@@ -58,10 +61,9 @@ export function OnboardingGate() {
     } catch (e: any) {
       const claimErr = useProfileStore.getState().claimError;
       if (isNameTakenError(claimErr) || isNameTakenError(e?.message)) {
-        setError(claimErr ?? 'Esse nome já está em uso. Escolha outro.');
+        setError(claimErr ?? t('profile.nameTaken'));
       } else {
-        // Provável falta de conexão — não trava o jogo offline.
-        setError('Sem conexão para registrar o nome agora.');
+        setError(t('profile.nameRegisterOffline'));
         setOfflineEscape(true);
       }
     } finally {
@@ -76,21 +78,18 @@ export function OnboardingGate() {
       await useOnlineStore.getState().ensureAuth();
       const res = await signInWithGoogle();
       if (!res.ok) {
-        if (res.error !== 'Login cancelado') setError(res.error);
+        if (res.error !== t('online.loginCanceled')) setError(res.error);
         return;
       }
       const { myUsername } = useProfileStore.getState();
       if (myUsername) {
-        // Perfil antigo recuperado — entra direto.
         useOnlineStore.getState().setDisplayName(myUsername);
         await finishInto();
       } else {
-        // Logou no Google mas é conta nova: ainda precisa escolher um nome
-        // (o claim a seguir fica vinculado ao uid do Google).
-        setError('Conta Google conectada! Agora escolha um nome para jogar.');
+        setError(t('profile.googleConnected'));
       }
     } catch (e: any) {
-      setError(e?.message ?? 'Falha no login com Google');
+      setError(e?.message ?? t('profile.googleLoginFail'));
     } finally {
       setGoogleBusy(false);
     }
@@ -108,16 +107,14 @@ export function OnboardingGate() {
       <SafeAreaView style={styles.container}>
         <View style={styles.centered}>
           <Text style={styles.emoji}>🃏</Text>
-          <Text style={styles.title}>Bem-vindo ao Buraco!</Text>
-          <Text style={styles.subtitle}>
-            Escolha um nome para entrar no ranking e jogar com a família
-          </Text>
+          <Text style={styles.title}>{t('onboarding.welcomeTitle')}</Text>
+          <Text style={styles.subtitle}>{t('onboarding.welcomeSubtitle')}</Text>
 
           <TextInput
             style={styles.nameInput}
             value={name}
-            onChangeText={(t) => { setName(t); if (error) setError(null); }}
-            placeholder="Seu nome"
+            onChangeText={(v) => { setName(v); if (error) setError(null); }}
+            placeholder={t('onboarding.namePlaceholder')}
             placeholderTextColor={GameColors.text.faint}
             maxLength={16}
             autoFocus
@@ -136,12 +133,12 @@ export function OnboardingGate() {
           >
             {busy
               ? <ActivityIndicator color={GameColors.text.onGold} />
-              : <Text style={styles.primaryBtnText}>ENTRAR →</Text>}
+              : <Text style={styles.primaryBtnText}>{t('common.continue')}</Text>}
           </TouchableOpacity>
 
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>ou</Text>
+            <Text style={styles.dividerText}>{t('online.dividerOr')}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -153,11 +150,9 @@ export function OnboardingGate() {
           >
             {googleBusy
               ? <ActivityIndicator color="#0A1C30" />
-              : <Text style={styles.googleBtnText}>🔐 Entrar com Google</Text>}
+              : <Text style={styles.googleBtnText}>{t('onboarding.googleSignIn')}</Text>}
           </TouchableOpacity>
-          <Text style={styles.googleHint}>
-            Recupera seu perfil mesmo após reinstalar o app
-          </Text>
+          <Text style={styles.googleHint}>{t('online.googleHint')}</Text>
 
           {offlineEscape && (
             <TouchableOpacity
@@ -165,9 +160,7 @@ export function OnboardingGate() {
               onPress={handlePlayOffline}
               activeOpacity={0.7}
             >
-              <Text style={styles.offlineLinkText}>
-                Jogar offline por enquanto
-              </Text>
+              <Text style={styles.offlineLinkText}>{t('onboarding.continueOffline')}</Text>
             </TouchableOpacity>
           )}
         </View>

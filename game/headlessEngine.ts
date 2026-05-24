@@ -377,6 +377,8 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
         if (card.isJoker && wouldDirtyGame(card, game)) {
           if (game.some(c => c.isJoker)) continue;
           if (checkCanasta(game) === 'clean') {
+            // HARD RULE: 500/1000 nunca é sujada (espelha hooks/useBotAI.ts).
+            if (game.length >= 13) continue;
             const goingOutNext = pNow.hand.length <= 2;
             const cleanCanastas = team.games.filter(g => checkCanasta(g) === 'clean');
             if (!goingOutNext || cleanCanastas.length <= 1) continue;
@@ -401,6 +403,8 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
         if (validateSequence([...game, card], s.gameMode)) {
           const combined = [...game, card];
           if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') {
+            // HARD RULE: 500/1000 nunca é sujada (espelha hooks/useBotAI.ts).
+            if (game.length >= 13) continue;
             const goingOutNext = pNow.hand.length <= 2;
             const otherClean = team.games.filter((g, idx) => idx !== gi && checkCanasta(g) === 'clean').length;
             if (!goingOutNext || otherClean === 0) continue;

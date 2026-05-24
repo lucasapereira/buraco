@@ -117,7 +117,11 @@ export function getLevelFromXP(xp: number): number {
 }
 
 export function getRank(level: number): string {
-  return RANKS[Math.min(level - 1, 19)];
+  // Delegamos pro i18n; o array RANKS acima fica como referência das faixas em PT.
+  // Import inline pra evitar ciclo com playerNames.ts → achievements.ts.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getRankName } = require('./playerNames');
+  return getRankName(level);
 }
 
 export function getXPForNextLevel(level: number): number {

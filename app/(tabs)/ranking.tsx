@@ -27,6 +27,9 @@ import { getDailyDiag } from '../../store/statsStore';
 import { bootstrapAuth, signInWithGoogle } from '../../hooks/useGoogleAuth';
 import { ScreenBackground } from '../../components/ScreenBackground';
 import { GameColors, Radius, Elevation } from '../../constants/colors';
+import { useT } from '../../store/localeStore';
+import { i18n } from '../../locales';
+import { displayName } from '../../game/playerNames';
 
 type Board = 'bot' | 'online';
 
@@ -86,14 +89,15 @@ function overlayMine(list: UserProfile[]): UserProfile[] {
 
 function timeAgo(ts: number): string {
   const sec = Math.floor((Date.now() - ts) / 1000);
-  if (sec < 60) return 'agora';
-  if (sec < 3600) return `${Math.floor(sec / 60)} min`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)} h`;
-  return `${Math.floor(sec / 86400)} d`;
+  if (sec < 60) return i18n.t('rankingScreen.timeNow');
+  if (sec < 3600) return i18n.t('rankingScreen.timeMin', { n: Math.floor(sec / 60) });
+  if (sec < 86400) return i18n.t('rankingScreen.timeHour', { n: Math.floor(sec / 3600) });
+  return i18n.t('rankingScreen.timeDay', { n: Math.floor(sec / 86400) });
 }
 
 export default function RankingScreen() {
   useKeepAwake();
+  const t = useT();
   const router = useRouter();
   const { loadAllProfiles, loadMonthlyChampions, finalizePastMonthlyChampions, syncProfileToFirebase, myUid } = useProfileStore();
 
@@ -163,9 +167,9 @@ export default function RankingScreen() {
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} style={styles.backBtn}>
-          <Text style={styles.backText}>← Voltar</Text>
+          <Text style={styles.backText}>{t('rankingScreen.back')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>🏆 Ranking</Text>
+        <Text style={styles.headerTitle}>{t('rankingScreen.title')}</Text>
         <View style={{ width: 70 }} />
       </View>
 
@@ -174,25 +178,25 @@ export default function RankingScreen() {
           style={[styles.tab, board === 'bot' && styles.tabActive]}
           onPress={() => setBoard('bot')}
         >
-          <Text style={[styles.tabText, board === 'bot' && styles.tabTextActive]}>🤖 vs Bot</Text>
+          <Text style={[styles.tabText, board === 'bot' && styles.tabTextActive]}>{t('rankingScreen.tabBot')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, board === 'online' && styles.tabActive]}
           onPress={() => setBoard('online')}
         >
-          <Text style={[styles.tabText, board === 'online' && styles.tabTextActive]}>🌐 Online (PvP)</Text>
+          <Text style={[styles.tabText, board === 'online' && styles.tabTextActive]}>{t('rankingScreen.tabOnline')}</Text>
         </TouchableOpacity>
       </View>
 
       {!loading && board === 'online' && champions.length > 0 && (
         <View style={styles.championsBar}>
-          <Text style={styles.championsTitle}>🏆 Campeões do Mês</Text>
+          <Text style={styles.championsTitle}>{t('rankingScreen.championsTitle')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.championsRow}>
             {champions.slice(0, 12).map(c => (
               <View key={c.month} style={styles.championChip}>
                 <Text style={styles.championMonth}>{c.month}</Text>
                 <Text style={styles.championName} numberOfLines={1}>👑 {c.displayName}</Text>
-                <Text style={styles.championRating}>{c.rating} pts</Text>
+                <Text style={styles.championRating}>{t('rankingScreen.championsRating', { rating: c.rating })}</Text>
               </View>
             ))}
           </ScrollView>
@@ -202,16 +206,16 @@ export default function RankingScreen() {
       {loading ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color="#FFD600" size="large" />
-          <Text style={styles.loadingText}>Carregando...</Text>
+          <Text style={styles.loadingText}>{t('rankingScreen.loading')}</Text>
         </View>
       ) : sorted.length === 0 ? (
         <View style={styles.loadingBox}>
           <Text style={styles.emptyText}>
             {needsRelogin
-              ? 'Sua sessão expirou (você reinstalou o app). Entre de novo com o Google para recuperar seu perfil e ver o ranking.'
+              ? t('rankingScreen.sessionExpired')
               : board === 'bot'
-              ? 'Ninguém tem partidas vs bot ainda.'
-              : 'Ninguém tem partidas online ainda.'}
+              ? t('rankingScreen.emptyBot')
+              : t('rankingScreen.emptyOnline')}
           </Text>
           {needsRelogin && (
             <TouchableOpacity
@@ -222,14 +226,14 @@ export default function RankingScreen() {
             >
               {reloginBusy
                 ? <ActivityIndicator color="#0A1C30" />
-                : <Text style={styles.reloginBtnText}>🔐 Entrar com Google</Text>}
+                : <Text style={styles.reloginBtnText}>{t('rankingScreen.reloginGoogle')}</Text>}
             </TouchableOpacity>
           )}
           <Text style={styles.diagText} selectable>
-            diag ranking: {getRankingDiag()}
+            {t('rankingScreen.diagRanking', { diag: getRankingDiag() })}
           </Text>
           <Text style={styles.diagText} selectable>
-            diag prêmio: {getDailyDiag()}
+            {t('rankingScreen.diagDaily', { diag: getDailyDiag() })}
           </Text>
         </View>
       ) : (
@@ -256,18 +260,22 @@ export default function RankingScreen() {
                     {p.displayName}
                     {trophiesByUid[p.uid] > 0 && <Text style={styles.fire}>  {'🏆'.repeat(Math.min(trophiesByUid[p.uid], 3))}</Text>}
                     {invicto && <Text style={styles.fire}>  🔥</Text>}
-                    {isMe && <Text style={styles.meTag}>  (você)</Text>}
+                    {isMe && <Text style={styles.meTag}>{t('rankingScreen.rowYou')}</Text>}
                   </Text>
                   <Text style={styles.subText}>
-                    Nível {p.level ?? 1} · {getRank(p.level ?? 1)}
-                    {board === 'online' && ` · ${Math.round(p.onlineRating ?? 1000)} pts`}
+                    {t('rankingScreen.rowLevelRank', { level: p.level ?? 1, rank: getRank(p.level ?? 1) })}
+                    {board === 'online' && t('rankingScreen.rowRating', { rating: Math.round(p.onlineRating ?? 1000) })}
                     {board === 'bot' && (p.expertMatchesPlayed ?? 0) > 0 &&
-                      ` · 🧠 ${p.expertWins ?? 0}/${p.expertMatchesPlayed} · ${Math.round(100 * (p.expertWins ?? 0) / (p.expertMatchesPlayed ?? 1))}%`}
+                      t('rankingScreen.rowExpert', {
+                        wins: p.expertWins ?? 0,
+                        total: p.expertMatchesPlayed,
+                        pct: Math.round(100 * (p.expertWins ?? 0) / (p.expertMatchesPlayed ?? 1)),
+                      })}
                   </Text>
                 </View>
                 <View style={styles.scoreCol}>
                   <Text style={styles.scoreMain}>{score.wins}–{score.losses}</Text>
-                  <Text style={styles.scoreSub}>{score.total} jogos</Text>
+                  <Text style={styles.scoreSub}>{t('rankingScreen.rowScoreSub', { total: score.total })}</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -288,6 +296,7 @@ export default function RankingScreen() {
 
 // ── Modal de detalhe ──────────────────────────────────────────────────────────
 function ProfileDetailModal({ profile, onClose, myProfile, championMonths }: { profile: UserProfile | null; onClose: () => void; myProfile: UserProfile | null; championMonths: string[] }) {
+  const t = useT();
   if (!profile) return null;
   const p = profile;
   const h2h = (() => {
@@ -320,42 +329,44 @@ function ProfileDetailModal({ profile, onClose, myProfile, championMonths }: { p
                 <Text style={styles.detailAvatarText}>{initial(p.displayName)}</Text>
               </View>
               <Text style={styles.detailName}>{p.displayName}</Text>
-              <Text style={styles.detailRank}>Nível {p.level ?? 1} · {rank}</Text>
-              {p.lastSeen && <Text style={styles.detailLastSeen}>Visto {timeAgo(p.lastSeen)} atrás</Text>}
+              <Text style={styles.detailRank}>{t('rankingScreen.detailLevel', { level: p.level ?? 1, rank })}</Text>
+              {p.lastSeen && <Text style={styles.detailLastSeen}>{t('rankingScreen.detailLastSeen', { ago: timeAgo(p.lastSeen) })}</Text>}
             </View>
 
             {/* Bot */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🤖 vs Bot</Text>
-              <Stat label="Partidas" value={botTotal} />
-              <Stat label="Vitórias" value={botWon} />
-              <Stat label="Derrotas" value={botLost} />
+              <Text style={styles.sectionTitle}>{t('rankingScreen.detailBot')}</Text>
+              <Stat label={t('rankingScreen.detailMatches')} value={botTotal} />
+              <Stat label={t('rankingScreen.detailWins')} value={botWon} />
+              <Stat label={t('rankingScreen.detailLosses')} value={botLost} />
               <Stat
-                label="🧠 IA Difícil (PIMC)"
-                value={`${p.expertWins ?? 0}/${p.expertMatchesPlayed ?? 0}${(p.expertMatchesPlayed ?? 0) > 0 ? `  ·  ${Math.round(100 * (p.expertWins ?? 0) / (p.expertMatchesPlayed ?? 1))}%` : ''}`}
+                label={t('rankingScreen.detailExpertAI')}
+                value={(p.expertMatchesPlayed ?? 0) > 0
+                  ? t('rankingScreen.detailExpertWithPct', { wins: p.expertWins ?? 0, total: p.expertMatchesPlayed ?? 0, pct: Math.round(100 * (p.expertWins ?? 0) / (p.expertMatchesPlayed ?? 1)) })
+                  : t('rankingScreen.detailExpertVal', { wins: p.expertWins ?? 0, total: p.expertMatchesPlayed ?? 0 })}
               />
-              <Stat label="Streak atual" value={`${p.currentBotWinStreak ?? 0} 🔥`} />
-              <Stat label="Maior streak" value={p.longestBotWinStreak ?? 0} />
+              <Stat label={t('rankingScreen.detailCurStreak')} value={`${p.currentBotWinStreak ?? 0} 🔥`} />
+              <Stat label={t('rankingScreen.detailLongestStreak')} value={p.longestBotWinStreak ?? 0} />
               {invicto && (
                 <View style={styles.invictoBadge}>
-                  <Text style={styles.invictoText}>🏅 INVICTO vs BOT — {botTotal} partidas, nenhuma derrota!</Text>
+                  <Text style={styles.invictoText}>{t('rankingScreen.detailInvicto', { total: botTotal })}</Text>
                 </View>
               )}
             </View>
 
             {/* Online */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🌐 Online (PvP)</Text>
-              <Stat label="Partidas" value={onlineTotal} />
-              <Stat label="Vitórias" value={onlineWon} />
-              <Stat label="Derrotas" value={onlineLost} />
-              <Stat label="Rating" value={Math.round(p.onlineRating ?? 1000)} />
+              <Text style={styles.sectionTitle}>{t('rankingScreen.detailOnline')}</Text>
+              <Stat label={t('rankingScreen.detailMatches')} value={onlineTotal} />
+              <Stat label={t('rankingScreen.detailWins')} value={onlineWon} />
+              <Stat label={t('rankingScreen.detailLosses')} value={onlineLost} />
+              <Stat label={t('rankingScreen.detailRating')} value={Math.round(p.onlineRating ?? 1000)} />
             </View>
 
             {/* Troféus mensais */}
             {championMonths.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>🏆 Troféus mensais ({championMonths.length})</Text>
+                <Text style={styles.sectionTitle}>{t('rankingScreen.detailTrophies', { count: championMonths.length })}</Text>
                 <View style={styles.trophyRow}>
                   {championMonths.map(m => (
                     <View key={m} style={styles.trophyBadge}>
@@ -370,44 +381,44 @@ function ProfileDetailModal({ profile, onClose, myProfile, championMonths }: { p
             {/* Confronto direto */}
             {h2h && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>⚔️ Confronto direto</Text>
+                <Text style={styles.sectionTitle}>{t('rankingScreen.detailH2H')}</Text>
                 <View style={styles.h2hBox}>
-                  <Text style={styles.h2hLine}>Você × {p.displayName}</Text>
+                  <Text style={styles.h2hLine}>{t('rankingScreen.detailH2HLine', { name: p.displayName })}</Text>
                   <Text style={styles.h2hScore}>
                     <Text style={{ color: '#B9F6CA' }}>{h2h.wins}V</Text>
                     <Text style={{ color: 'rgba(255,255,255,0.7)' }}> – </Text>
                     <Text style={{ color: '#FF8A80' }}>{h2h.losses}D</Text>
                   </Text>
-                  <Text style={styles.h2hSub}>em {h2h.total} partidas online</Text>
+                  <Text style={styles.h2hSub}>{t('rankingScreen.detailH2HSub', { total: h2h.total })}</Text>
                 </View>
               </View>
             )}
 
             {/* Canastas */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🃏 Canastas</Text>
-              <Stat label="Limpas (200)" value={(p.totalCleanCanastas ?? 0) - (p.total500Canastas ?? 0) - (p.total1000Canastas ?? 0)} />
-              <Stat label="500 (13 cartas)" value={p.total500Canastas ?? 0} />
-              <Stat label="1000 (14 cartas)" value={p.total1000Canastas ?? 0} />
-              <Stat label="Sujas (100)" value={p.totalDirtyCanastas ?? 0} />
-              <Stat label="Total" value={p.totalCanastas ?? 0} />
-              <Stat label="Batidas" value={p.totalBatidas ?? 0} />
+              <Text style={styles.sectionTitle}>{t('rankingScreen.detailCanastas')}</Text>
+              <Stat label={t('rankingScreen.detailCleanLabel')} value={(p.totalCleanCanastas ?? 0) - (p.total500Canastas ?? 0) - (p.total1000Canastas ?? 0)} />
+              <Stat label={t('rankingScreen.detailC500Label')} value={p.total500Canastas ?? 0} />
+              <Stat label={t('rankingScreen.detailC1000Label')} value={p.total1000Canastas ?? 0} />
+              <Stat label={t('rankingScreen.detailDirtyLabel')} value={p.totalDirtyCanastas ?? 0} />
+              <Stat label={t('rankingScreen.detailTotalLabel')} value={p.totalCanastas ?? 0} />
+              <Stat label={t('rankingScreen.detailBaterLabel')} value={p.totalBatidas ?? 0} />
             </View>
 
             {/* Recordes */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>📊 Recordes</Text>
-              <Stat label="Maior pontuação numa rodada" value={p.biggestRoundScore ?? 0} />
-              <Stat label="Maior diferença numa partida" value={p.biggestMatchDiff ?? 0} />
-              <Stat label="Pontos totais" value={p.totalPointsEarned ?? 0} />
-              <Stat label="XP" value={p.totalXP ?? 0} />
-              <Stat label="Maior streak diário" value={p.longestStreak ?? 0} />
+              <Text style={styles.sectionTitle}>{t('rankingScreen.detailRecords')}</Text>
+              <Stat label={t('rankingScreen.detailBiggestRound')} value={p.biggestRoundScore ?? 0} />
+              <Stat label={t('rankingScreen.detailBiggestMatch')} value={p.biggestMatchDiff ?? 0} />
+              <Stat label={t('rankingScreen.detailTotalPoints')} value={p.totalPointsEarned ?? 0} />
+              <Stat label={t('rankingScreen.detailXP')} value={p.totalXP ?? 0} />
+              <Stat label={t('rankingScreen.detailLongestDaily')} value={p.longestStreak ?? 0} />
             </View>
 
             {/* Histórico */}
             {p.recentMatches && p.recentMatches.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>📜 Últimas partidas</Text>
+                <Text style={styles.sectionTitle}>{t('rankingScreen.detailHistory')}</Text>
                 {p.recentMatches.map((m, i) => (
                   <View key={i} style={styles.matchRow}>
                     <Text style={[styles.matchResult, { color: m.won ? '#B9F6CA' : '#FF8A80' }]}>
@@ -415,7 +426,7 @@ function ProfileDetailModal({ profile, onClose, myProfile, championMonths }: { p
                     </Text>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.matchScore}>
-                        {m.myScore} × {m.theirScore} {m.mode === 'bot' ? '· bot' : '· online'}
+                        {m.myScore} × {m.theirScore} {m.mode === 'bot' ? t('rankingScreen.detailMatchBot') : t('rankingScreen.detailMatchOnline')}
                         {typeof m.ratingDelta === 'number' && (
                           <Text style={{ color: m.ratingDelta >= 0 ? '#B9F6CA' : '#FF8A80' }}>
                             {' '}({m.ratingDelta >= 0 ? '+' : ''}{m.ratingDelta})
@@ -423,7 +434,7 @@ function ProfileDetailModal({ profile, onClose, myProfile, championMonths }: { p
                         )}
                       </Text>
                       {m.opponentNames && m.opponentNames.length > 0 && (
-                        <Text style={styles.matchOpps}>vs {m.opponentNames.join(', ')}</Text>
+                        <Text style={styles.matchOpps}>{t('rankingScreen.detailMatchVs', { names: m.opponentNames.map(displayName).join(', ') })}</Text>
                       )}
                     </View>
                     <Text style={styles.matchTime}>{timeAgo(m.ts)}</Text>
@@ -433,7 +444,7 @@ function ProfileDetailModal({ profile, onClose, myProfile, championMonths }: { p
             )}
 
             <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-              <Text style={styles.closeBtnText}>Fechar</Text>
+              <Text style={styles.closeBtnText}>{t('rankingScreen.detailClose')}</Text>
             </TouchableOpacity>
           </ScrollView>
         </TouchableOpacity>

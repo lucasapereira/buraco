@@ -12,6 +12,7 @@
  * 3. Login limpo com Google numa instalação nova sem stats.
  */
 
+import { i18n } from '../locales';
 import {
   GoogleAuthProvider,
   linkWithCredential,
@@ -62,7 +63,7 @@ export async function signInWithGoogle(): Promise<GoogleAuthResult> {
     const idToken: string | null = response?.data?.idToken ?? response?.idToken ?? null;
     if (!idToken) {
       console.warn('[google] no idToken. response keys:', Object.keys(response ?? {}));
-      return { ok: false, error: 'Falha ao obter token do Google (idToken vazio)' };
+      return { ok: false, error: i18n.t('online.googleIdTokenEmpty') };
     }
     console.log('[google] idToken len:', idToken.length);
 
@@ -107,10 +108,10 @@ export async function signInWithGoogle(): Promise<GoogleAuthResult> {
     return { ok: true, linkedExisting: true, uid: currentUser.uid };
   } catch (e: any) {
     console.warn('[google] FAIL code=', e?.code, 'msg=', e?.message);
-    if (e?.code === statusCodes.SIGN_IN_CANCELLED) return { ok: false, error: 'Login cancelado' };
-    if (e?.code === statusCodes.IN_PROGRESS) return { ok: false, error: 'Já em andamento' };
-    if (e?.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) return { ok: false, error: 'Google Play Services indisponível' };
-    return { ok: false, error: `[${e?.code ?? 'erro'}] ${e?.message ?? 'Erro desconhecido'}` };
+    if (e?.code === statusCodes.SIGN_IN_CANCELLED) return { ok: false, error: i18n.t('online.loginCanceled') };
+    if (e?.code === statusCodes.IN_PROGRESS) return { ok: false, error: i18n.t('online.googleAlreadyInProgress') };
+    if (e?.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) return { ok: false, error: i18n.t('online.googlePlayServicesUnavailable') };
+    return { ok: false, error: i18n.t('online.googleUnknownError', { code: e?.code ?? 'error', msg: e?.message ?? i18n.t('online.errorUnknown') }) };
   }
 }
 

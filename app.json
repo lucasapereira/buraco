@@ -2,13 +2,14 @@
   "expo": {
     "name": "Queti's Buraco",
     "slug": "buraco",
-    "version": "2.0.1",
+    "version": "2.1.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "buraco",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lucasapereira.buraco"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +18,13 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.lucasapereira.buraco",
-      "versionCode": 58
+      "versionCode": 62,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "output": "static",
@@ -42,7 +49,24 @@
       "expo-web-browser",
       "expo-audio",
       "expo-asset",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-localization",
+      [
+        "./plugins/withLocalizedAppName",
+        {
+          "names": {
+            "pt": "Queti's Buraco",
+            "en": "Queti's Canasta",
+            "es": "Queti's Canasta",
+            "ru": "Queti's Бурако",
+            "it": "Queti's Burraco",
+            "zh": "Queti's 布拉柯",
+            "lt": "Queti's Burako",
+            "lv": "Queti's Burako",
+            "et": "Queti's Burako"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

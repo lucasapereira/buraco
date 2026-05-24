@@ -12,7 +12,9 @@ import { ScreenBackground } from '../../components/ScreenBackground';
 import { GameColors, Radius, Elevation } from '../../constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeStore } from '../../store/themeStore';
+import { useLocaleStore, useT } from '../../store/localeStore';
 import { THEME_LABELS, type ThemeName } from '../../constants/themes';
+import { SUPPORTED_LOCALES, LOCALE_LABELS, LOCALE_FLAGS, type Locale } from '../../locales';
 
 const APP_VERSION = Constants.expoConfig?.version ?? '?';
 
@@ -21,6 +23,7 @@ const TARGETS = [1500, 3000, 5000];
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const t = useT();
   const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId, teams, matchScores, botDifficulty: gameBotDifficulty } = useGameStore();
   const { level, checkDailyReward, claimDailyReward, recordRound } = useStatsStore();
   const { resetRoom, roomStatus } = useOnlineStore();
@@ -29,8 +32,11 @@ export default function HomeScreen() {
   const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('expert');
   const [dailyReward, setDailyReward] = useState<DailyRewardInfo | null>(null);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
   const currentTheme = useThemeStore(s => s.theme);
   const setTheme = useThemeStore(s => s.setTheme);
+  const currentLocale = useLocaleStore(s => s.locale);
+  const setLocale = useLocaleStore(s => s.setLocale);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -95,12 +101,12 @@ export default function HomeScreen() {
     };
 
     const msg = wouldCountAsLoss
-      ? `Você está perdendo por ${Math.abs(diff)} pontos. Reiniciar agora vai contar como DERROTA.`
-      : 'Tem certeza que deseja apagar a partida atual?';
-    const confirmLabel = wouldCountAsLoss ? 'Reiniciar mesmo assim' : 'Sim, Apagar';
+      ? t('home.restart.msgWouldLose', { diff: Math.abs(diff) })
+      : t('home.restart.msgConfirm');
+    const confirmLabel = wouldCountAsLoss ? t('home.restart.confirmRisk') : t('home.restart.confirmNormal');
 
-    showAlert('Reiniciar', msg, [
-      { text: 'Cancelar', style: 'cancel' },
+    showAlert(t('home.restart.title'), msg, [
+      { text: t('common.cancel'), style: 'cancel' },
       { text: confirmLabel, style: 'destructive', onPress: runRestart },
     ]);
   };
@@ -118,11 +124,11 @@ export default function HomeScreen() {
         <View style={styles.dailyOverlay}>
           <View style={styles.dailyBox}>
             <Text style={styles.dailyEmoji}>🎁</Text>
-            <Text style={styles.dailyTitle}>Recompensa Diária!</Text>
+            <Text style={styles.dailyTitle}>{t('home.daily.title')}</Text>
             <Text style={styles.dailyStreak}>
               {dailyReward && dailyReward.streakDays > 1
-                ? `🔥 ${dailyReward.streakDays} dias seguidos!`
-                : 'Bem-vindo de volta!'}
+                ? t('home.daily.streak', { days: dailyReward.streakDays })
+                : t('home.daily.welcomeBack')}
             </Text>
             <View style={styles.dailyXPBadge}>
               <Text style={styles.dailyXPText}>+{dailyReward?.xp ?? 0}</Text>
@@ -133,7 +139,7 @@ export default function HomeScreen() {
               onPress={() => { claimDailyReward(); setDailyReward(null); }}
               activeOpacity={0.85}
             >
-              <Text style={styles.dailyBtnText}>RESGATAR</Text>
+              <Text style={styles.dailyBtnText}>{t('home.daily.claim')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -145,7 +151,7 @@ export default function HomeScreen() {
         onPress={() => router.replace('/(tabs)/stats' as any)}
         activeOpacity={0.8}
       >
-        <Text style={styles.profileBtnLevel}>Nv {level}</Text>
+        <Text style={styles.profileBtnLevel}>{t('home.level', { level })}</Text>
         <Text style={styles.profileBtnIcon}>👤</Text>
       </TouchableOpacity>
 
@@ -158,26 +164,73 @@ export default function HomeScreen() {
         <Text style={styles.themeBtnIcon}>🎨</Text>
       </TouchableOpacity>
 
+      {/* Botão de Idioma */}
+      <TouchableOpacity
+        style={[styles.langBtn, { top: insets.top + 8 }]}
+        onPress={() => setLangPickerOpen(true)}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.langBtnIcon}>{LOCALE_FLAGS[currentLocale]}</Text>
+      </TouchableOpacity>
+
       {/* Modal Seletor de Tema */}
       <Modal visible={themePickerOpen} transparent animationType="fade" onRequestClose={() => setThemePickerOpen(false)}>
         <TouchableOpacity style={styles.themeOverlay} activeOpacity={1} onPress={() => setThemePickerOpen(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.themeBox}>
-            <Text style={styles.themeTitle}>Escolha o tema</Text>
-            <Text style={styles.themeSubtitle}>O app vai recarregar pra aplicar.</Text>
-            {(Object.keys(THEME_LABELS) as ThemeName[]).map((t) => (
+            <Text style={styles.themeTitle}>{t('home.themeTitle')}</Text>
+            <Text style={styles.themeSubtitle}>{t('home.themeSubtitle')}</Text>
+            {(Object.keys(THEME_LABELS) as ThemeName[]).map((tn) => (
               <TouchableOpacity
-                key={t}
-                style={[styles.themeOption, currentTheme === t && styles.themeOptionActive]}
+                key={tn}
+                style={[styles.themeOption, currentTheme === tn && styles.themeOptionActive]}
                 onPress={() => {
                   setThemePickerOpen(false);
-                  if (t !== currentTheme) setTheme(t);
+                  if (tn !== currentTheme) setTheme(tn);
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={[styles.themeOptionText, currentTheme === t && styles.themeOptionTextActive]}>
-                  {THEME_LABELS[t]}
+                <Text style={[styles.themeOptionText, currentTheme === tn && styles.themeOptionTextActive]}>
+                  {THEME_LABELS[tn]}
                 </Text>
-                {currentTheme === t && <Text style={styles.themeCheck}>✓</Text>}
+                {currentTheme === tn && <Text style={styles.themeCheck}>✓</Text>}
+              </TouchableOpacity>
+            ))}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Modal Seletor de Idioma
+          animationType="none": o fade do Android segura a view de baixo num
+          snapshot enquanto a animação roda — quando o modal fecha, o repaint
+          da home não acontece e os textos ficam visualmente travados no
+          locale antigo (mesmo já tendo re-renderizado no React).
+          Combinado com o setTimeout no onPress: fecha o modal, espera um
+          tick pro layer nativo registrar o close, então aplica setLocale —
+          aí o re-render acontece com o modal já fora da árvore. */}
+      <Modal visible={langPickerOpen} transparent animationType="none" onRequestClose={() => setLangPickerOpen(false)}>
+        <TouchableOpacity style={styles.themeOverlay} activeOpacity={1} onPress={() => setLangPickerOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.themeBox}>
+            <Text style={styles.themeTitle}>{t('home.languageTitle')}</Text>
+            <Text style={styles.themeSubtitle}>{t('home.languageSubtitle')}</Text>
+            {SUPPORTED_LOCALES.map((lc) => (
+              <TouchableOpacity
+                key={lc}
+                style={[styles.themeOption, currentLocale === lc && styles.themeOptionActive]}
+                onPress={() => {
+                  setLangPickerOpen(false);
+                  if (lc !== currentLocale) {
+                    // Adia o setLocale pro próximo tick — garante que o modal
+                    // já saiu da árvore antes do re-render da home com o novo
+                    // locale (workaround pro bug de compositor do Modal/Android).
+                    setTimeout(() => setLocale(lc as Locale), 50);
+                  }
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.themeOptionText, currentLocale === lc && styles.themeOptionTextActive]}>
+                  {LOCALE_FLAGS[lc]}  {LOCALE_LABELS[lc]}
+                </Text>
+                {currentLocale === lc && <Text style={styles.themeCheck}>✓</Text>}
               </TouchableOpacity>
             ))}
           </TouchableOpacity>
@@ -200,59 +253,57 @@ export default function HomeScreen() {
             <Text style={[styles.miniCardSuit, styles.suitRed]}>♦</Text>
           </View>
         </View>
-        <Text style={styles.titleCursive}>Queti's</Text>
-        <Text style={styles.title}>BURACO</Text>
+        <Text style={styles.titleCursive}>{t('appBrand')}</Text>
+        <Text style={styles.title}>{t('appName').toUpperCase()}</Text>
         <View style={styles.titleDivider} />
       </View>
 
       {/* Seletor de Modo de Jogo */}
-      <Text style={styles.sectionTitle}>Modo de Jogo</Text>
+      <Text style={styles.sectionTitle}>{t('home.modeTitle')}</Text>
       <View style={styles.modeRow}>
         <TouchableOpacity
           style={[styles.modeBtn, gameMode === 'classic' && styles.modeBtnActive]}
           onPress={() => setGameMode('classic')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.modeText, gameMode === 'classic' && styles.modeTextActive]}>Clássico</Text>
+          <Text style={[styles.modeText, gameMode === 'classic' && styles.modeTextActive]}>{t('home.modeClassic')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.modeBtn, gameMode === 'araujo_pereira' && styles.modeBtnActive]}
           onPress={() => setGameMode('araujo_pereira')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.modeText, gameMode === 'araujo_pereira' && styles.modeTextActive]}>Buraco Mole</Text>
+          <Text style={[styles.modeText, gameMode === 'araujo_pereira' && styles.modeTextActive]}>{t('home.modeAraujo')}</Text>
         </TouchableOpacity>
       </View>
       <Text style={styles.diffDesc}>
-        {gameMode === 'classic' ? 'Regras originais: sem trincas, bater limpo.' : 'Regras da família: trincas liberadas, lixo livre, bate sujo.'}
+        {gameMode === 'classic' ? t('home.modeDescClassic') : t('home.modeDescAraujo')}
       </Text>
 
       {/* Seletor de Dificuldade dos Bots */}
-      <Text style={styles.sectionTitle}>Dificuldade</Text>
+      <Text style={styles.sectionTitle}>{t('home.difficultyTitle')}</Text>
       <View style={styles.modeRow}>
         <TouchableOpacity
           style={[styles.modeBtn, botDifficulty === 'hard' && styles.modeBtnActive]}
           onPress={() => setBotDifficulty('hard')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.modeText, botDifficulty === 'hard' && styles.modeTextActive]}>Normal</Text>
+          <Text style={[styles.modeText, botDifficulty === 'hard' && styles.modeTextActive]}>{t('home.difficultyHard')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.modeBtn, botDifficulty === 'expert' && styles.modeBtnActive]}
           onPress={() => setBotDifficulty('expert')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.modeText, botDifficulty === 'expert' && styles.modeTextActive]}>Difícil</Text>
+          <Text style={[styles.modeText, botDifficulty === 'expert' && styles.modeTextActive]}>{t('home.difficultyExpert')}</Text>
         </TouchableOpacity>
       </View>
       <Text style={styles.diffDesc}>
-        {botDifficulty === 'hard'
-          ? 'Bot heurístico — bom pra aprender e jogar rápido.'
-          : 'Bot com busca (PIMC): planeja jogadas à frente. Pensa ~1s por vez.'}
+        {botDifficulty === 'hard' ? t('home.difficultyDescHard') : t('home.difficultyDescExpert')}
       </Text>
 
       {/* Seletor de Meta */}
-      <Text style={styles.sectionTitle}>Meta de Pontos</Text>
+      <Text style={styles.sectionTitle}>{t('home.targetTitle')}</Text>
       <View style={styles.targetRow}>
         {TARGETS.map(t => (
           <TouchableOpacity
@@ -270,17 +321,17 @@ export default function HomeScreen() {
 
       {/* Botão Continuar/Jogar */}
       {isGameInProgress && (
-        <TouchableOpacity 
-          style={[styles.playBtn, { backgroundColor: '#4CAF50', marginBottom: 12, shadowColor: '#4CAF50' }]} 
-          onPress={handleContinue} 
+        <TouchableOpacity
+          style={[styles.playBtn, { backgroundColor: '#4CAF50', marginBottom: 12, shadowColor: '#4CAF50' }]}
+          onPress={handleContinue}
           activeOpacity={0.85}
         >
-          <Text style={[styles.playText, { color: '#fff' }]}>CONTINUAR JOGO</Text>
+          <Text style={[styles.playText, { color: '#fff' }]}>{t('home.continueGame')}</Text>
         </TouchableOpacity>
       )}
 
       <TouchableOpacity style={styles.playBtn} onPress={isGameInProgress ? handleRestart : handleStart} activeOpacity={0.85}>
-        <Text style={styles.playText}>{isGameInProgress ? 'REINICIAR' : '🃏 JOGAR'}</Text>
+        <Text style={styles.playText}>{isGameInProgress ? t('home.restartGame') : t('home.play')}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -288,7 +339,7 @@ export default function HomeScreen() {
         onPress={() => router.replace('/(tabs)/online' as any)}
         activeOpacity={0.85}
       >
-        <Text style={[styles.playText, { color: '#FFD600' }]}>🌐 JOGAR ONLINE</Text>
+        <Text style={[styles.playText, { color: '#FFD600' }]}>{t('home.playOnline')}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -296,7 +347,7 @@ export default function HomeScreen() {
         onPress={() => router.replace('/(tabs)/ranking' as any)}
         activeOpacity={0.85}
       >
-        <Text style={[styles.playText, { color: '#FFD600' }]}>🏆 RANKING</Text>
+        <Text style={[styles.playText, { color: '#FFD600' }]}>{t('home.ranking')}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -304,7 +355,7 @@ export default function HomeScreen() {
         onPress={() => { startLayoutTest(); router.replace('/(tabs)/explore' as any); }}
         activeOpacity={0.7}
       >
-        <Text style={styles.layoutBtnText}>Layout</Text>
+        <Text style={styles.layoutBtnText}>{t('home.layoutBtn')}</Text>
       </TouchableOpacity>
 
       <Text style={styles.version}>v{APP_VERSION}</Text>
@@ -589,6 +640,23 @@ const styles = StyleSheet.create({
     borderColor: GameColors.goldBorder,
   },
   themeBtnIcon: {
+    fontSize: 20,
+  },
+
+  // Botão de idioma (ao lado direito do tema)
+  langBtn: {
+    position: 'absolute',
+    left: 62,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GameColors.goldSoft,
+    borderWidth: 1,
+    borderColor: GameColors.goldBorder,
+  },
+  langBtnIcon: {
     fontSize: 20,
   },
 

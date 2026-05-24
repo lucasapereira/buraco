@@ -26,18 +26,20 @@ import { useProfileStore } from '../../store/profileStore';
 import { signInWithGoogle, unlinkGoogle } from '../../hooks/useGoogleAuth';
 import { ScreenBackground } from '../../components/ScreenBackground';
 import { GameColors, Radius, Elevation } from '../../constants/colors';
+import { useT } from '../../store/localeStore';
+import { botSeatLabel } from '../../game/playerNames';
 
-const TEAM_LABEL: Record<number, string> = { 0: 'Time 1', 1: 'Time 2', 2: 'Time 1', 3: 'Time 2' };
 const TEAM_COLOR: Record<number, string> = { 0: GameColors.team.green, 1: GameColors.team.red, 2: GameColors.team.green, 3: GameColors.team.red };
 
 import { auth } from '../../config/firebase';
 function GoogleLinkStatus({ onLink, onUnlink, loading }: { onLink: () => void; onUnlink: () => void; loading: boolean }) {
+  const t = useT();
   const user = auth.currentUser;
   const linked = user && !user.isAnonymous;
   if (linked) {
     return (
       <View style={styles.googleLinkedBox}>
-        <Text style={styles.googleLinkedText}>✓ Vinculado ao Google</Text>
+        <Text style={styles.googleLinkedText}>{t('online.googleLinked')}</Text>
         <Text style={styles.googleLinkedSub}>{user?.email ?? ''}</Text>
         <TouchableOpacity
           style={[styles.googleUnlinkBtn, loading && styles.btnDisabled]}
@@ -45,7 +47,7 @@ function GoogleLinkStatus({ onLink, onUnlink, loading }: { onLink: () => void; o
           disabled={loading}
           activeOpacity={0.85}
         >
-          <Text style={styles.googleUnlinkBtnText}>Desvincular</Text>
+          <Text style={styles.googleUnlinkBtnText}>{t('online.googleUnlink')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -57,16 +59,18 @@ function GoogleLinkStatus({ onLink, onUnlink, loading }: { onLink: () => void; o
       disabled={loading}
       activeOpacity={0.85}
     >
-      {loading ? <ActivityIndicator color="#0A1C30" /> : <Text style={styles.googleLinkBtnText}>🔐 Vincular ao Google</Text>}
+      {loading ? <ActivityIndicator color="#0A1C30" /> : <Text style={styles.googleLinkBtnText}>{t('online.googleLink')}</Text>}
     </TouchableOpacity>
   );
 }
 
 export default function OnlineScreen() {
   useKeepAwake();
+  const t = useT();
   const router = useRouter();
   const store = useOnlineStore();
   const { startNewGame } = useGameStore();
+  const TEAM_LABEL: Record<number, string> = { 0: t('online.team1'), 1: t('online.team2'), 2: t('online.team1'), 3: t('online.team2') };
 
   const [step, setStep] = useState<'name' | 'home' | 'create' | 'lobby' | 'browse'>('name');
   const [joinCode, setJoinCode] = useState('');
@@ -129,16 +133,14 @@ export default function OnlineScreen() {
 
   const handleSaveName = async () => {
     if (store.displayName.trim().length < 2) {
-      store.setError('Nome muito curto (mínimo 2 letras)');
+      store.setError(t('profile.nameTooShort'));
       return;
     }
     store.setError(null);
     try {
-      // Garante auth antes de tentar reservar (transação precisa de um uid)
       await store.ensureAuth();
       const profile = useProfileStore.getState();
       if (profile.myUsername && profile.myUsernameLower === store.displayName.trim().toLowerCase().replace(/\s+/g, '')) {
-        // Já é o meu nome — só avança
         setStep('home');
         return;
       }
@@ -150,7 +152,7 @@ export default function OnlineScreen() {
       await useProfileStore.getState().migrateLocalStatsIfNeeded();
       setStep('home');
     } catch (e: any) {
-      store.setError(useProfileStore.getState().claimError ?? e?.message ?? 'Erro ao reservar nome');
+      store.setError(useProfileStore.getState().claimError ?? e?.message ?? t('online.errors.claimName'));
     }
   };
 
@@ -178,7 +180,7 @@ export default function OnlineScreen() {
 
   const handleJoin = async () => {
     if (joinCode.trim().length < 4) {
-      store.setError('Código inválido');
+      store.setError(t('online.invalidCode'));
       return;
     }
     try {
@@ -190,12 +192,12 @@ export default function OnlineScreen() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const handleUnlink = () => {
     showAlert(
-      'Desvincular Google?',
-      'Seu perfil e stats ficam salvos — ao entrar de novo com Google, tudo é restaurado. Você voltará a ser um jogador anônimo neste aparelho.',
+      t('online.unlinkTitle'),
+      t('online.unlinkMsg'),
       [
-        { text: 'Cancelar', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Desvincular',
+          text: t('online.googleUnlink'),
           style: 'destructive',
           onPress: async () => {
             setGoogleLoading(true);
@@ -218,24 +220,19 @@ export default function OnlineScreen() {
       await store.ensureAuth(); // garante que tem uid anônimo
       const res = await signInWithGoogle();
       if (!res.ok) {
-        if (res.error !== 'Login cancelado') {
-          showAlert('Falha no login Google', res.error);
+        if (res.error !== t('online.loginCanceled')) {
+          showAlert(t('online.loginFailedTitle'), res.error);
           store.setError(res.error);
         }
         return;
       }
       const { myUsername } = useProfileStore.getState();
       if (myUsername) {
-        showAlert('Login OK', `Bem-vindo de volta, ${myUsername}! Stats restaurados.`);
+        showAlert(t('online.loginOkTitle'), t('online.loginOkMsg', { name: myUsername }));
         store.setDisplayName(myUsername);
         setStep('home');
       } else {
-        // Logou mas não tem perfil — provavelmente é recuperação de reinstalação
-        // cujo uid antigo não tinha Google linkado. Avisa e deixa escolher nome novo.
-        showAlert(
-          'Login com Google OK',
-          'Não achei perfil antigo vinculado a essa conta Google. Se você tinha um perfil antes e quer recuperá-lo, me chama que recupero manualmente pelo seu nome antigo. Por enquanto, escolha um nome pra continuar.',
-        );
+        showAlert(t('online.loginNoProfileTitle'), t('online.loginNoProfileMsg'));
       }
     } finally {
       setGoogleLoading(false);
@@ -262,7 +259,7 @@ export default function OnlineScreen() {
     startNewGame(roomTarget, roomMode);
     const playersWithNames = useGameStore.getState().players.map((p, idx) => {
       const seat = seats[idx];
-      return { ...p, name: seat?.name ?? `Bot ${idx + 1}` };
+      return { ...p, name: seat?.name ?? botSeatLabel(idx) };
     });
     useGameStore.setState({ players: playersWithNames });
 
@@ -287,14 +284,14 @@ export default function OnlineScreen() {
     return (
       <ScreenBackground><SafeAreaView style={styles.container}>
         <View style={styles.centered}>
-          <Text style={styles.title}>Como você se chama?</Text>
-          <Text style={styles.subtitle}>Aparecerá para os outros jogadores</Text>
+          <Text style={styles.title}>{t('online.namePrompt')}</Text>
+          <Text style={styles.subtitle}>{t('online.nameSubtitle')}</Text>
           <TextInput
             ref={nameInputRef}
             style={styles.nameInput}
             value={store.displayName}
             onChangeText={store.setDisplayName}
-            placeholder="Seu nome"
+            placeholder={t('online.namePlaceholder')}
             placeholderTextColor="rgba(255,255,255,0.3)"
             maxLength={16}
             autoFocus
@@ -303,12 +300,12 @@ export default function OnlineScreen() {
           />
           {store.error && <Text style={styles.errorText}>{store.error}</Text>}
           <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveName} activeOpacity={0.85}>
-            <Text style={styles.primaryBtnText}>CONTINUAR →</Text>
+            <Text style={styles.primaryBtnText}>{t('common.continue')}</Text>
           </TouchableOpacity>
 
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>ou</Text>
+            <Text style={styles.dividerText}>{t('online.dividerOr')}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -320,12 +317,12 @@ export default function OnlineScreen() {
           >
             {googleLoading
               ? <ActivityIndicator color="#0A1C30" />
-              : <Text style={styles.googleBtnText}>🔐 Entrar com Google</Text>}
+              : <Text style={styles.googleBtnText}>{t('online.googleSignIn')}</Text>}
           </TouchableOpacity>
-          <Text style={styles.googleHint}>Recupera seu perfil mesmo após reinstalar o app</Text>
+          <Text style={styles.googleHint}>{t('online.googleHint')}</Text>
 
           <TouchableOpacity style={styles.backLink} onPress={() => router.replace('/(tabs)' as any)}>
-            <Text style={styles.backLinkText}>← Voltar</Text>
+            <Text style={styles.backLinkText}>{t('common.back')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView></ScreenBackground>
@@ -337,14 +334,14 @@ export default function OnlineScreen() {
     return (
       <ScreenBackground><SafeAreaView style={styles.container}>
         <View style={styles.centered}>
-          <Text style={styles.title}>Jogar Online</Text>
+          <Text style={styles.title}>{t('online.homeTitle')}</Text>
           <Text style={styles.playerName}>👤 {store.displayName}</Text>
           <TouchableOpacity
             style={styles.nameEditBtn}
             onPress={() => setStep('name')}
             activeOpacity={0.7}
           >
-            <Text style={styles.nameEditText}>Mudar nome</Text>
+            <Text style={styles.nameEditText}>{t('online.changeName')}</Text>
           </TouchableOpacity>
 
           <GoogleLinkStatus onLink={handleGoogle} onUnlink={handleUnlink} loading={googleLoading} />
@@ -355,7 +352,7 @@ export default function OnlineScreen() {
               onPress={() => setStep('create')}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryBtnText}>🏠 CRIAR SALA</Text>
+              <Text style={styles.primaryBtnText}>{t('online.createRoom')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -363,7 +360,7 @@ export default function OnlineScreen() {
               onPress={handleBrowse}
               activeOpacity={0.85}
             >
-              <Text style={styles.secondaryBtnText}>🌐 VER SALAS PÚBLICAS</Text>
+              <Text style={styles.secondaryBtnText}>{t('online.browseRooms')}</Text>
             </TouchableOpacity>
 
             <View style={styles.joinRow}>
@@ -371,7 +368,7 @@ export default function OnlineScreen() {
                 style={styles.joinInput}
                 value={joinCode}
                 onChangeText={v => setJoinCode(v.toUpperCase())}
-                placeholder="Código da sala"
+                placeholder={t('online.joinCodeLabel')}
                 placeholderTextColor="rgba(255,255,255,0.3)"
                 maxLength={6}
                 autoCapitalize="characters"
@@ -384,7 +381,7 @@ export default function OnlineScreen() {
               >
                 {store.isLoading
                   ? <ActivityIndicator color="#1B5E20" />
-                  : <Text style={styles.joinBtnText}>ENTRAR</Text>}
+                  : <Text style={styles.joinBtnText}>{t('online.join')}</Text>}
               </TouchableOpacity>
             </View>
 
@@ -392,7 +389,7 @@ export default function OnlineScreen() {
           </View>
 
           <TouchableOpacity style={styles.backLink} onPress={() => router.replace('/(tabs)' as any)}>
-            <Text style={styles.backLinkText}>← Menu principal</Text>
+            <Text style={styles.backLinkText}>{t('common.backMenu')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView></ScreenBackground>
@@ -405,9 +402,9 @@ export default function OnlineScreen() {
     return (
       <ScreenBackground><SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.title}>Configurar Sala</Text>
+          <Text style={styles.title}>{t('online.configRoom')}</Text>
 
-          <Text style={styles.sectionLabel}>Modo de Jogo</Text>
+          <Text style={styles.sectionLabel}>{t('online.modeTitle')}</Text>
           <View style={styles.optionRow}>
             {(['classic', 'araujo_pereira'] as GameMode[]).map(m => (
               <TouchableOpacity
@@ -417,31 +414,31 @@ export default function OnlineScreen() {
                 activeOpacity={0.8}
               >
                 <Text style={[styles.optionText, roomMode === m && styles.optionTextActive]}>
-                  {m === 'classic' ? 'Clássico' : 'Buraco Mole'}
+                  {m === 'classic' ? t('home.modeClassic') : t('home.modeAraujo')}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <Text style={styles.sectionLabel}>Meta de Pontos</Text>
+          <Text style={styles.sectionLabel}>{t('online.targetTitle')}</Text>
           <View style={styles.optionRow}>
-            {[1500, 3000, 5000].map(t => (
+            {[1500, 3000, 5000].map(tv => (
               <TouchableOpacity
-                key={t}
-                style={[styles.optionBtn, roomTarget === t && styles.optionBtnActive]}
-                onPress={() => store.setRoomSettings(roomMode, t)}
+                key={tv}
+                style={[styles.optionBtn, roomTarget === tv && styles.optionBtnActive]}
+                onPress={() => store.setRoomSettings(roomMode, tv)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.optionText, roomTarget === t && styles.optionTextActive]}>
-                  {t.toLocaleString()}
+                <Text style={[styles.optionText, roomTarget === tv && styles.optionTextActive]}>
+                  {tv.toLocaleString()}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <Text style={styles.sectionLabel}>Visibilidade da Sala</Text>
+          <Text style={styles.sectionLabel}>{t('online.visibilityTitle')}</Text>
           <View style={styles.optionRow}>
-            {([{ value: true, label: '🌐 Pública' }, { value: false, label: '🔒 Privada' }]).map(opt => (
+            {([{ value: true, label: t('online.visibilityPublic') }, { value: false, label: t('online.visibilityPrivate') }]).map(opt => (
               <TouchableOpacity
                 key={String(opt.value)}
                 style={[styles.optionBtn, isPublic === opt.value && styles.optionBtnActive]}
@@ -455,9 +452,7 @@ export default function OnlineScreen() {
             ))}
           </View>
           <Text style={styles.visibilityHint}>
-            {isPublic
-              ? 'Qualquer jogador pode encontrar e entrar nesta sala'
-              : 'Somente quem tiver o código pode entrar'}
+            {isPublic ? t('online.visibilityHintPublic') : t('online.visibilityHintPrivate')}
           </Text>
 
           {store.error && <Text style={styles.errorText}>{store.error}</Text>}
@@ -470,11 +465,11 @@ export default function OnlineScreen() {
           >
             {store.isLoading
               ? <ActivityIndicator color="#1B5E20" />
-              : <Text style={styles.primaryBtnText}>CRIAR SALA →</Text>}
+              : <Text style={styles.primaryBtnText}>{t('online.createRoomBtn')}</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.backLink} onPress={() => setStep('home')}>
-            <Text style={styles.backLinkText}>← Voltar</Text>
+            <Text style={styles.backLinkText}>{t('common.back')}</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView></ScreenBackground>
@@ -486,7 +481,7 @@ export default function OnlineScreen() {
     return (
       <ScreenBackground><SafeAreaView style={styles.container}>
         <View style={styles.browseHeader}>
-          <Text style={styles.title}>Salas Públicas</Text>
+          <Text style={styles.title}>{t('online.browseTitle')}</Text>
           <TouchableOpacity
             onPress={async () => {
               setBrowseLoading(true);
@@ -497,7 +492,7 @@ export default function OnlineScreen() {
             activeOpacity={0.7}
             style={styles.refreshBtn}
           >
-            <Text style={styles.refreshBtnText}>↻ Atualizar</Text>
+            <Text style={styles.refreshBtnText}>{t('online.refresh')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -506,12 +501,12 @@ export default function OnlineScreen() {
         {browseLoading ? (
           <View style={styles.centered}>
             <ActivityIndicator color="#FFD600" size="large" />
-            <Text style={[styles.waitingText, { marginTop: 12 }]}>Buscando salas...</Text>
+            <Text style={[styles.waitingText, { marginTop: 12 }]}>{t('online.searching')}</Text>
           </View>
         ) : publicRooms.length === 0 ? (
           <View style={styles.centered}>
-            <Text style={styles.emptyText}>Nenhuma sala pública disponível</Text>
-            <Text style={styles.emptySubText}>Crie uma sala pública para começar!</Text>
+            <Text style={styles.emptyText}>{t('online.emptyRooms')}</Text>
+            <Text style={styles.emptySubText}>{t('online.emptyRoomsSub')}</Text>
           </View>
         ) : (
           <ScrollView contentContainerStyle={styles.browseList}>
@@ -520,7 +515,7 @@ export default function OnlineScreen() {
                 <View style={styles.roomCardLeft}>
                   <Text style={styles.roomCode}>{room.code}</Text>
                   <Text style={styles.roomMeta}>
-                    {room.mode === 'classic' ? 'Clássico' : 'Buraco Mole'} · {room.targetScore.toLocaleString()} pts
+                    {room.mode === 'classic' ? t('home.modeClassic') : t('home.modeAraujo')} · {room.targetScore.toLocaleString()} pts
                   </Text>
                   <View style={styles.roomPlayers}>
                     {[0, 1, 2, 3].map(i => (
@@ -529,7 +524,7 @@ export default function OnlineScreen() {
                         style={[styles.playerDot, i < room.playerCount ? styles.playerDotFilled : styles.playerDotEmpty]}
                       />
                     ))}
-                    <Text style={styles.playerCountText}>{room.playerCount}/4 jogadores</Text>
+                    <Text style={styles.playerCountText}>{t('online.playersOf', { count: room.playerCount })}</Text>
                   </View>
                 </View>
                 <TouchableOpacity
@@ -540,7 +535,7 @@ export default function OnlineScreen() {
                 >
                   {store.isLoading
                     ? <ActivityIndicator color="#1B5E20" size="small" />
-                    : <Text style={styles.joinRoomBtnText}>{room.playerCount >= 4 ? 'Cheia' : 'ENTRAR'}</Text>}
+                    : <Text style={styles.joinRoomBtnText}>{room.playerCount >= 4 ? t('online.joinShort') : t('online.join')}</Text>}
                 </TouchableOpacity>
               </View>
             ))}
@@ -548,7 +543,7 @@ export default function OnlineScreen() {
         )}
 
         <TouchableOpacity style={[styles.backLink, { alignSelf: 'center', marginBottom: 16 }]} onPress={() => setStep('home')}>
-          <Text style={styles.backLinkText}>← Voltar</Text>
+          <Text style={styles.backLinkText}>{t('common.back')}</Text>
         </TouchableOpacity>
       </SafeAreaView></ScreenBackground>
     );
@@ -561,12 +556,12 @@ export default function OnlineScreen() {
         {/* Badge público/privado */}
         <View style={[styles.visibilityBadge, store.roomIsPublic ? styles.visibilityBadgePublic : styles.visibilityBadgePrivate]}>
           <Text style={styles.visibilityBadgeText}>
-            {store.roomIsPublic ? '🌐 Sala Pública' : '🔒 Sala Privada'}
+            {store.roomIsPublic ? t('online.publicBadge') : t('online.privateBadge')}
           </Text>
         </View>
 
         {/* Código da sala */}
-        <Text style={[styles.sectionLabel, { marginTop: 12 }]}>Código da Sala</Text>
+        <Text style={[styles.sectionLabel, { marginTop: 12 }]}>{t('online.roomCodeTitle')}</Text>
         <TouchableOpacity
           style={styles.codeBox}
           onPress={async () => {
@@ -577,23 +572,23 @@ export default function OnlineScreen() {
           activeOpacity={0.8}
         >
           <Text style={styles.codeText}>{store.roomCode}</Text>
-          <Text style={styles.codeCopy}>{copyFeedback ? '✓ Copiado!' : 'Toque para copiar'}</Text>
+          <Text style={styles.codeCopy}>{copyFeedback ? t('online.roomCodeCopied') : t('online.roomCodeTap')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.whatsappBtn}
           onPress={() => {
-            const msg = `Bora jogar Buraco? 🃏\nEntra na sala e digita o código:\n\n${store.roomCode}`;
+            const msg = t('online.whatsAppMsg', { code: store.roomCode });
             const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
             Linking.openURL(url).catch(() => {});
           }}
           activeOpacity={0.8}
         >
-          <Text style={styles.whatsappBtnText}>Compartilhar no WhatsApp</Text>
+          <Text style={styles.whatsappBtnText}>{t('online.shareWhatsApp')}</Text>
         </TouchableOpacity>
 
         {/* Assentos */}
-        <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Jogadores ({filledSeats}/4)</Text>
+        <Text style={[styles.sectionLabel, { marginTop: 24 }]}>{t('online.playersCount', { filled: filledSeats })}</Text>
         <View style={styles.seatsList}>
           {[0, 1, 2, 3].map(seatIdx => {
             const seat = store.seats[seatIdx];
@@ -614,8 +609,8 @@ export default function OnlineScreen() {
                 <View style={[styles.seatTeamDot, { backgroundColor: TEAM_COLOR[seatIdx] }]} />
                 <View style={styles.seatInfo}>
                   <Text style={styles.seatName}>
-                    {seat ? seat.name : SEAT_PLAYER_IDS[seatIdx].startsWith('bot') ? '🤖 Bot (toque para sentar)' : '...livre (toque para sentar)'}
-                    {isMe ? ' (você)' : ''}
+                    {seat ? seat.name : SEAT_PLAYER_IDS[seatIdx].startsWith('bot') ? t('online.seatBot') : t('online.seatFree')}
+                    {isMe ? t('online.you') : ''}
                   </Text>
                   <Text style={styles.seatTeamLabel}>{TEAM_LABEL[seatIdx]}</Text>
                 </View>
@@ -636,7 +631,7 @@ export default function OnlineScreen() {
             {store.isLoading
               ? <ActivityIndicator color="#1B5E20" />
               : <Text style={styles.primaryBtnText}>
-                  {filledSeats < 2 ? 'Aguardando jogadores...' : '▶ INICIAR JOGO'}
+                  {filledSeats < 2 ? t('online.waitingPlayers') : t('online.startGame')}
                 </Text>}
           </TouchableOpacity>
         )}
@@ -644,14 +639,14 @@ export default function OnlineScreen() {
         {!store.isHost && (
           <View style={styles.waitingBox}>
             <ActivityIndicator color="#FFD600" style={{ marginRight: 10 }} />
-            <Text style={styles.waitingText}>Aguardando o host iniciar...</Text>
+            <Text style={styles.waitingText}>{t('online.waitingHost')}</Text>
           </View>
         )}
 
         {store.error && <Text style={styles.errorText}>{store.error}</Text>}
 
         <TouchableOpacity style={styles.backLink} onPress={handleLeave}>
-          <Text style={styles.backLinkText}>← Sair da sala</Text>
+          <Text style={styles.backLinkText}>{t('online.leaveRoom')}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView></ScreenBackground>

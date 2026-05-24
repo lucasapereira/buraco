@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { auth, db } from '../config/firebase';
 import { GameMode } from '../game/engine';
+import { i18n } from '../locales';
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 export const SEAT_PLAYER_IDS = ['user', 'bot-1', 'bot-2', 'bot-3'] as const;
@@ -235,7 +236,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
 
           return code;
         } catch (e: any) {
-          set({ error: e.message ?? 'Erro ao criar sala', isLoading: false });
+          set({ error: e.message ?? i18n.t('online.errors.createRoom'), isLoading: false });
           throw e;
         }
       },
@@ -248,13 +249,13 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           const upperCode = code.toUpperCase().trim();
 
           const snapshot = await dbGet(ref(db, `rooms/${upperCode}`));
-          if (!snapshot.exists()) throw new Error('Sala não encontrada');
+          if (!snapshot.exists()) throw new Error(i18n.t('online.errors.roomNotFound'));
 
           const room = snapshot.val();
           const metaStatus = room?.meta?.status;
-          if (metaStatus === 'abandoned') throw new Error('Sala abandonada');
-          if (!metaStatus) throw new Error('Sala inválida');
-          if (metaStatus !== 'lobby') throw new Error('Este jogo já começou');
+          if (metaStatus === 'abandoned') throw new Error(i18n.t('online.errors.roomAbandoned'));
+          if (!metaStatus) throw new Error(i18n.t('online.errors.roomInvalid'));
+          if (metaStatus !== 'lobby') throw new Error(i18n.t('online.errors.gameStarted'));
 
           // Encontra os assentos atuais
           const seats: (SeatInfo | null)[] = [0, 1, 2, 3].map(i => room.seats?.[i] ?? null);
@@ -270,17 +271,17 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
               // Reingresso in-session: mantém o assento atual
               assignedSeat = existingSeat;
             } else {
-              throw new Error('Sua conta já está nesta sala em outro dispositivo. Saia do outro antes de entrar.');
+              throw new Error(i18n.t('online.errors.accountInRoom'));
             }
           } else {
             // Sessão nova — pega o primeiro livre
             assignedSeat = seats.findIndex(s => s === null);
-            if (assignedSeat === -1) throw new Error('Sala cheia (4/4)');
+            if (assignedSeat === -1) throw new Error(i18n.t('online.errors.roomFull'));
           }
 
           // Atualiza/Reconfirma a posse do assento
           await update(ref(db, `rooms/${upperCode}/seats`), {
-            [assignedSeat]: { uid, name: displayName || 'Jogador' },
+            [assignedSeat]: { uid, name: displayName || i18n.t('common.playerFallback') },
           });
 
           // Nota: NÃO liberamos assento via onDisconnect — vai pro WhatsApp e
@@ -289,7 +290,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
 
           // Atualiza contador no índice público
           const updatedSeats = [...seats];
-          updatedSeats[assignedSeat] = { uid, name: displayName || 'Jogador' };
+          updatedSeats[assignedSeat] = { uid, name: displayName || i18n.t('common.playerFallback') };
           const newCount = updatedSeats.filter(Boolean).length;
           dbGet(ref(db, `publicRooms/${upperCode}`)).then(s => {
             if (s.exists()) update(ref(db, `publicRooms/${upperCode}`), { playerCount: newCount }).catch(() => {});
@@ -307,7 +308,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
             isLoading: false,
           });
         } catch (e: any) {
-          set({ error: e.message ?? 'Erro ao entrar na sala', isLoading: false });
+          set({ error: e.message ?? i18n.t('online.errors.joinRoom'), isLoading: false });
           throw e;
         }
       },
@@ -352,14 +353,14 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
         if (!roomCode || mySeat === null || mySeat === targetSeatIdx || targetSeatIdx < 0 || targetSeatIdx > 3) return;
         // Se o assento alvo já está ocupado, não faz nada
         if (seats[targetSeatIdx] !== null) {
-          set({ error: 'Este assento já está ocupado' });
+          set({ error: i18n.t('online.errors.seatTaken') });
           return;
         }
 
         try {
           const updates: Record<string, any> = {};
           updates[`seats/${mySeat}`] = null;
-          updates[`seats/${targetSeatIdx}`] = { uid, name: displayName || 'Jogador' };
+          updates[`seats/${targetSeatIdx}`] = { uid, name: displayName || i18n.t('common.playerFallback') };
           await update(ref(db, `rooms/${roomCode}`), updates);
           // NÃO setamos onDisconnect pro novo seat — Firebase detecta disconnect
           // muito agressivo (ir pro WhatsApp 5s já dispara), e o jogador perdia
@@ -368,7 +369,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           onDisconnect(ref(db, `rooms/${roomCode}/seats/${targetSeatIdx}`)).cancel().catch(() => {});
           set({ mySeat: targetSeatIdx, error: null });
         } catch (e: any) {
-          set({ error: 'Erro ao trocar de assento: ' + e?.message });
+          set({ error: i18n.t('online.errors.switchSeat', { msg: e?.message ?? '' }) });
         }
       },
 
@@ -394,7 +395,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           remove(ref(db, `publicRooms/${roomCode}`)).catch(() => {});
           set({ roomStatus: 'playing', roomHostLastSeen: Date.now() });
         } catch (e: any) {
-          set({ error: e.message ?? 'Erro ao iniciar jogo' });
+          set({ error: e.message ?? i18n.t('online.errors.startGame') });
         }
       },
 
@@ -409,7 +410,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
             taunts: null,
           });
         } catch (e: any) {
-          set({ error: e.message ?? 'Erro ao iniciar revanche' });
+          set({ error: e.message ?? i18n.t('online.errors.rematch') });
         }
       },
 
@@ -437,7 +438,7 @@ export const useOnlineStore = create<OnlineState & OnlineActions>()(
           });
           return rooms.sort((a, b) => b.createdAt - a.createdAt);
         } catch (e) {
-          set({ error: 'Erro ao buscar salas: ' + (e as any)?.message });
+          set({ error: i18n.t('online.errors.fetchRooms', { msg: (e as any)?.message ?? '' }) });
           return [];
         }
       },

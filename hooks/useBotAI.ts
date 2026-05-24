@@ -409,11 +409,19 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       for (const gi of sortedGameIndices) {
         const game = useGameStore.getState().teams[bot.teamId].games[gi];
         if (!game) continue;
-        if (pass === 0 && topCard.isJoker && wouldDirtyGame(topCard, game) && checkCanasta(game) === 'clean') continue;
+        // HARD RULE (vale também no pass 1, fallback do mustPlay): NUNCA suja
+        // canastra limpa de 500 (13) ou 1000 (14). Perder 400/900 pra cumprir
+        // obrigação de meldar o topo é absurdo — prefere falhar e deixar o
+        // motor lidar (em último caso o bot resolve via B3 ou descarta).
+        const wouldDirty = topCard.isJoker && wouldDirtyGame(topCard, game) && checkCanasta(game) === 'clean';
+        if (wouldDirty && game.length >= 13) continue;
+        if (pass === 0 && wouldDirty) continue;
         const combined = [...game, topCard];
         if (validateSequence(combined, s.gameMode)) {
-          // Carta normal pode degradar canastra limpa também — protege no pass 0
-          if (pass === 0 && checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
+          // Carta normal pode degradar canastra limpa também — hard rule + pass-0 guard
+          const wouldDegrade = checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean';
+          if (wouldDegrade && game.length >= 13) continue;
+          if (pass === 0 && wouldDegrade) continue;
           animate();
           if (useGameStore.getState().addToExistingGame(botId, [pileTopId], gi)) return;
         }
@@ -428,13 +436,18 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         if (!game) continue;
         const freshBot = freshState.players.find(p => p.id === botId);
         if (!freshBot) return;
-        if (pass === 0 && topCard.isJoker && wouldDirtyGame(topCard, game) && checkCanasta(game) === 'clean') continue;
+        // HARD RULE: nunca suja canastra limpa de 13/14 cartas, nem mesmo no pass 1.
+        const wouldDirty = topCard.isJoker && wouldDirtyGame(topCard, game) && checkCanasta(game) === 'clean';
+        if (wouldDirty && game.length >= 13) continue;
+        if (pass === 0 && wouldDirty) continue;
 
         for (const c of freshBot.hand) {
           if (c.id === pileTopId) continue;
           const combined = [...game, topCard, c];
           if (validateSequence(combined, freshState.gameMode)) {
-            if (pass === 0 && checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
+            const wouldDegrade = checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean';
+            if (wouldDegrade && game.length >= 13) continue;
+            if (pass === 0 && wouldDegrade) continue;
             animate();
             if (useGameStore.getState().addToExistingGame(botId, [pileTopId, c.id], gi)) return;
           }
@@ -445,7 +458,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
             if (freshBot.hand[j].id === pileTopId) continue;
             const combined = [...game, topCard, freshBot.hand[i], freshBot.hand[j]];
             if (validateSequence(combined, freshState.gameMode)) {
-              if (pass === 0 && checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
+              const wouldDegrade = checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean';
+              if (wouldDegrade && game.length >= 13) continue;
+              if (pass === 0 && wouldDegrade) continue;
               animate();
               if (useGameStore.getState().addToExistingGame(botId, [pileTopId, freshBot.hand[i].id, freshBot.hand[j].id], gi)) return;
             }
@@ -696,8 +711,12 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           if (difficulty === 'easy') continue; // Fácil nunca suja
 
           if (checkCanasta(game) === 'clean') {
-            // Nunca suja canastra limpa — EXCETO se o bot vai bater em seguida
-            // e ainda sobra pelo menos outra canastra limpa para cumprir a condição de bater.
+            // HARD RULE (sem exceção): canastra limpa de 500 (13) ou 1000 (14)
+            // NUNCA é sujada. O trade -400/-900 vs +100 da batida é absurdo,
+            // e o usuário pediu explicitamente "em hipótese alguma".
+            if (game.length >= 13) continue;
+            // Para canastras limpas de 7-12 cartas (200), só suja se for bater
+            // em seguida e ainda sobrar outra canastra limpa para cumprir a condição.
             const goingOutNext = freshBot.hand.length <= 2;
             const cleanCanastas = freshState.teams[bot.teamId].games.filter(g => checkCanasta(g) === 'clean');
             const hasAnotherCleanCanasta = cleanCanastas.length > 1;
@@ -795,6 +814,8 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           // (ex.: jogar 9♠ num [A♠..7♠] força o 2♠ natural a sair da posição).
           // Bloqueia a menos que esteja indo bater AGORA e ainda sobre outra canastra limpa.
           if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') {
+            // HARD RULE: nunca degrada canastra limpa de 500/1000, nem pra bater.
+            if (game.length >= 13) continue;
             const freshBotNow = freshState.players.find(p => p.id === botId);
             const goingOutNext = (freshBotNow?.hand.length ?? 99) <= 2;
             const otherCleanCanastas = freshState.teams[bot.teamId].games

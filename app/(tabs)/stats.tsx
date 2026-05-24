@@ -13,19 +13,14 @@ import { ACHIEVEMENTS, getRank, LEVEL_THRESHOLDS } from '../../game/achievements
 import { useStatsStore } from '../../store/statsStore';
 import { ScreenBackground } from '../../components/ScreenBackground';
 import { GameColors, Radius, Elevation } from '../../constants/colors';
-
-const CATEGORY_LABELS: Record<string, string> = {
-  victories: '🏆 Vitórias',
-  canastas:  '🃏 Canastas',
-  score:     '💰 Pontuação',
-  streak:    '🔥 Streak',
-  special:   '⚡ Especiais',
-};
+import { useT } from '../../store/localeStore';
+import { getAchievementTitle } from '../../game/playerNames';
 
 const CATEGORIES = ['victories', 'canastas', 'score', 'streak', 'special'] as const;
 
 export default function StatsScreen() {
   const router = useRouter();
+  const t = useT();
   const stats = useStatsStore();
 
   const level = stats.level;
@@ -48,9 +43,9 @@ export default function StatsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} style={styles.backBtn}>
-          <Text style={styles.backText}>← Voltar</Text>
+          <Text style={styles.backText}>{t('common.back')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Perfil</Text>
+        <Text style={styles.headerTitle}>{t('stats.profileHeader')}</Text>
         <View style={{ width: 70 }} />
       </View>
 
@@ -65,11 +60,13 @@ export default function StatsScreen() {
             <View style={styles.levelInfo}>
               <Text style={styles.rankText}>{rank}</Text>
               <Text style={styles.xpText}>
-                {level >= 20 ? 'Nível máximo!' : `${xpInLevel.toLocaleString()} / ${xpNeeded.toLocaleString()} XP`}
+                {level >= 20
+                  ? t('stats.levelMax')
+                  : t('stats.xpProgress', { xpInLevel: xpInLevel.toLocaleString(), xpNeeded: xpNeeded.toLocaleString() })}
               </Text>
             </View>
             <View>
-              <Text style={styles.totalXPLabel}>XP Total</Text>
+              <Text style={styles.totalXPLabel}>{t('stats.xpTotalLabel')}</Text>
               <Text style={styles.totalXPValue}>{xp.toLocaleString()}</Text>
             </View>
           </View>
@@ -79,7 +76,7 @@ export default function StatsScreen() {
             <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
           </View>
           {level < 20 && (
-            <Text style={styles.nextLevel}>Nível {level + 1}: {getRank(level + 1)}</Text>
+            <Text style={styles.nextLevel}>{t('stats.nextLevel', { level: level + 1, rank: getRank(level + 1) })}</Text>
           )}
         </View>
 
@@ -88,42 +85,42 @@ export default function StatsScreen() {
           <View style={styles.streakRow}>
             <Text style={styles.streakIcon}>🔥</Text>
             <View style={styles.streakTexts}>
-              <Text style={styles.streakValue}>{stats.currentStreak} dia{stats.currentStreak !== 1 ? 's' : ''} seguidos</Text>
-              <Text style={styles.streakSub}>Maior sequência: {stats.longestStreak} dias</Text>
+              <Text style={styles.streakValue}>{t('stats.streakLine', { count: stats.currentStreak, plural: stats.currentStreak !== 1 ? 's' : '' })}</Text>
+              <Text style={styles.streakSub}>{t('stats.longestStreakLine', { days: stats.longestStreak })}</Text>
             </View>
           </View>
         </View>
 
         {/* ── ESTATÍSTICAS ──────────────────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>Estatísticas</Text>
+        <Text style={styles.sectionTitle}>{t('stats.sectionStats')}</Text>
         <View style={styles.statsGrid}>
-          <StatBox label="Partidas" value={stats.matchesPlayed.toString()} />
-          <StatBox label="Vitórias" value={stats.matchesWon.toString()} color={GameColors.success} />
-          <StatBox label="Taxa" value={`${winRate}%`} color={GameColors.gold} />
-          <StatBox label="Rodadas" value={stats.roundsPlayed.toString()} />
-          <StatBox label="Pts Totais" value={stats.totalPointsEarned.toLocaleString()} color={GameColors.gold} />
-          <StatBox label="Melhor Rdada" value={stats.biggestRoundScore.toLocaleString()} color={GameColors.warning} />
-          <StatBox label="Canastas" value={stats.totalCanastas.toString()} />
-          <StatBox label="Limpas" value={stats.totalCleanCanastas.toString()} color={GameColors.success} />
-          <StatBox label="+500" value={stats.total500Canastas.toString()} color={GameColors.gold} />
-          <StatBox label="+1000" value={stats.total1000Canastas.toString()} color={GameColors.canasta.c1000Border} />
-          <StatBox label="Batidas" value={stats.totalBatidas.toString()} />
-          <StatBox label="Seq. Vitórias" value={`${stats.currentWinStreak} / ${stats.longestWinStreak}`} />
-          <StatBox label="Bot V/D" value={`${stats.botMatchesWon}/${stats.botMatchesPlayed - stats.botMatchesWon}`} color={GameColors.success} />
-          <StatBox label="Rating Online" value={stats.onlineRating.toString()} color={GameColors.info} />
-          <StatBox label="Online V/D" value={`${stats.onlineMatchesWon}/${stats.onlineMatchesPlayed - stats.onlineMatchesWon}`} color={GameColors.info} />
+          <StatBox label={t('stats.boxes.matches')} value={stats.matchesPlayed.toString()} />
+          <StatBox label={t('stats.boxes.wins')} value={stats.matchesWon.toString()} color={GameColors.success} />
+          <StatBox label={t('stats.boxes.winRate')} value={`${winRate}%`} color={GameColors.gold} />
+          <StatBox label={t('stats.boxes.rounds')} value={stats.roundsPlayed.toString()} />
+          <StatBox label={t('stats.boxes.totalPoints')} value={stats.totalPointsEarned.toLocaleString()} color={GameColors.gold} />
+          <StatBox label={t('stats.boxes.bestRound')} value={stats.biggestRoundScore.toLocaleString()} color={GameColors.warning} />
+          <StatBox label={t('stats.boxes.canastas')} value={stats.totalCanastas.toString()} />
+          <StatBox label={t('stats.boxes.clean')} value={stats.totalCleanCanastas.toString()} color={GameColors.success} />
+          <StatBox label={t('stats.boxes.c500')} value={stats.total500Canastas.toString()} color={GameColors.gold} />
+          <StatBox label={t('stats.boxes.c1000')} value={stats.total1000Canastas.toString()} color={GameColors.canasta.c1000Border} />
+          <StatBox label={t('stats.boxes.bater')} value={stats.totalBatidas.toString()} />
+          <StatBox label={t('stats.boxes.winStreak')} value={`${stats.currentWinStreak} / ${stats.longestWinStreak}`} />
+          <StatBox label={t('stats.boxes.botWL')} value={`${stats.botMatchesWon}/${stats.botMatchesPlayed - stats.botMatchesWon}`} color={GameColors.success} />
+          <StatBox label={t('stats.boxes.onlineRating')} value={stats.onlineRating.toString()} color={GameColors.info} />
+          <StatBox label={t('stats.boxes.onlineWL')} value={`${stats.onlineMatchesWon}/${stats.onlineMatchesPlayed - stats.onlineMatchesWon}`} color={GameColors.info} />
         </View>
 
         {/* ── CONQUISTAS ────────────────────────────────────────────────── */}
         <Text style={styles.sectionTitle}>
-          Conquistas ({stats.unlockedAchievements.length}/{ACHIEVEMENTS.length})
+          {t('stats.sectionAchievements', { unlocked: stats.unlockedAchievements.length, total: ACHIEVEMENTS.length })}
         </Text>
 
         {CATEGORIES.map((cat) => {
           const catAchievements = ACHIEVEMENTS.filter((a) => a.category === cat);
           return (
             <View key={cat} style={styles.categoryBlock}>
-              <Text style={styles.categoryTitle}>{CATEGORY_LABELS[cat]}</Text>
+              <Text style={styles.categoryTitle}>{t(`stats.categories.${cat}`)}</Text>
               <View style={styles.achievementsGrid}>
                 {catAchievements.map((a) => {
                   const unlocked = stats.unlockedAchievements.includes(a.id);
@@ -133,7 +130,7 @@ export default function StatsScreen() {
                         {unlocked ? a.icon : '🔒'}
                       </Text>
                       <Text style={[styles.achievementTitle, !unlocked && styles.achievementTitleLocked]}>
-                        {a.title}
+                        {getAchievementTitle(a)}
                       </Text>
                       {unlocked && (
                         <Text style={styles.achievementXP}>+{a.xpReward} XP</Text>

@@ -11,6 +11,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { i18n } from '../locales';
 import {
   get as dbGet,
   ref,
@@ -141,9 +142,9 @@ function normalize(name: string): string {
 
 function validateName(name: string): string | null {
   const trimmed = name.trim();
-  if (trimmed.length < 2) return 'Nome muito curto (mínimo 2 letras)';
-  if (trimmed.length > 16) return 'Nome muito longo (máx 16)';
-  if (!/^[\p{L}0-9 _-]+$/u.test(trimmed)) return 'Use apenas letras, números, espaço, _ ou -';
+  if (trimmed.length < 2) return i18n.t('profile.nameTooShort');
+  if (trimmed.length > 16) return i18n.t('profile.nameTooLong');
+  if (!/^[\p{L}0-9 _-]+$/u.test(trimmed)) return i18n.t('profile.nameInvalidChars');
   return null;
 }
 
@@ -208,7 +209,7 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
         if (validationError) { set({ claimError: validationError }); throw new Error(validationError); }
 
         const uid = auth.currentUser?.uid;
-        if (!uid) { set({ claimError: 'Sem autenticação' }); throw new Error('Sem autenticação'); }
+        if (!uid) { set({ claimError: i18n.t('online.errors.noAuth') }); throw new Error(i18n.t('online.errors.noAuth')); }
 
         const display = rawName.trim();
         const lower = normalize(display);
@@ -222,7 +223,7 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
             return undefined; // abort — taken
           });
           if (!result.committed) {
-            const err = 'Esse nome já está em uso. Escolha outro.';
+            const err = i18n.t('profile.nameTaken');
             set({ claimError: err, isClaiming: false });
             throw new Error(err);
           }
@@ -242,7 +243,7 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
             claimError: null,
           });
         } catch (e: any) {
-          if (!get().claimError) set({ claimError: e?.message ?? 'Erro ao reservar nome', isClaiming: false });
+          if (!get().claimError) set({ claimError: e?.message ?? i18n.t('online.errors.claimName'), isClaiming: false });
           set({ isClaiming: false });
           throw e;
         }
@@ -279,7 +280,7 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
             return undefined;
           });
           if (!result.committed) {
-            const err = 'Esse nome já está em uso. Escolha outro.';
+            const err = i18n.t('profile.nameTaken');
             set({ claimError: err, isClaiming: false });
             throw new Error(err);
           }

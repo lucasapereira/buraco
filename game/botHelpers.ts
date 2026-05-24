@@ -755,6 +755,18 @@ export function shouldTakePileSmart(
         const hasCleanCandidate = teamGames.some(g => !g.some(c => c.isJoker) && g.length >= 4);
         if (hasCleanCandidate) return false;
       }
+
+      // HARD RULE: nunca pega o lixo se a única forma de meldar o coringa-topo
+      // for sujar uma canastra LIMPA (qualquer tamanho — 200/500/1000). Para 500/1000
+      // a perda é absurda; para 200 (-100) ainda é frequentemente net-negativo (o
+      // lixo precisa valer >100 pra compensar) — usuário pediu o caminho seguro.
+      if (!isNaturalFit && !canFormCleanPlay) {
+        const dirtiesAnyCleanCanasta = teamGames.some(g =>
+          checkCanasta(g) === 'clean'
+          && validateSequence([...g, topCard], gameMode)
+        );
+        if (dirtiesAnyCleanCanasta) return false;
+      }
     }
   }
 

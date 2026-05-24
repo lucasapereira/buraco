@@ -340,6 +340,7 @@ const wildLeak: Record<TeamId, WildLeakStats> = {
 };
 // Contador de turnos transcorridos na rodada corrente (incrementado em runBotTurn)
 let currentRoundTurnCount = 0;
+let preventedDirty13Plus = 0; // contador: quantas vezes o hard-rule preveniu sujar 500/1000
 
 /** Quantos coringas neste seq atuam como wild (não-natural). */
 function countNonNaturalWilds(seq: Card[], gameMode: GameMode): number {
@@ -763,6 +764,8 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
         if (card.isJoker && wouldDirtyGame(card, game)) {
           if (game.some(c => c.isJoker)) continue;
           if (checkCanasta(game) === 'clean') {
+            // HARD RULE espelhando produção: 500/1000 nunca é sujada.
+            if (game.length >= 13) { preventedDirty13Plus++; continue; }
             const goingOutNext = pNow.hand.length <= 2;
             const cleanCanastas = team.games.filter(g => checkCanasta(g) === 'clean');
             if (!goingOutNext || cleanCanastas.length <= 1) continue;
@@ -792,6 +795,8 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
         if (validateSequence([...game, card], s.gameMode)) {
           const combined = [...game, card];
           if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') {
+            // HARD RULE espelhando produção: 500/1000 nunca é sujada.
+            if (game.length >= 13) { preventedDirty13Plus++; continue; }
             const goingOutNext = pNow.hand.length <= 2;
             const otherClean = team.games.filter((g, idx) => idx !== gi && checkCanasta(g) === 'clean').length;
             if (!goingOutNext || otherClean === 0) continue;
@@ -1129,6 +1134,7 @@ function main() {
   console.log(`score médio T1 / T2     : ${Math.round(t1TotalScore / N_GAMES)} / ${Math.round(t2TotalScore / N_GAMES)}`);
   console.log(`rodadas totais          : ${totalRounds} (média ${(totalRounds / N_GAMES).toFixed(1)}/partida)`);
   console.log(`rodadas com bater       : ${totalBater}  sem bater: ${totalNoBater}`);
+  console.log(`hard-rule 500/1000 fires: ${preventedDirty13Plus}  (vezes que o bot tentaria sujar canastra 13+ cartas)`);
 
   // Distribuição de tamanho de mão ao esgotamento (para diagnóstico de hoarding)
   const allExhausts = results.flatMap(r => r.exhaustHandSizes);

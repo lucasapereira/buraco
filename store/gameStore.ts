@@ -13,6 +13,8 @@ import {
   getNextPlayer
 } from '../game/engine';
 import { canTakePile, sortCardsBySuitAndValue, sortGameCards, validateSequence, checkCanasta } from '../game/rules';
+import { i18n } from '../locales';
+import { displayName } from '../game/playerNames';
 
 type TurnPhase = 'draw' | 'play' | 'discard';
 
@@ -59,7 +61,8 @@ function createUndoState(state: GameState): UndoState {
 }
 
 function getPlayerName(players: GameState['players'], id: PlayerId): string {
-  return players.find(p => p.id === id)?.name || id;
+  const raw = players.find(p => p.id === id)?.name || id;
+  return displayName(raw);
 }
 
 function checkAndHandleDead(
@@ -125,7 +128,7 @@ function checkRoundEnd(state: GameState, playerId: PlayerId): Partial<GameState>
           },
           gameLog: addLog(state.gameLog, makeEvent(
             player.id, getPlayerName(state.players, player.id),
-            'round_end', `🏆 ${getPlayerName(state.players, player.id)} BATEU!`
+            'round_end', i18n.t('events.bateu', { player: getPlayerName(state.players, player.id) })
           )),
         };
       }
@@ -301,7 +304,7 @@ export const useGameStore = create<GameState & GameActions>()(
     // Adiciona um evento de início de rodada para que a sincronização online
     // detecte a mudança (o subscribe compara referência do gameLog — sem este
     // evento o gameLog ficaria vazio e o subscriber nunca dispararia o sync).
-    const roundStartEvent = makeEvent('user', 'Sistema', 'round_end', '▶ Nova rodada iniciada');
+    const roundStartEvent = makeEvent('user', i18n.t('events.system'), 'round_end', i18n.t('events.newRound'));
     set({
       ...fresh,
       players: freshPlayers,
@@ -399,7 +402,7 @@ export const useGameStore = create<GameState & GameActions>()(
       winnerTeamId: null,
       lastDrawnCardId: null,
       mustPlayPileTopId: null,
-      gameLog: [{ id: 1, playerId: 'user', playerName: 'SYS', type: 'draw_deck', message: '🔧 Modo Layout', timestamp: Date.now() }],
+      gameLog: [{ id: 1, playerId: 'user', playerName: 'SYS', type: 'draw_deck', message: i18n.t('events.layoutMode'), timestamp: Date.now() }],
       discardedCardHistory: [],
       deckReshuffleCount: 0,
       turnHistory: [],
@@ -425,7 +428,7 @@ export const useGameStore = create<GameState & GameActions>()(
           deads: nextDeads,
           gameLog: addLog(s.gameLog, makeEvent(
             playerId, name, 'morto_to_deck',
-            '📦 Monte esgotado! O MORTO foi para o MONTE!'
+            i18n.t('events.mortoToDeck')
           )),
         }));
         
@@ -461,7 +464,7 @@ export const useGameStore = create<GameState & GameActions>()(
               'team-2': { ...state.teams['team-2'], score: t2Score },
             },
             gameLog: addLog(state.gameLog, makeEvent(
-              playerId, name, 'round_end', '⏹️ Baralho esgotado 3x — rodada encerrada!'
+              playerId, name, 'round_end', i18n.t('events.deckExhausted3x')
             )),
           });
           return;
@@ -475,7 +478,7 @@ export const useGameStore = create<GameState & GameActions>()(
           deckReshuffleCount: newReshuffleCount,
           gameLog: addLog(s.gameLog, makeEvent(
             playerId, name, 'draw_deck',
-            `🔀 Monte esgotado (${newReshuffleCount}/${MAX_RESHUFFLES}) — Lixo reembaralhado!`
+            i18n.t('events.pileReshuffled', { n: newReshuffleCount, max: MAX_RESHUFFLES })
           )),
         }));
         // Tenta comprar novamente
@@ -505,7 +508,7 @@ export const useGameStore = create<GameState & GameActions>()(
           'team-2': { ...state.teams['team-2'], score: t2Score },
         },
         gameLog: addLog(state.gameLog, makeEvent(
-          playerId, name, 'round_end', '🃏 Tudo esgotado — rodada encerrada!'
+          playerId, name, 'round_end', i18n.t('events.allExhausted')
         )),
       });
       return;
@@ -531,7 +534,7 @@ export const useGameStore = create<GameState & GameActions>()(
         animatingDrawPlayerId: playerId,
         gameLog: addLog(s.gameLog, makeEvent(
           playerId, name, 'draw_deck',
-          `${name} comprou do monte`,
+          i18n.t('events.drewFromDeck', { player: name }),
           playerId === 'user' ? cardLabel(drawnCard) : undefined
         )),
       };
@@ -568,71 +571,69 @@ export const useGameStore = create<GameState & GameActions>()(
     if (!canTake) return false;
 
     // REGRA EXTRA (modo clássico): verifica se pegar o lixo forçaria um bater ilegal.
-    // Isso ocorre quando a mão resultante (mão atual + lixo) é tão pequena que
-    // todo meld possível com a carta do topo deixa o jogador com apenas 1 carta (descarte)
-    // e a equipe não tem canastra limpa nem morto disponível.
+    // Só é possível encurralar se a mão pós-puxar (futureHand) for tão pequena
+    // que toda jogada com a carta do topo deixa o jogador com 0 ou 1 carta e a
+    // equipe não tem canastra limpa nem morto disponível. Com futureHand >= 5,
+    // qualquer meld mínimo (3 cartas, validateSequence) deixa >= 2 cartas, então
+    // não há como encurralar — pulamos a enumeração, que historicamente cobre
+    // só uma fatia das jogadas válidas (melds novos de 3 e extensões com 0/1
+    // carta da mão) e bloqueava falsamente casos com mão grande.
     if (state.gameMode !== 'araujo_pereira') {
       const topCard = state.pile[state.pile.length - 1];
       const futureHand = [...player.hand, ...state.pile];
-      const teamGames = state.teams[player.teamId].games;
-      const hasGottenDead = state.teams[player.teamId].hasGottenDead;
-      const hasDead = state.deads.length > 0;
 
-      // Coleta todos os subsets válidos da futureHand que incluem topCard e formam meld
-      const handWithoutTop = futureHand.filter(c => c.id !== topCard.id);
-      let hasAtLeastOneEscape = false;
+      if (futureHand.length < 5) {
+        const teamGames = state.teams[player.teamId].games;
+        const hasGottenDead = state.teams[player.teamId].hasGottenDead;
+        const hasDead = state.deads.length > 0;
 
-      // Testa melds de 2 cartas da mão + topCard (mínimo de 3)
-      // Pegar morto exige AMBOS: time não pegou ainda (!hasGottenDead) E morto disponível (hasDead).
-      // Antes era OR — falsamente liberava take quando deads=0 mas team-1 não tinha pego morto
-      // (team-2 tinha pego os dois, ou state corrompido). Espelha wouldStrandPlayer (linha 155).
-      const canStillGetDead = hasDead && !hasGottenDead;
+        const handWithoutTop = futureHand.filter(c => c.id !== topCard.id);
+        let hasAtLeastOneEscape = false;
 
-      for (let i = 0; i < handWithoutTop.length && !hasAtLeastOneEscape; i++) {
-        for (let j = i + 1; j < handWithoutTop.length && !hasAtLeastOneEscape; j++) {
-          const meld = [topCard, handWithoutTop[i], handWithoutTop[j]];
-          if (validateSequence(meld, state.gameMode)) {
-            const remaining = futureHand.filter(c => !meld.some(m => m.id === c.id));
-            // "escape" = sobram 2+ cartas (pelo menos 1 para jogar depois + 1 para descartar)
-            // ou pode pegar morto, ou tem canastra
-            if (remaining.length >= 2 || canStillGetDead) {
-              hasAtLeastOneEscape = true;
-            } else if (remaining.length === 1 || remaining.length === 0) {
-              // remaining===1: descarta a última e bater. remaining===0: meld usou toda a
-              // mão futura, bater direto sem descarte (checkRoundEnd dispara com hand=0).
-              // Em ambos precisa de canastra limpa — espelha wouldStrandPlayer (linha 156)
-              // passando o meld como extraGame caso ele próprio feche uma canastra.
-              if (teamHasCleanCanasta(state, player.teamId, meld)) hasAtLeastOneEscape = true;
-            }
-          }
-        }
-      }
+        // Pegar morto exige AMBOS: time não pegou ainda (!hasGottenDead) E morto disponível (hasDead).
+        // Antes era OR — falsamente liberava take quando deads=0 mas team-1 não tinha pego morto
+        // (team-2 tinha pego os dois, ou state corrompido). Espelha wouldStrandPlayer (linha 155).
+        const canStillGetDead = hasDead && !hasGottenDead;
 
-      // Também testa adicionar topCard a jogos existentes com cartas da mão
-      if (!hasAtLeastOneEscape) {
-        for (const game of teamGames) {
-          for (let i = 0; i < handWithoutTop.length && !hasAtLeastOneEscape; i++) {
-            const combined = [...game, topCard, handWithoutTop[i]];
-            if (validateSequence(combined, state.gameMode)) {
-              const remaining = futureHand.filter(c => c.id !== topCard.id && c.id !== handWithoutTop[i].id);
-              if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId)) {
+        for (let i = 0; i < handWithoutTop.length && !hasAtLeastOneEscape; i++) {
+          for (let j = i + 1; j < handWithoutTop.length && !hasAtLeastOneEscape; j++) {
+            const meld = [topCard, handWithoutTop[i], handWithoutTop[j]];
+            if (validateSequence(meld, state.gameMode)) {
+              const remaining = futureHand.filter(c => !meld.some(m => m.id === c.id));
+              if (remaining.length >= 2 || canStillGetDead) {
                 hasAtLeastOneEscape = true;
-              }
-            }
-          }
-          if (!hasAtLeastOneEscape) {
-            const combined = [...game, topCard];
-            if (validateSequence(combined, state.gameMode)) {
-              const remaining = futureHand.filter(c => c.id !== topCard.id);
-              if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId)) {
-                hasAtLeastOneEscape = true;
+              } else if (remaining.length === 1 || remaining.length === 0) {
+                if (teamHasCleanCanasta(state, player.teamId, meld)) hasAtLeastOneEscape = true;
               }
             }
           }
         }
-      }
 
-      if (!hasAtLeastOneEscape) return false; // Bloqueado: pegaria o lixo mas ficaria sem saída
+        if (!hasAtLeastOneEscape) {
+          for (const game of teamGames) {
+            for (let i = 0; i < handWithoutTop.length && !hasAtLeastOneEscape; i++) {
+              const combined = [...game, topCard, handWithoutTop[i]];
+              if (validateSequence(combined, state.gameMode)) {
+                const remaining = futureHand.filter(c => c.id !== topCard.id && c.id !== handWithoutTop[i].id);
+                if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId)) {
+                  hasAtLeastOneEscape = true;
+                }
+              }
+            }
+            if (!hasAtLeastOneEscape) {
+              const combined = [...game, topCard];
+              if (validateSequence(combined, state.gameMode)) {
+                const remaining = futureHand.filter(c => c.id !== topCard.id);
+                if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId)) {
+                  hasAtLeastOneEscape = true;
+                }
+              }
+            }
+          }
+        }
+
+        if (!hasAtLeastOneEscape) return false;
+      }
     }
 
     const pileCount = state.pile.length;
@@ -653,7 +654,7 @@ export const useGameStore = create<GameState & GameActions>()(
         turnHistory: [],
         gameLog: addLog(s.gameLog, makeEvent(
           playerId, name, 'draw_pile',
-          `${name} pegou o lixo (${pileCount} cartas)`
+          i18n.t('events.tookPile', { player: name, count: pileCount })
         )),
       };
     });
@@ -717,14 +718,14 @@ export const useGameStore = create<GameState & GameActions>()(
 
       let log = addLog(s.gameLog, makeEvent(
         playerId, name, 'discard',
-        `${name} descartou ${cardLabel(discardedCard)}`,
+        i18n.t('events.discarded', { player: name, card: cardLabel(discardedCard) }),
         cardLabel(discardedCard)
       ));
 
       if (gotDead) {
         log = addLog(log, makeEvent(
           playerId, name, 'got_dead',
-          `📦 ${name} pegou o MORTO!`
+          i18n.t('events.gotDead', { player: name })
         ));
       }
 
@@ -810,13 +811,13 @@ export const useGameStore = create<GameState & GameActions>()(
 
       let log = addLog(s.gameLog, makeEvent(
         playerId, name, 'play_cards',
-        `${name} baixou: ${cardsStr}`
+        i18n.t('events.playedGame', { player: name, cards: cardsStr })
       ));
 
       if (gotDead) {
         log = addLog(log, makeEvent(
           playerId, name, 'got_dead',
-          `📦 ${name} pegou o MORTO!`
+          i18n.t('events.gotDead', { player: name })
         ));
       }
 
@@ -902,13 +903,13 @@ export const useGameStore = create<GameState & GameActions>()(
 
       let log = addLog(s.gameLog, makeEvent(
         playerId, name, 'add_to_game',
-        `${name} adicionou ${cardsStr} ao jogo`
+        i18n.t('events.addedToGame', { player: name, cards: cardsStr })
       ));
 
       if (gotDead) {
         log = addLog(log, makeEvent(
           playerId, name, 'got_dead',
-          `📦 ${name} pegou o MORTO!`
+          i18n.t('events.gotDead', { player: name })
         ));
       }
 

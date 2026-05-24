@@ -36,25 +36,17 @@ import { useOnlineStore, SEAT_PLAYER_IDS, TEAM_OF_SEAT } from '../../store/onlin
 import { cardLabel } from '../../game/deck';
 import { ScreenBackground } from '../../components/ScreenBackground';
 import { GameColors, Radius, Elevation } from '../../constants/colors';
+import { useT } from '../../store/localeStore';
+import { i18n } from '../../locales';
+import { displayName, botSeatLabel } from '../../game/playerNames';
 
 
-// Frases prontas pra zoeira / malhação no online. Ordem = ordem no picker.
-const TAUNT_PRESETS: string[] = [
-  'Pisa! 👣',
-  'Peia! 🥊',
-  'Deu sorte, hein?',
-  'Lavou a burra',
-  'Fiz cagada 💩',
-  'Mete lixo!',
-  'Não pega o lixo!',
-  'Cadê a canastra?',
-  'Tá pensando muito 🐌',
-  'Vai logo!',
-  'Achou? 👀',
-  '😂',
-  '🤡',
-  '🔥',
-];
+// Frases prontas pra zoeira/malhação no online. Lê do i18n a cada chamada
+// pra refletir o idioma atual (i18n.t retorna o array da locale ativa).
+function getTauntPresets(): string[] {
+  const arr = i18n.t('game.trashTalk');
+  return Array.isArray(arr) ? arr : [];
+}
 
 /** Bolha de fala que aparece acima do jogador quando ele manda uma zoeira. */
 function TauntBubble({ entry, seatIdx }: { entry: { msg: string; ts: number; id: string } | undefined; seatIdx: number }) {
@@ -138,6 +130,7 @@ function getCanastaInfo(canasta: 'clean' | 'dirty' | 'none', length: number) {
 
 export default function GameScreen() {
   useKeepAwake();
+  const t = useT();
   const { width: SW, height: SH } = useWindowDimensions();
   const isLandscape = SW > SH;
   const tabletScale = SW >= 600 ? Math.min(SW / 450, SH / 650, 1.8) : 1.0;
@@ -229,7 +222,7 @@ export default function GameScreen() {
       if (prevSeats[idx] !== null && seat === null) {
         const playerId = SEAT_PLAYER_IDS[idx];
         const playerName = prevSeats[idx]?.name ?? playerId;
-        const botName = `Bot ${idx + 1}`;
+        const botName = botSeatLabel(idx);
         useGameStore.setState(state => ({
           players: state.players.map(p =>
             p.id === playerId ? { ...p, name: botName } : p
@@ -241,7 +234,7 @@ export default function GameScreen() {
               playerId,
               playerName,
               type: 'player_left' as const,
-              message: `${playerName} saiu. ${botName} assumiu.`,
+              message: i18n.t('game.playerLeft', { player: playerName, bot: botName }),
               timestamp: Date.now(),
             },
           ],
@@ -427,16 +420,18 @@ export default function GameScreen() {
       }
     };
 
-    const title = action === 'restart' ? 'Reiniciar Partida' : 'Sair';
+    const title = action === 'restart' ? t('game.alerts.restartTitle') : t('game.alerts.exitTitle');
     const msg = wouldCountAsLoss
-      ? `Você está perdendo por ${Math.abs(diff)} pontos. ${action === 'restart' ? 'Reiniciar' : 'Sair'} agora vai contar como DERROTA.`
-      : (action === 'restart' ? 'Tem certeza? O progresso atual será perdido.' : 'Deseja sair para o menu principal?');
+      ? (action === 'restart'
+          ? t('game.alerts.wouldLoseRestart', { diff: Math.abs(diff) })
+          : t('game.alerts.wouldLoseExit', { diff: Math.abs(diff) }))
+      : (action === 'restart' ? t('game.alerts.restartMsg') : t('game.alerts.exitMsg'));
     const confirmLabel = wouldCountAsLoss
-      ? (action === 'restart' ? 'Reiniciar mesmo assim' : 'Sair mesmo assim')
-      : (action === 'restart' ? 'Reiniciar' : 'Sair');
+      ? (action === 'restart' ? t('game.alerts.restartAnyway') : t('game.alerts.exitAnyway'))
+      : (action === 'restart' ? t('game.alerts.restartLabel') : t('game.alerts.exitLabel'));
 
     showAlert(title, msg, [
-      { text: 'Cancelar', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
       { text: confirmLabel, style: 'destructive', onPress: runAction },
     ]);
   };
@@ -469,7 +464,7 @@ export default function GameScreen() {
   if (!user) {
     return (
       <View style={styles.container}>
-        <Text style={styles.emptyText}>Volte e inicie um Novo Jogo</Text>
+        <Text style={styles.emptyText}>{t('game.emptyHand')}</Text>
       </View>
     );
   }
@@ -487,11 +482,11 @@ export default function GameScreen() {
   const handleDrawDeck = () => {
     if (!isMyTurn) {
       const current = players.find(p => p.id === currentTurnPlayerId);
-      showAlert('Aguarde', `É a vez de ${current?.name || 'outro jogador'}. Fase: ${turnPhase}`);
+      showAlert(t('game.alerts.waitTitle'), t('game.alerts.waitMsg', { name: displayName(current?.name || ''), phase: turnPhase }));
       return;
     }
     if (turnPhase !== 'draw') {
-      showAlert('Já comprou', 'Você já comprou neste turno. Baixe jogos ou selecione 1 carta e descarte.');
+      showAlert(t('game.alerts.alreadyDrewTitle'), t('game.alerts.alreadyDrewMsg'));
       return;
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -523,7 +518,7 @@ export default function GameScreen() {
   const doPileClick = () => {
     if (!isMyTurn) {
       const current = players.find(p => p.id === currentTurnPlayerId);
-      showAlert('Aguarde', `É a vez de ${current?.name || 'outro jogador'}.`);
+      showAlert(t('game.alerts.waitTitle'), t('game.alerts.waitMsgShort', { name: displayName(current?.name || '') }));
       return;
     }
     if (turnPhase === 'play') {
@@ -531,7 +526,7 @@ export default function GameScreen() {
       return;
     }
     if (pile.length === 0) {
-      showAlert('Lixo vazio', 'O lixo está vazio.');
+      showAlert(t('game.alerts.emptyPileTitle'), t('game.alerts.emptyPileMsg'));
       return;
     }
 
@@ -540,10 +535,10 @@ export default function GameScreen() {
       const topCard = pile[pile.length - 1];
       const selCards = user.hand.filter(c => selectedCards.includes(c.id));
       let actionToTake: (() => void) | null = null;
-      
+
       const alertDeadlock = () => showAlert(
-        '❌ Não pode pegar o lixo',
-        `Pegar o lixo te forçaria a bater usando o ${cardLabel(topCard)}, mas sua equipe não tem canastra limpa.`
+        t('game.alerts.cantTakePileTitle'),
+        t('game.alerts.cantTakePileDeadlock', { card: cardLabel(topCard) })
       );
 
       // Tenta adicionar a um JOGO EXISTENTE com as cartas selecionadas (se houver) + carta do topo
@@ -566,7 +561,7 @@ export default function GameScreen() {
              if (success) {
                const playSuccess = playCards(myPlayerId, [...selectedCards, topCard.id]);
                if (!playSuccess) {
-                 showAlert('⚠️ Ação bloqueada', 'O jogo é válido, mas você não pode ficar sem cartas na mão sem ter completado os requisitos para bater. O lixo foi para a sua mão.');
+                 showAlert(t('game.alerts.blockedTitle'), t('game.alerts.blockedPlayValidButBlock'));
                }
              } else {
                alertDeadlock();
@@ -578,12 +573,11 @@ export default function GameScreen() {
       if (!actionToTake) {
          if (canTakePile(user.hand, pile, myTeamGames, gameMode)) {
            showAlert(
-             'Selecione as cartas!',
-             `Para pegar o lixo, selecione ANTES na sua mão as cartas que formam jogo com o ${cardLabel(topCard)}.\n` + 
-             `(Ou clique se a carta pode incrementar diretamente um jogo seu)`
+             t('game.alerts.selectCardsTitle'),
+             t('game.alerts.selectCardsMsg', { card: cardLabel(topCard) })
            );
          } else {
-           showAlert('❌ Não pode pegar o lixo', `Você precisa usar o ${cardLabel(topCard)} em um jogo (novo ou existente).`);
+           showAlert(t('game.alerts.cantTakePileTitle'), t('game.alerts.cantTakePileNeedUse', { card: cardLabel(topCard) }));
          }
          return;
       }
@@ -606,17 +600,17 @@ export default function GameScreen() {
       const pileTopStillInHand = user.hand.some(c => c.id === mustPlayPileTopId);
       if (pileTopStillInHand) {
         const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
-        const label = topCard ? cardLabel(topCard) : 'do topo';
+        const label = topCard ? cardLabel(topCard) : t('game.alerts.cardOfTop');
         showAlert(
-          '⚠️ Baixe o jogo primeiro',
-          `Você pegou o lixo e deve baixar um jogo usando o ${label} antes de descartar.`
+          t('game.alerts.playFirstTitle'),
+          t('game.alerts.playFirstMsg', { card: label })
         );
         return;
       }
       // Carta não está mais na mão — foi jogada, deixa continuar
     }
     if (selectedCards.length !== 1) {
-      showAlert('Selecione 1 carta', 'Para descartar, selecione exatamente 1 carta.');
+      showAlert(t('game.alerts.select1Title'), t('game.alerts.select1Msg'));
       return;
     }
 
@@ -631,8 +625,8 @@ export default function GameScreen() {
 
       if (!willGetDead && !hasCanasta) {
         showAlert(
-          '⚠️ Não pode bater',
-          `Sua equipe precisa de uma canastra ${gameMode === 'araujo_pereira' ? '' : 'limpa '}para bater e encerrar a rodada.`
+          t('game.alerts.cantBaterTitle'),
+          t('game.alerts.cantBaterMsg', { cleanQualifier: gameMode === 'araujo_pereira' ? '' : t('game.alerts.cantBaterClean') })
         );
         return;
       }
@@ -647,12 +641,12 @@ export default function GameScreen() {
     if (!isMyTurn || turnPhase !== 'play') return;
     if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
       const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
-      const label = topCard ? cardLabel(topCard) : 'comprada';
-      showAlert('⚠️ Regra do Lixo', `Sua primeira jogada DEVE incluir o ${label} (topo do lixo).\n\nVocê pode:\n• Tocar num jogo seu já na mesa (selecionando o ${label} + cartas para completar)\n• Ou baixar um novo jogo com 3+ cartas`);
+      const label = topCard ? cardLabel(topCard) : t('game.alerts.cardDrawn');
+      showAlert(t('game.alerts.pileRuleTitle'), t('game.alerts.pileRuleNewPlay', { card: label }));
       return;
     }
     if (selectedCards.length < 3) {
-      showAlert('Mínimo 3 cartas', 'Selecione no mínimo 3 cartas para baixar um jogo STBL.');
+      showAlert(t('game.alerts.minCardsTitle'), t('game.alerts.minCardsMsg'));
       return;
     }
     const success = playCards(myPlayerId, selectedCards);
@@ -660,16 +654,14 @@ export default function GameScreen() {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
     } else {
-      // Feedback melhorado dependendo do motivo da falha
       const fits = validateSequence(user.hand.filter(c => selectedCards.includes(c.id)), gameMode);
       if (!fits) {
-        const msg = gameMode === 'araujo_pereira' 
-          ? 'As cartas não formam uma sequência válida ou trinca (máximo 1 curinga em Buraco Mole).'
-          : 'As cartas selecionadas não formam uma sequência válida.\n\nLembre: mesmo naipe, valores consecutivos, máximo 1 curinga (2).';
-        showAlert('Combinação Inválida', msg);
+        const msg = gameMode === 'araujo_pereira'
+          ? t('game.alerts.invalidCombAraujo')
+          : t('game.alerts.invalidCombClassic');
+        showAlert(t('game.alerts.invalidCombTitle'), msg);
       } else {
-        // Encaixa, mas o store recusou (provavelmente trancaria o jogador)
-        showAlert('⚠️ Ação bloqueada', 'Você não pode ficar sem cartas na mão sem ter uma canastra ou pegar o morto.');
+        showAlert(t('game.alerts.blockedTitle'), t('game.alerts.blockedMsg'));
       }
     }
   };
@@ -696,19 +688,16 @@ export default function GameScreen() {
     // Regra do Lixo
     if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && !selectedCards.includes(mustPlayPileTopId)) {
       const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
-      const label = topCard ? cardLabel(topCard) : 'do topo';
-      showAlert('⚠️ Regra do Lixo', `Você deve usar o ${label} (topo do lixo) na sua primeira jogada (novo jogo ou adicionar a um existente).`);
+      const label = topCard ? cardLabel(topCard) : t('game.alerts.cardOfTop');
+      showAlert(t('game.alerts.pileRuleTitle'), t('game.alerts.pileRuleAdd', { card: label }));
       return;
     }
 
-    // Tenta adicionar
     const success = addToExistingGame(myPlayerId, selectedCards, gameIndex);
     if (success) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelectedCards([]);
-      // SUCESSO: Não abre o modal, para o jogador ver a carta entrando no jogo
     } else {
-      // Se falhou, verifica o motivo para dar um feedback melhor
       const player = players.find(p => p.id === myPlayerId);
       if (player) {
         const selCards = player.hand.filter(c => selectedCards.includes(c.id));
@@ -716,12 +705,10 @@ export default function GameScreen() {
         const fits = validateSequence(combined, gameMode);
 
         if (!fits) {
-          // Se falhou por regra do jogo, abre o ZOOM para o jogador conferir o jogo e entender o erro
           setTempOpenGame({ teamId: myTeamId, index: gameIndex });
-          showAlert('Inválido', 'As cartas selecionadas não encaixam neste jogo.');
+          showAlert(t('game.alerts.invalidTitle'), t('game.alerts.invalidAddMsg'));
         } else {
-          // Encaixa, mas o store recusou (provavelmente "wouldStrandPlayer")
-          showAlert('⚠️ Ação bloqueada', 'Você não pode ficar sem cartas na mão sem ter uma canastra ou pegar o morto.');
+          showAlert(t('game.alerts.blockedTitle'), t('game.alerts.blockedMsg'));
         }
       }
     }
@@ -795,7 +782,7 @@ export default function GameScreen() {
   };
 
   // Indicador visual da fase
-  const phaseLabel = turnPhase === 'draw' ? '🃏 COMPRE' : '🎴 JOGUE/DESCARTE';
+  const phaseLabel = turnPhase === 'draw' ? t('game.phaseDraw') : t('game.phasePlay');
   const phaseColor = turnPhase === 'draw' ? '#FF9800' : '#4CAF50';
 
   // Placar acumulado (relativo ao meu time)
@@ -841,11 +828,11 @@ export default function GameScreen() {
             <Text style={styles.menuBtnText}>☰</Text>
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
-            <Text style={styles.scoreLabel}>NÓS</Text>
+            <Text style={styles.scoreLabel}>{t('game.us')}</Text>
             <Text style={styles.scoreMain}>{myTotal}</Text>
             {myRodadaDisplay !== 0 && (
               <Text style={styles.scoreLive}>
-                {myRodadaDisplay > 0 ? '+' : ''}{myRodadaDisplay} rodada
+                {myRodadaDisplay > 0 ? '+' : ''}{myRodadaDisplay} {t('game.rodadaSuffix')}
               </Text>
             )}
           </View>
@@ -853,25 +840,25 @@ export default function GameScreen() {
         {/* Centro: turno */}
         <View style={styles.turnBox}>
           <Text style={styles.turnName}>
-            {isMyTurn ? 'SUA VEZ' : (() => {
+            {isMyTurn ? t('game.yourTurn') : (() => {
               const tp = players.find(p => p.id === currentTurnPlayerId);
               if (!tp) return '';
               const si = SEAT_PLAYER_IDS.indexOf(tp.id as any);
-              return isOnlineMode && si >= 0 ? (seats[si]?.name ?? `Bot ${si + 1}`) : tp.name;
+              return isOnlineMode && si >= 0 ? (seats[si]?.name ?? botSeatLabel(si)) : displayName(tp.name);
             })()}
           </Text>
           {isMyTurn && (
             <Text style={[styles.phaseLabel, { backgroundColor: phaseColor }]}>{phaseLabel}</Text>
           )}
-          <Text style={styles.targetText}>Meta: {targetScore} | {gameMode === 'araujo_pereira' ? 'Buraco Mole' : 'Clássico'}</Text>
+          <Text style={styles.targetText}>{t('game.target', { target: targetScore, mode: gameMode === 'araujo_pereira' ? t('home.modeAraujo') : t('home.modeClassic') })}</Text>
         </View>
         {/* ELES lado direito */}
         <View style={{ alignItems: 'center' }}>
-          <Text style={styles.scoreLabel}>ELES</Text>
+          <Text style={styles.scoreLabel}>{t('game.them')}</Text>
           <Text style={[styles.scoreMain, { color: '#FF8A80' }]}>{opTotal}</Text>
           {opRodadaDisplay !== 0 && (
             <Text style={styles.scoreLive}>
-              {opRodadaDisplay > 0 ? '+' : ''}{opRodadaDisplay} rodada
+              {opRodadaDisplay > 0 ? '+' : ''}{opRodadaDisplay} {t('game.rodadaSuffix')}
             </Text>
           )}
         </View>
@@ -906,7 +893,7 @@ export default function GameScreen() {
               return (
                 <>
                   {/* Jogos dos adversários */}
-                  {opTeamGames.length === 0 && <Text style={styles.emptyGames}>Nenhum jogo ainda</Text>}
+                  {opTeamGames.length === 0 && <Text style={styles.emptyGames}>{t('game.noGamesYet')}</Text>}
                   <View style={[
                     styles.gamesGrid,
                     denseMode && styles.gamesGridDense,
@@ -994,10 +981,10 @@ export default function GameScreen() {
                     <View style={styles.statusBar}>
                       {players.map(p => {
                         const seatIdx = SEAT_PLAYER_IDS.indexOf(p.id as any);
-                        const displayName = isOnlineMode && seatIdx >= 0
-                          ? (seats[seatIdx]?.name ?? `Bot ${seatIdx + 1}`)
-                          : p.name;
-                        const shortName = displayName.length > 7 ? displayName.slice(0, 7) + '.' : displayName;
+                        const visibleName = isOnlineMode && seatIdx >= 0
+                          ? (seats[seatIdx]?.name ?? botSeatLabel(seatIdx))
+                          : displayName(p.name);
+                        const shortName = visibleName.length > 7 ? visibleName.slice(0, 7) + '.' : visibleName;
 
                         const tauntEntry = isOnlineMode && seatIdx >= 0 ? taunts?.[seatIdx] : undefined;
 
@@ -1063,7 +1050,7 @@ export default function GameScreen() {
                         { minWidth: Math.round(46 * scale), paddingHorizontal: Math.round(6 * scale), paddingVertical: Math.round(4 * scale), backgroundColor: 'rgba(255,214,0,0.1)' },
                         deads.length === 0 && { borderColor: '#FF5252', borderWidth: 1 }
                       ]}>
-                        <Text style={[styles.statusName, { fontSize: Math.round(15 * scale) }]}>Mortos</Text>
+                        <Text style={[styles.statusName, { fontSize: Math.round(15 * scale) }]}>{t('game.deads')}</Text>
                         <Text style={[styles.statusCards, { fontSize: Math.round(15 * scale), color: deads.length === 0 ? '#FF5252' : '#FFD600' }]}>
                           {deads.length} {deads.length === 0 ? '🚫' : '📦'}
                         </Text>
@@ -1203,7 +1190,7 @@ export default function GameScreen() {
             )}
 
             <View style={styles.handCounterSmall}>
-               <Text style={styles.handCounterLabel}>VOCÊ</Text>
+               <Text style={styles.handCounterLabel}>{t('game.you')}</Text>
                <Text style={styles.handCounterValue}>{user.hand.length}</Text>
             </View>
 
@@ -1230,11 +1217,11 @@ export default function GameScreen() {
               <View>
                 <Card card={pile[pile.length - 1]} small onPress={handlePileClick} />
                 <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{pile.length}</Text></View>
-                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>Lixo</Text></View>
+                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>{t('game.pileLabel')}</Text></View>
               </View>
             ) : (
               <TouchableOpacity onPress={handlePileClick}>
-              <View style={styles.emptySlot}><Text style={styles.emptySlotText}>Lixo</Text></View>
+              <View style={styles.emptySlot}><Text style={styles.emptySlotText}>{t('game.pileLabel')}</Text></View>
               </TouchableOpacity>
             )}
           </View>
@@ -1262,7 +1249,7 @@ export default function GameScreen() {
       {/* MÃO DO JOGADOR */}
       {isMyTurn && turnPhase === 'play' && (
         <Animated.View pointerEvents="none" style={[styles.discardHint, { opacity: drawPulseAnim }]}>
-          <Text style={styles.discardHintText}>▲ descarte uma carta ▲</Text>
+          <Text style={styles.discardHintText}>{t('game.discardHint')}</Text>
         </Animated.View>
       )}
       <View style={[styles.handArea, { height: Math.round((isLandscape ? 72 : 93) * tabletScale) }]}>
@@ -1278,21 +1265,21 @@ export default function GameScreen() {
       <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
         <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={() => setShowMenu(false)}>
           <View style={styles.menuBox}>
-            <Text style={styles.menuTitle}>Menu</Text>
+            <Text style={styles.menuTitle}>{t('game.menu.title')}</Text>
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => { setShowMenu(false); handleSurrender('restart'); }}
             >
-              <Text style={styles.menuItemText}>🔄 Reiniciar Partida</Text>
+              <Text style={styles.menuItemText}>{t('game.menu.restart')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => { setShowMenu(false); handleSurrender('leave'); }}
             >
-              <Text style={styles.menuItemText}>🚪 Sair do Jogo</Text>
+              <Text style={styles.menuItemText}>{t('game.menu.exit')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.menuItem, styles.menuClose]} onPress={() => setShowMenu(false)}>
-              <Text style={[styles.menuItemText, { color: 'rgba(255,255,255,0.5)' }]}>Fechar</Text>
+              <Text style={[styles.menuItemText, { color: 'rgba(255,255,255,0.5)' }]}>{t('game.menu.close')}</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -1303,7 +1290,7 @@ export default function GameScreen() {
         <TouchableOpacity style={styles.expandedOverlay} activeOpacity={1} onPress={() => setTempOpenGame(null)}>
           <View style={styles.expandedBox}>
             <Text style={styles.expandedTitle}>
-              {tempOpenGame?.teamId === myTeamId ? 'Nosso Jogo' : 'Jogo Adversário'}
+              {tempOpenGame?.teamId === myTeamId ? t('game.ourMeld') : t('game.oppMeld')}
             </Text>
             <View style={styles.expandedContent}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.expandedCardsScroll}>
@@ -1314,7 +1301,7 @@ export default function GameScreen() {
                 ))}
               </ScrollView>
             </View>
-            <Text style={styles.expandedCloseHint}>Toque fora para fechar</Text>
+            <Text style={styles.expandedCloseHint}>{t('game.tapOutToClose')}</Text>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1326,8 +1313,8 @@ export default function GameScreen() {
             {/* Título */}
             <Text style={styles.modalTitle}>
               {winnerTeamId
-                ? (winnerTeamId === myTeamId ? '🏆 VOCÊ VENCEU A PARTIDA!' : '😢 Adversários venceram!')
-                : 'Rodada Encerrada'
+                ? (winnerTeamId === myTeamId ? t('game.endRound.youWonMatch') : t('game.endRound.theyWonMatch'))
+                : t('game.endRound.roundEnd')
               }
             </Text>
 
@@ -1337,7 +1324,7 @@ export default function GameScreen() {
                 color: '#FFD700', fontWeight: '800', fontSize: 15, textAlign: 'center',
                 marginTop: 6, marginBottom: 2,
               }}>
-                🧠 Você derrotou a IA (Difícil)!  XP em dobro 🔥
+                {t('game.endRound.expertBadge')}
               </Text>
             )}
 
@@ -1350,35 +1337,35 @@ export default function GameScreen() {
 
             {/* Breakdown Nós */}
             <View style={styles.modalTeamBlock}>
-              <Text style={styles.modalTeamTitle}>🟢 Nossa equipe</Text>
-              <Text style={styles.modalScoreRow}>Jogos na mesa: +{calculateLiveScore(teams[myTeamId])}</Text>
-              <Text style={styles.modalScoreRow}>Penalidade mão: -{myHandPenalty}</Text>
+              <Text style={styles.modalTeamTitle}>{t('game.endRound.ourTeam')}</Text>
+              <Text style={styles.modalScoreRow}>{t('game.endRound.tableScore', { score: calculateLiveScore(teams[myTeamId]) })}</Text>
+              <Text style={styles.modalScoreRow}>{t('game.endRound.handPenalty', { penalty: myHandPenalty })}</Text>
               {hitterTeamId === myTeamId && (
-                <Text style={[styles.modalScoreRow, { color: '#B9F6CA' }]}>Batida: +100</Text>
+                <Text style={[styles.modalScoreRow, { color: '#B9F6CA' }]}>{t('game.endRound.wentOutBonus')}</Text>
               )}
               {!teams[myTeamId].hasGottenDead && (
-                <Text style={[styles.modalScoreRow, { color: '#FF8A80' }]}>Não pegou morto: -100</Text>
+                <Text style={[styles.modalScoreRow, { color: '#FF8A80' }]}>{t('game.endRound.noDeadPenalty')}</Text>
               )}
-              <Text style={styles.modalScoreRow}>Esta rodada: {teams[myTeamId].score}</Text>
-              <Text style={styles.modalScoreTotal}>Total: {matchScores[myTeamId]}</Text>
+              <Text style={styles.modalScoreRow}>{t('game.endRound.thisRound', { score: teams[myTeamId].score })}</Text>
+              <Text style={styles.modalScoreTotal}>{t('game.endRound.total', { score: matchScores[myTeamId] })}</Text>
             </View>
 
             {/* Breakdown Eles */}
             <View style={styles.modalTeamBlock}>
-              <Text style={styles.modalTeamTitle}>🔴 Equipe adversária</Text>
-              <Text style={styles.modalScoreRow}>Jogos na mesa: +{calculateLiveScore(teams[opTeamId])}</Text>
-              <Text style={styles.modalScoreRow}>Penalidade mão: -{opHandPenalty}</Text>
+              <Text style={styles.modalTeamTitle}>{t('game.endRound.oppTeam')}</Text>
+              <Text style={styles.modalScoreRow}>{t('game.endRound.tableScore', { score: calculateLiveScore(teams[opTeamId]) })}</Text>
+              <Text style={styles.modalScoreRow}>{t('game.endRound.handPenalty', { penalty: opHandPenalty })}</Text>
               {hitterTeamId === opTeamId && (
-                <Text style={[styles.modalScoreRow, { color: '#B9F6CA' }]}>Batida: +100</Text>
+                <Text style={[styles.modalScoreRow, { color: '#B9F6CA' }]}>{t('game.endRound.wentOutBonus')}</Text>
               )}
               {!teams[opTeamId].hasGottenDead && (
-                <Text style={[styles.modalScoreRow, { color: '#FF8A80' }]}>Não pegou morto: -100</Text>
+                <Text style={[styles.modalScoreRow, { color: '#FF8A80' }]}>{t('game.endRound.noDeadPenalty')}</Text>
               )}
-              <Text style={styles.modalScoreRow}>Esta rodada: {teams[opTeamId].score}</Text>
-              <Text style={styles.modalScoreTotal}>Total: {matchScores[opTeamId]}</Text>
+              <Text style={styles.modalScoreRow}>{t('game.endRound.thisRound', { score: teams[opTeamId].score })}</Text>
+              <Text style={styles.modalScoreTotal}>{t('game.endRound.total', { score: matchScores[opTeamId] })}</Text>
             </View>
 
-            <Text style={styles.modalTarget}>Meta: {targetScore} pontos</Text>
+            <Text style={styles.modalTarget}>{t('game.endRound.target', { target: targetScore })}</Text>
 
             {winnerTeamId ? (
               isHost ? (
@@ -1394,34 +1381,34 @@ export default function GameScreen() {
                       setSelectedCards([]);
                     }
                   }}>
-                    <Text style={styles.modalBtnText}>🔁 Revanche</Text>
+                    <Text style={styles.modalBtnText}>{t('game.endRound.rematch')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#455A64' }]} onPress={async () => {
                     if (isOnlineMode) { await useOnlineStore.getState().leaveRoom(); }
                     router.replace('/(tabs)' as any);
                   }}>
-                    <Text style={[styles.modalBtnText, { color: '#fff' }]}>Sair</Text>
+                    <Text style={[styles.modalBtnText, { color: '#fff' }]}>{t('game.endRound.exitMatch')}</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View style={{ gap: 10 }}>
-                  <Text style={styles.modalWaiting}>Aguardando host iniciar revanche...</Text>
+                  <Text style={styles.modalWaiting}>{t('game.endRound.waitingRematch')}</Text>
                   <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#455A64' }]} onPress={async () => {
                     const { leaveRoom } = useOnlineStore.getState();
                     await leaveRoom();
                     router.replace('/(tabs)' as any);
                   }}>
-                    <Text style={[styles.modalBtnText, { color: '#fff' }]}>Sair</Text>
+                    <Text style={[styles.modalBtnText, { color: '#fff' }]}>{t('game.endRound.exitMatch')}</Text>
                   </TouchableOpacity>
                 </View>
               )
             ) : (
               isHost ? (
                 <TouchableOpacity style={styles.modalBtn} onPress={() => { startNewRound(); setSelectedCards([]); }}>
-                  <Text style={styles.modalBtnText}>Próxima Rodada ▶</Text>
+                  <Text style={styles.modalBtnText}>{t('game.endRound.nextRound')}</Text>
                 </TouchableOpacity>
               ) : (
-                <Text style={styles.modalWaiting}>Aguardando o host iniciar próxima rodada...</Text>
+                <Text style={styles.modalWaiting}>{t('game.endRound.waitingNextRound')}</Text>
               )
             )}
           </View>
@@ -1441,9 +1428,9 @@ export default function GameScreen() {
       <Modal visible={tauntPickerOpen} transparent animationType="fade" onRequestClose={() => setTauntPickerOpen(false)}>
         <TouchableOpacity style={styles.tauntOverlay} activeOpacity={1} onPress={() => setTauntPickerOpen(false)}>
           <View style={styles.tauntBox}>
-            <Text style={styles.tauntTitle}>Malhação 😤</Text>
+            <Text style={styles.tauntTitle}>{t('game.tauntPickerTitle')}</Text>
             <View style={styles.tauntGrid}>
-              {TAUNT_PRESETS.map(msg => (
+              {getTauntPresets().map(msg => (
                 <TouchableOpacity
                   key={msg}
                   style={styles.tauntOption}
@@ -1462,15 +1449,13 @@ export default function GameScreen() {
       <Modal visible={roomStatus === 'abandoned'} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>😵 Host saiu do jogo</Text>
-            <Text style={styles.modalWaiting}>
-              O host encerrou ou perdeu a conexão. A partida foi interrompida.
-            </Text>
+            <Text style={styles.modalTitle}>{t('game.hostLeft.title')}</Text>
+            <Text style={styles.modalWaiting}>{t('game.hostLeft.msg')}</Text>
             <TouchableOpacity style={styles.modalBtn} onPress={async () => {
               await useOnlineStore.getState().leaveRoom();
               router.replace('/(tabs)' as any);
             }}>
-              <Text style={styles.modalBtnText}>Voltar ao Menu</Text>
+              <Text style={styles.modalBtnText}>{t('game.hostLeft.back')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1483,16 +1468,16 @@ export default function GameScreen() {
         <View style={styles.hostOfflineBanner} pointerEvents="box-none">
           <View style={styles.hostOfflineBox} pointerEvents="auto">
             <Text style={styles.hostOfflineTitle}>
-              ⚠️ Host parece offline há {hostStaleSeconds < 120 ? `${hostStaleSeconds}s` : `${Math.floor(hostStaleSeconds / 60)}min`}
+              {hostStaleSeconds < 120
+                ? t('game.hostOffline.titleSec', { seconds: hostStaleSeconds })
+                : t('game.hostOffline.titleMin', { minutes: Math.floor(hostStaleSeconds / 60) })}
             </Text>
-            <Text style={styles.hostOfflineMsg}>
-              A partida fica esperando o host voltar. Você pode sair quando quiser.
-            </Text>
+            <Text style={styles.hostOfflineMsg}>{t('game.hostOffline.msg')}</Text>
             <TouchableOpacity style={styles.hostOfflineBtn} onPress={async () => {
               await useOnlineStore.getState().leaveRoom();
               router.replace('/(tabs)' as any);
             }}>
-              <Text style={styles.hostOfflineBtnText}>Sair da partida</Text>
+              <Text style={styles.hostOfflineBtnText}>{t('game.hostOffline.leave')}</Text>
             </TouchableOpacity>
           </View>
         </View>
