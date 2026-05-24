@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform, ScrollView, BackHandler } from 'react-native';
 import { showAlert } from '../../components/ThemedAlert';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
@@ -43,6 +43,25 @@ export default function HomeScreen() {
       NavigationBar.setVisibilityAsync('hidden').catch(() => {});
     }
   }, []);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      if (langPickerOpen) {
+        setLangPickerOpen(false);
+        return true;
+      }
+      if (themePickerOpen) {
+        setThemePickerOpen(false);
+        return true;
+      }
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => {
+      subscription.remove();
+    };
+  }, [langPickerOpen, themePickerOpen]);
 
   // Só checa o prêmio diário DEPOIS que o statsStore reidratou do AsyncStorage.
   // Sem isso, checkDailyReward roda com lastDailyRewardDate='' (default) antes
@@ -173,69 +192,8 @@ export default function HomeScreen() {
         <Text style={styles.langBtnIcon}>{LOCALE_FLAGS[currentLocale]}</Text>
       </TouchableOpacity>
 
-      {/* Modal Seletor de Tema */}
-      <Modal visible={themePickerOpen} transparent animationType="fade" onRequestClose={() => setThemePickerOpen(false)}>
-        <TouchableOpacity style={styles.themeOverlay} activeOpacity={1} onPress={() => setThemePickerOpen(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.themeBox}>
-            <Text style={styles.themeTitle}>{t('home.themeTitle')}</Text>
-            <Text style={styles.themeSubtitle}>{t('home.themeSubtitle')}</Text>
-            {(Object.keys(THEME_LABELS) as ThemeName[]).map((tn) => (
-              <TouchableOpacity
-                key={tn}
-                style={[styles.themeOption, currentTheme === tn && styles.themeOptionActive]}
-                onPress={() => {
-                  setThemePickerOpen(false);
-                  if (tn !== currentTheme) setTheme(tn);
-                }}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.themeOptionText, currentTheme === tn && styles.themeOptionTextActive]}>
-                  {THEME_LABELS[tn]}
-                </Text>
-                {currentTheme === tn && <Text style={styles.themeCheck}>✓</Text>}
-              </TouchableOpacity>
-            ))}
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Modal Seletor de Idioma
-          animationType="none": o fade do Android segura a view de baixo num
-          snapshot enquanto a animação roda — quando o modal fecha, o repaint
-          da home não acontece e os textos ficam visualmente travados no
-          locale antigo (mesmo já tendo re-renderizado no React).
-          Combinado com o setTimeout no onPress: fecha o modal, espera um
-          tick pro layer nativo registrar o close, então aplica setLocale —
-          aí o re-render acontece com o modal já fora da árvore. */}
-      <Modal visible={langPickerOpen} transparent animationType="none" onRequestClose={() => setLangPickerOpen(false)}>
-        <TouchableOpacity style={styles.themeOverlay} activeOpacity={1} onPress={() => setLangPickerOpen(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.themeBox}>
-            <Text style={styles.themeTitle}>{t('home.languageTitle')}</Text>
-            <Text style={styles.themeSubtitle}>{t('home.languageSubtitle')}</Text>
-            {SUPPORTED_LOCALES.map((lc) => (
-              <TouchableOpacity
-                key={lc}
-                style={[styles.themeOption, currentLocale === lc && styles.themeOptionActive]}
-                onPress={() => {
-                  setLangPickerOpen(false);
-                  if (lc !== currentLocale) {
-                    // Adia o setLocale pro próximo tick — garante que o modal
-                    // já saiu da árvore antes do re-render da home com o novo
-                    // locale (workaround pro bug de compositor do Modal/Android).
-                    setTimeout(() => setLocale(lc as Locale), 50);
-                  }
-                }}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.themeOptionText, currentLocale === lc && styles.themeOptionTextActive]}>
-                  {LOCALE_FLAGS[lc]}  {LOCALE_LABELS[lc]}
-                </Text>
-                {currentLocale === lc && <Text style={styles.themeCheck}>✓</Text>}
-              </TouchableOpacity>
-            ))}
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+      {/* Modals de seleção de tema e idioma foram movidos para fora do ScrollView
+          para evitar problemas de rolagem e de renderização no Android. */}
 
       {/* Título */}
       <View style={styles.titleBox}>
@@ -360,6 +318,64 @@ export default function HomeScreen() {
 
       <Text style={styles.version}>v{APP_VERSION}</Text>
     </ScrollView>
+
+    {/* Seletor de Tema */}
+    {themePickerOpen && (
+      <View style={[StyleSheet.absoluteFill, { zIndex: 1000 }]}>
+        <TouchableOpacity style={styles.themeOverlay} activeOpacity={1} onPress={() => setThemePickerOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.themeBox}>
+            <Text style={styles.themeTitle}>{t('home.themeTitle')}</Text>
+            <Text style={styles.themeSubtitle}>{t('home.themeSubtitle')}</Text>
+            {(Object.keys(THEME_LABELS) as ThemeName[]).map((tn) => (
+              <TouchableOpacity
+                key={tn}
+                style={[styles.themeOption, currentTheme === tn && styles.themeOptionActive]}
+                onPress={() => {
+                  setThemePickerOpen(false);
+                  if (tn !== currentTheme) setTheme(tn);
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.themeOptionText, currentTheme === tn && styles.themeOptionTextActive]}>
+                  {THEME_LABELS[tn]}
+                </Text>
+                {currentTheme === tn && <Text style={styles.themeCheck}>✓</Text>}
+              </TouchableOpacity>
+            ))}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
+    )}
+
+    {/* Seletor de Idioma */}
+    {langPickerOpen && (
+      <View style={[StyleSheet.absoluteFill, { zIndex: 1000 }]}>
+        <TouchableOpacity style={styles.themeOverlay} activeOpacity={1} onPress={() => setLangPickerOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.themeBox}>
+            <Text style={styles.themeTitle}>{t('home.languageTitle')}</Text>
+            <Text style={styles.themeSubtitle}>{t('home.languageSubtitle')}</Text>
+            {SUPPORTED_LOCALES.map((lc) => (
+              <TouchableOpacity
+                key={lc}
+                style={[styles.themeOption, currentLocale === lc && styles.themeOptionActive]}
+                onPress={() => {
+                  setLangPickerOpen(false);
+                  if (lc !== currentLocale) {
+                    setLocale(lc as Locale);
+                  }
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.themeOptionText, currentLocale === lc && styles.themeOptionTextActive]}>
+                  {LOCALE_FLAGS[lc]}  {LOCALE_LABELS[lc]}
+                </Text>
+                {currentLocale === lc && <Text style={styles.themeCheck}>✓</Text>}
+              </TouchableOpacity>
+            ))}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
+    )}
     </ScreenBackground>
   );
 }

@@ -21,8 +21,12 @@ import zh from './zh.json';
 import lt from './lt.json';
 import lv from './lv.json';
 import et from './et.json';
+import fr from './fr.json';
+import bn from './bn.json';
+import hi from './hi.json';
+import ar from './ar.json';
 
-export const SUPPORTED_LOCALES = ['pt', 'en', 'es', 'ru', 'it', 'zh', 'lt', 'lv', 'et'] as const;
+export const SUPPORTED_LOCALES = ['pt', 'en', 'es', 'ru', 'it', 'zh', 'lt', 'lv', 'et', 'fr', 'bn', 'hi', 'ar'] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export const LOCALE_LABELS: Record<Locale, string> = {
@@ -35,6 +39,10 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   lt: 'Lietuvių',
   lv: 'Latviešu',
   et: 'Eesti',
+  fr: 'Français',
+  bn: 'বাংলা',
+  hi: 'हिन्दी',
+  ar: 'العربية',
 };
 
 export const LOCALE_FLAGS: Record<Locale, string> = {
@@ -47,9 +55,13 @@ export const LOCALE_FLAGS: Record<Locale, string> = {
   lt: '🇱🇹',
   lv: '🇱🇻',
   et: '🇪🇪',
+  fr: '🇫🇷',
+  bn: '🇧🇩',
+  hi: '🇮🇳',
+  ar: '🇸🇦',
 };
 
-export const i18n = new I18n({ pt, en, es, ru, it, zh, lt, lv, et });
+export const i18n = new I18n({ pt, en, es, ru, it, zh, lt, lv, et, fr, bn, hi, ar });
 i18n.defaultLocale = 'pt';
 i18n.enableFallback = true;
 i18n.locale = 'pt';
