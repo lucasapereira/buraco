@@ -21,11 +21,10 @@ import {
   signOut as firebaseSignOut,
 } from 'firebase/auth';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import { auth } from '../config/firebase';
-import { useProfileStore } from '../store/profileStore';
+import { auth, db } from '../config/firebase';
+import { useProfileStore, UserProfile } from '../store/profileStore';
 import { get as dbGet, ref } from 'firebase/database';
-import { db } from '../config/firebase';
-import { useStatsStore } from '../store/statsStore';
+import { INITIAL_STATS, SYNCED_STATS_KEYS, useStatsStore } from '../store/statsStore';
 
 let configured = false;
 function ensureConfigured() {
@@ -86,7 +85,11 @@ export async function signInWithGoogle(): Promise<GoogleAuthResult> {
       try {
         const result = await linkWithCredential(currentUser, credential);
         console.log('[google] path B linked, uid:', result.user.uid);
-        useProfileStore.setState({ myUid: result.user.uid });
+        // Vincular promove anônimo → Google mantendo o mesmo uid e stats locais.
+        // Libera sync ANTES de syncProfileToFirebase senão o próprio call cai
+        // no skip do auto-sync (não é o caso aqui pois é chamada direta, mas
+        // qualquer recordRound disparado em paralelo precisa do sync liberado).
+        useProfileStore.setState({ myUid: result.user.uid, syncEnabled: true });
         await useProfileStore.getState().syncProfileToFirebase();
         return { ok: true, linkedExisting: false, uid: result.user.uid };
       } catch (e: any) {
@@ -129,14 +132,26 @@ export type BootstrapResult = 'already' | 'google' | 'anon' | 'needs-relogin';
  * Firebase (ranking, perfis) cai em permission_denied.
  *
  * Ordem segura:
- * 1. Já tem auth → nada a fazer.
+ * 1. Já tem auth → hidrata stats do Firebase pra qualquer campo que tenha
+ *    saído do statsStore local (ex.: bug do hydrate antigo perdendo
+ *    expertWins/currentStreak). Esse hydrate destrava o auto-sync, então
+ *    se rodar antes da primeira partida pós-update, recupera os dados.
  * 2. Tenta restaurar o Google SEM interação (a conta dele já está no aparelho).
  * 3. Sem Google e SEM perfil local → anon (usuário novo, sem risco).
  * 4. Sem Google MAS com perfil local → NÃO cria anon (criaria uid novo e
  *    orfanaria o perfil Google). Sinaliza que precisa relogar.
  */
 export async function bootstrapAuth(): Promise<BootstrapResult> {
-  if (auth.currentUser) return 'already';
+  if (auth.currentUser) {
+    // Hidrata mesmo aqui — sem isso, jogador que recebe update (sem reinstalar)
+    // nunca recupera campos perdidos por bugs antigos do hydrate.
+    // Se falhar (offline, regra Firebase, timeout): syncEnabled fica false,
+    // gameplay continua mas auto-sync NÃO dispara — senão dbSet escreveria os
+    // stats locais (possivelmente zerados) por cima do Firebase. Próximo
+    // startup com rede tenta de novo.
+    await hydrateFromRemoteProfile(auth.currentUser.uid).catch(() => {});
+    return 'already';
+  }
 
   try {
     ensureConfigured();
@@ -156,6 +171,8 @@ export async function bootstrapAuth(): Promise<BootstrapResult> {
   if (!localUid) {
     try {
       await signInAnonymously(auth);
+      // Usuário novo sem perfil — libera sync pra primeira partida poder gravar.
+      useProfileStore.setState({ syncEnabled: true });
       return 'anon';
     } catch (_) {}
   }
@@ -179,30 +196,28 @@ export async function unlinkGoogle() {
     lastNameChangeAt: null,
     migratedFromLocal: false,
   });
-  useStatsStore.setState({
-    level: 1, totalXP: 0,
-    matchesPlayed: 0, matchesWon: 0,
-    totalCanastas: 0, totalCleanCanastas: 0, total500Canastas: 0, total1000Canastas: 0, totalDirtyCanastas: 0,
-    totalBatidas: 0, biggestRoundScore: 0, biggestMatchDiff: 0, totalPointsEarned: 0,
-    longestStreak: 0, longestWinStreak: 0,
-    botMatchesPlayed: 0, botMatchesWon: 0, currentBotWinStreak: 0, longestBotWinStreak: 0, hardWins: 0,
-    onlineMatchesPlayed: 0, onlineMatchesWon: 0, onlineRating: 1000,
-    unlockedAchievements: [], recentMatches: [],
-  });
+  // Zera TUDO menos o playerId (UUID local) — usar INITIAL_STATS garante
+  // que campos novos no statsStore também são limpos sem ter que vir aqui.
+  useStatsStore.setState(INITIAL_STATS);
   // Cria uma nova sessão anônima pra não ficar sem uid (Firebase exige auth pra quase tudo)
   try { await signInAnonymously(auth); } catch (_) {}
 }
 
-/** Puxa o perfil remoto do Firebase e hidrata o profileStore + statsStore. */
+/**
+ * Puxa o perfil remoto do Firebase e hidrata o profileStore + statsStore.
+ * Itera SYNCED_STATS_KEYS pra restaurar todo stat sincronizado — sem isso o
+ * cunhado reinstala o app e perde campos não-listados (foi assim que sumiram
+ * `expertWins`/`currentStreak`/`lastDailyRewardDate` antes).
+ */
 async function hydrateFromRemoteProfile(uid: string) {
   const snap = await dbGet(ref(db, `users/${uid}`));
-  const profile = snap.val();
+  const profile = snap.val() as UserProfile | null;
   if (!profile) {
-    // Perfil ainda não existe — mantém stats locais e sincroniza depois
-    useProfileStore.setState({ myUid: uid, migratedFromLocal: false });
+    // Perfil ainda não existe — mantém stats locais e libera sync pra
+    // primeira partida gravar (jogador novo, snapshot local é o estado certo).
+    useProfileStore.setState({ myUid: uid, migratedFromLocal: false, syncEnabled: true });
     return;
   }
-  // Restaura profile
   useProfileStore.setState({
     myUid: uid,
     myUsername: profile.displayName ?? null,
@@ -211,32 +226,27 @@ async function hydrateFromRemoteProfile(uid: string) {
     lastNameChangeAt: profile.lastNameChangeAt ?? null,
     migratedFromLocal: true,
   });
-  // Restaura stats
-  useStatsStore.setState({
-    level: profile.level ?? 1,
-    totalXP: profile.totalXP ?? 0,
-    matchesPlayed: profile.matchesPlayed ?? 0,
-    matchesWon: profile.matchesWon ?? 0,
-    totalCanastas: profile.totalCanastas ?? 0,
-    totalCleanCanastas: profile.totalCleanCanastas ?? 0,
-    total500Canastas: profile.total500Canastas ?? 0,
-    total1000Canastas: profile.total1000Canastas ?? 0,
-    totalDirtyCanastas: profile.totalDirtyCanastas ?? 0,
-    totalBatidas: profile.totalBatidas ?? 0,
-    biggestRoundScore: profile.biggestRoundScore ?? 0,
-    biggestMatchDiff: profile.biggestMatchDiff ?? 0,
-    totalPointsEarned: profile.totalPointsEarned ?? 0,
-    longestStreak: profile.longestStreak ?? 0,
-    longestWinStreak: profile.longestWinStreak ?? 0,
-    botMatchesPlayed: profile.botMatchesPlayed ?? 0,
-    botMatchesWon: profile.botMatchesWon ?? 0,
-    currentBotWinStreak: profile.currentBotWinStreak ?? 0,
-    longestBotWinStreak: profile.longestBotWinStreak ?? 0,
-    hardWins: profile.hardWins ?? 0,
-    onlineMatchesPlayed: profile.onlineMatchesPlayed ?? 0,
-    onlineMatchesWon: profile.onlineMatchesWon ?? 0,
-    onlineRating: profile.onlineRating ?? 1000,
-    unlockedAchievements: profile.unlockedAchievements ?? [],
-    recentMatches: profile.recentMatches ?? [],
-  });
+  const patch: Record<string, unknown> = {};
+  for (const k of SYNCED_STATS_KEYS) {
+    const v = (profile as any)[k];
+    if (v !== undefined && v !== null) patch[k] = v;
+  }
+  // `lastDailyRewardDate` é monotônico: nunca anda pra trás. Last-writer-wins
+  // aqui clobbava o valor local (mais novo) com um remoto vazio/antigo — o app
+  // re-persistia o ruim e o auto-sync o reempurrava pro Firebase, então o modal
+  // de prêmio diário reabria a CADA boot (e refarmava XP). Só aplica o remoto
+  // se a data dele for estritamente mais nova; senão mantém o local. O streak
+  // viaja junto com a data vencedora (um reset legítimo p/ 1 carrega data nova).
+  {
+    const localDate = useStatsStore.getState().lastDailyRewardDate ?? '';
+    const remoteDate = (profile as any).lastDailyRewardDate ?? '';
+    if (!(remoteDate > localDate)) {
+      delete patch.lastDailyRewardDate;
+      delete patch.currentStreak;
+    }
+  }
+  useStatsStore.setState(patch as any);
+  // Hydrate concluído — libera o auto-sync. A partir de agora qualquer mudança
+  // local sobe pro Firebase com confiança que não vai sobrescrever campo bom.
+  useProfileStore.setState({ syncEnabled: true });
 }

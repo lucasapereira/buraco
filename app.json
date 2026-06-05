@@ -2,7 +2,7 @@
   "expo": {
     "name": "Queti's Buraco",
     "slug": "buraco",
-    "version": "2.1.0",
+    "version": "2.2.6",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "buraco",
@@ -18,7 +18,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.lucasapereira.buraco",
-      "versionCode": 62,
+      "versionCode": 69,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
@@ -63,7 +63,11 @@
             "zh": "Queti's 布拉柯",
             "lt": "Queti's Burako",
             "lv": "Queti's Burako",
-            "et": "Queti's Burako"
+            "et": "Queti's Burako",
+            "fr": "Queti's Canasta",
+            "bn": "Queti's কানাস্তা",
+            "hi": "Queti's कैनस्टा",
+            "ar": "Queti's كاناستا"
           }
         }
       ]

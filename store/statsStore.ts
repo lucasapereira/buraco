@@ -22,14 +22,23 @@ function generateId(): string {
   });
 }
 
+// Data LOCAL (não UTC). `toISOString()` rola o dia às 21h no Brasil (UTC-3),
+// fazendo o jogador resgatar o prêmio de "amanhã" à noite e perder o dia real.
+function localISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function todayISO(): string {
-  return new Date().toISOString().split('T')[0];
+  return localISO(new Date());
 }
 
 function yesterdayISO(): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return d.toISOString().split('T')[0];
+  return localISO(d);
 }
 
 // ── Dados enviados quando uma rodada termina ────────────────────────────────
@@ -125,6 +134,33 @@ interface StatsState {
   newlyUnlocked: string[]; // fila de conquistas para mostrar como toast
 }
 
+/**
+ * Chaves do statsStore que sobem pro Firebase (profile do jogador) e são
+ * restauradas no startup. Fonte única de verdade — `localStatsSnapshot()` e
+ * `hydrateFromRemoteProfile()` iteram essa lista. Adicionar novo stat aqui
+ * já o coloca no espelhamento bidirecional (em vez de risk-of-esquecer-em-3-lugares).
+ *
+ * Fora da lista (intencional): `playerId` (UUID local), `newlyUnlocked` (fila
+ * efêmera de toasts de conquista).
+ */
+export const SYNCED_STATS_KEYS = [
+  'level', 'totalXP',
+  'matchesPlayed', 'matchesWon', 'roundsPlayed',
+  'totalPointsEarned', 'biggestRoundScore', 'biggestMatchDiff',
+  'totalCanastas', 'totalCleanCanastas', 'total500Canastas', 'total1000Canastas',
+  'totalDirtyCanastas', 'totalBatidas',
+  'currentWinStreak', 'longestWinStreak',
+  'hardWins', 'expertWins', 'expertMatchesPlayed',
+  'botMatchesPlayed', 'botMatchesWon', 'currentBotWinStreak', 'longestBotWinStreak',
+  'onlineMatchesPlayed', 'onlineMatchesWon', 'onlineRating',
+  'recentMatches',
+  'currentStreak', 'longestStreak', 'lastDailyRewardDate',
+  'unlockedAchievements',
+] as const satisfies readonly (keyof StatsState)[];
+
+export type SyncedStatsKey = typeof SYNCED_STATS_KEYS[number];
+export type SyncedStats = Pick<StatsState, SyncedStatsKey>;
+
 interface StatsActions {
   recordRound: (data: RoundEndData) => void;
   checkDailyReward: () => DailyRewardInfo;
@@ -132,7 +168,7 @@ interface StatsActions {
   shiftNewlyUnlocked: () => void;
 }
 
-const INITIAL: Omit<StatsState, 'playerId'> = {
+export const INITIAL_STATS: Omit<StatsState, 'playerId'> = {
   totalXP: 0,
   level: 1,
   matchesPlayed: 0,
@@ -179,7 +215,7 @@ export const useStatsStore = create<StatsState & StatsActions>()(
   persist(
     (set, get) => ({
       playerId: generateId(),
-      ...INITIAL,
+      ...INITIAL_STATS,
 
       recordRound: (data: RoundEndData) => {
         const s = get();

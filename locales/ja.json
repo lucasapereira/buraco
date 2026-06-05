@@ -1,0 +1,582 @@
+{
+  "appName": "Canasta",
+  "appBrand": "Queti's",
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "ok": "OK",
+    "back": "← Back",
+    "backMenu": "← Main menu",
+    "yes": "Yes",
+    "no": "No",
+    "loading": "Loading...",
+    "retry": "Try again",
+    "save": "Save",
+    "close": "Close",
+    "continue": "CONTINUE →",
+    "playerFallback": "Player"
+  },
+  "home": {
+    "level": "Lv {{level}}",
+    "modeTitle": "Game Mode",
+    "modeClassic": "Classic",
+    "modeAraujo": "Soft Canasta",
+    "modeDescClassic": "Original rules: no sets, clean meld to go out.",
+    "modeDescAraujo": "Family variant: sets allowed, free pile take, dirty go-out.",
+    "difficultyTitle": "Difficulty",
+    "difficultyHard": "Normal",
+    "difficultyExpert": "Hard",
+    "difficultyDescHard": "Heuristic bot — good for learning and fast games.",
+    "difficultyDescExpert": "Search-based bot (PIMC): plans ahead. Thinks ~1s per move.",
+    "targetTitle": "Target Score",
+    "continueGame": "CONTINUE GAME",
+    "restartGame": "RESTART",
+    "play": "🃏 PLAY",
+    "playOnline": "🌐 PLAY ONLINE",
+    "ranking": "🏆 RANKING",
+    "layoutBtn": "Layout",
+    "themeTitle": "Pick a theme",
+    "themeSubtitle": "The app will reload to apply.",
+    "languageTitle": "Pick a language",
+    "languageSubtitle": "Change applies immediately.",
+    "restart": {
+      "title": "Restart",
+      "msgConfirm": "Are you sure you want to discard the current match?",
+      "msgWouldLose": "You're losing by {{diff}} points. Restarting now will count as a LOSS.",
+      "confirmNormal": "Yes, Discard",
+      "confirmRisk": "Restart anyway"
+    },
+    "daily": {
+      "title": "Daily Reward!",
+      "streak": "🔥 {{days}} day streak!",
+      "welcomeBack": "Welcome back!",
+      "claim": "CLAIM"
+    }
+  },
+  "game": {
+    "menuOpen": "☰",
+    "us": "US",
+    "them": "THEM",
+    "yourTurn": "YOUR TURN",
+    "phaseDraw": "🃏 DRAW",
+    "phasePlay": "🎴 PLAY/DISCARD",
+    "target": "Target: {{target}} | {{mode}}",
+    "rodadaSuffix": "round",
+    "noGamesYet": "No melds yet",
+    "deads": "Decks",
+    "you": "YOU",
+    "emptyHand": "Go back and start a new game",
+    "playerLeft": "{{player}} left. {{bot}} took over.",
+    "alerts": {
+      "waitTitle": "Hold on",
+      "waitMsg": "It's {{name}}'s turn. Phase: {{phase}}",
+      "waitMsgShort": "It's {{name}}'s turn.",
+      "alreadyDrewTitle": "Already drew",
+      "alreadyDrewMsg": "You already drew this turn. Meld cards or select 1 card to discard.",
+      "emptyPileTitle": "Empty pile",
+      "emptyPileMsg": "The discard pile is empty.",
+      "cantTakePileTitle": "❌ Can't take the pile",
+      "cantTakePileDeadlock": "Taking the pile would force you to go out using {{card}}, but your team has no clean canasta.",
+      "cantTakePileNeedUse": "You must use {{card}} in a meld (new or existing).",
+      "selectCardsTitle": "Select cards first!",
+      "selectCardsMsg": "To take the pile, first select cards in your hand that form a meld with {{card}}.\n(Or tap if the card directly adds to one of your existing melds)",
+      "blockedTitle": "⚠️ Blocked action",
+      "blockedMsg": "You can't empty your hand without having a canasta or taking the dead.",
+      "blockedPlayValidButBlock": "The meld is valid, but you can't empty your hand without meeting the requirements to go out. The pile went back to your hand.",
+      "playFirstTitle": "⚠️ Play the meld first",
+      "playFirstMsg": "You took the pile and must play a meld using {{card}} before discarding.",
+      "select1Title": "Select 1 card",
+      "select1Msg": "To discard, select exactly 1 card.",
+      "cantBaterTitle": "⚠️ Can't go out",
+      "cantBaterMsg": "Your team needs a {{cleanQualifier}}canasta to go out and end the round.",
+      "cantBaterClean": "clean ",
+      "pileRuleTitle": "⚠️ Pile rule",
+      "pileRuleNewPlay": "Your first play MUST include {{card}} (pile top).\n\nYou can:\n• Tap one of your melds on the table (selecting {{card}} + extra cards)\n• Or play a new meld with 3+ cards",
+      "pileRuleAdd": "You must use {{card}} (pile top) on your first play (new meld or adding to an existing one).",
+      "minCardsTitle": "Min 3 cards",
+      "minCardsMsg": "Select at least 3 cards to play a Classic meld.",
+      "invalidCombTitle": "Invalid combination",
+      "invalidCombAraujo": "Cards don't form a valid run or set (max 1 wild in Soft Canasta).",
+      "invalidCombClassic": "Selected cards don't form a valid run.\n\nReminder: same suit, consecutive values, max 1 wild (2).",
+      "invalidTitle": "Invalid",
+      "invalidAddMsg": "Selected cards don't fit this meld.",
+      "restartTitle": "Restart Match",
+      "exitTitle": "Exit",
+      "exitMsg": "Exit to the main menu?",
+      "restartMsg": "Are you sure? Current progress will be lost.",
+      "wouldLoseRestart": "You're losing by {{diff}} points. Restarting now will count as a LOSS.",
+      "wouldLoseExit": "You're losing by {{diff}} points. Exiting now will count as a LOSS.",
+      "restartAnyway": "Restart anyway",
+      "exitAnyway": "Exit anyway",
+      "restartLabel": "Restart",
+      "exitLabel": "Exit",
+      "cardOfTop": "the top card",
+      "cardDrawn": "the drawn card"
+    },
+    "players": {
+      "user": "You",
+      "partner": "Partner",
+      "opponent1": "Opponent 1",
+      "opponent2": "Opponent 2",
+      "opponentShort": "Opponent",
+      "botSeat": "Bot {{n}}"
+    },
+    "menu": {
+      "title": "Menu",
+      "restart": "🔄 Restart Match",
+      "exit": "🚪 Exit Game",
+      "close": "Close",
+      "rules": "Rules",
+      "online": "Online Mode",
+      "achievements": "Achievements",
+      "stats": "Stats",
+      "sound": "Sound",
+      "soundOn": "On",
+      "soundOff": "Off"
+    },
+    "pileLabel": "Pile",
+    "discardHint": "▲ discard a card ▲",
+    "ourMeld": "Our Meld",
+    "oppMeld": "Opponent Meld",
+    "tapOutToClose": "Tap outside to close",
+    "tauntPickerTitle": "Trash Talk 😤",
+    "endRound": {
+      "youWonMatch": "🏆 YOU WON THE MATCH!",
+      "theyWonMatch": "😢 Opponents won!",
+      "roundEnd": "Round Ended",
+      "expertBadge": "🧠 You beat the AI (Hard)!  Double XP 🔥",
+      "ourTeam": "🟢 Our team",
+      "oppTeam": "🔴 Opponent team",
+      "tableScore": "Melds on table: +{{score}}",
+      "handPenalty": "Hand penalty: -{{penalty}}",
+      "wentOutBonus": "Went out: +100",
+      "noDeadPenalty": "No dead pile: -100",
+      "thisRound": "This round: {{score}}",
+      "total": "Total: {{score}}",
+      "target": "Target: {{target}} points",
+      "rematch": "🔁 Rematch",
+      "exitMatch": "Exit",
+      "waitingRematch": "Waiting for host to start rematch...",
+      "nextRound": "Next Round ▶",
+      "waitingNextRound": "Waiting for host to start next round..."
+    },
+    "hostLeft": {
+      "title": "😵 Host left the game",
+      "msg": "The host quit or lost connection. The match was interrupted.",
+      "back": "Back to Menu"
+    },
+    "hostOffline": {
+      "titleSec": "⚠️ Host appears offline for {{seconds}}s",
+      "titleMin": "⚠️ Host appears offline for {{minutes}}min",
+      "msg": "The match waits for the host to return. You can leave any time.",
+      "leave": "Leave match"
+    },
+    "trashTalk": {
+      "0": "Take that! 💥",
+      "1": "Boom! 🥊",
+      "2": "Lucky draw, huh?",
+      "3": "Got lucky there",
+      "4": "My bad 💩",
+      "5": "Trash it!",
+      "6": "Don't take the pile!",
+      "7": "Where's the canasta?",
+      "8": "Thinking too much 🐌",
+      "9": "Hurry up!",
+      "10": "Found it? 👀",
+      "11": "😂",
+      "12": "🤡",
+      "13": "🔥"
+    }
+  },
+  "events": {
+    "newRound": "▶ New round started",
+    "drewFromDeck": "{{player}} drew from the deck",
+    "tookPile": "{{player}} took the pile ({{count}} cards)",
+    "discarded": "{{player}} discarded {{card}}",
+    "playedGame": "{{player}} played: {{cards}}",
+    "addedToGame": "{{player}} added {{cards}} to a meld",
+    "gotDead": "📦 {{player}} took the DEAD PILE!",
+    "bateu": "🏆 {{player}} WENT OUT!",
+    "roundEnd": "Round ended",
+    "mortoToDeck": "📦 Deck empty! The dead pile became the deck!",
+    "deckExhausted3x": "⏹️ Deck exhausted 3 times — round over!",
+    "pileReshuffled": "🔀 Deck empty ({{n}}/{{max}}) — pile reshuffled!",
+    "allExhausted": "🃏 Everything exhausted — round over!",
+    "layoutMode": "🔧 Layout Mode",
+    "system": "System"
+  },
+  "online": {
+    "namePrompt": "What's your name?",
+    "nameSubtitle": "Other players will see this",
+    "namePlaceholder": "Your name",
+    "homeTitle": "Play Online",
+    "changeName": "Change name",
+    "createRoom": "🏠 CREATE ROOM",
+    "browseRooms": "🌐 BROWSE PUBLIC ROOMS",
+    "joinCodeLabel": "Room code",
+    "join": "JOIN",
+    "joinShort": "Full",
+    "configRoom": "Configure Room",
+    "modeTitle": "Game Mode",
+    "targetTitle": "Target Score",
+    "visibilityTitle": "Room Visibility",
+    "visibilityPublic": "🌐 Public",
+    "visibilityPrivate": "🔒 Private",
+    "visibilityHintPublic": "Any player can find and join this room",
+    "visibilityHintPrivate": "Only people with the code can join",
+    "createRoomBtn": "CREATE ROOM →",
+    "browseTitle": "Public Rooms",
+    "refresh": "↻ Refresh",
+    "searching": "Searching rooms...",
+    "emptyRooms": "No public rooms available",
+    "emptyRoomsSub": "Create a public room to get started!",
+    "roomCodeTitle": "Room Code",
+    "roomCodeTap": "Tap to copy",
+    "roomCodeCopied": "✓ Copied!",
+    "shareWhatsApp": "Share on WhatsApp",
+    "whatsAppMsg": "Let's play Canasta! 🃏\nJoin the room with this code:\n\n{{code}}",
+    "playersCount": "Players ({{filled}}/4)",
+    "playersOf": "{{count}}/4 players",
+    "startGame": "▶ START GAME",
+    "waitingPlayers": "プレイヤーを待っています...",
+    "waitingHost": "Waiting for host to start...",
+    "leaveRoom": "← Leave room",
+    "team1": "Team 1",
+    "team2": "Team 2",
+    "you": " (you)",
+    "seatBot": "🤖 ボット (タップして座ります)",
+    "seatFree": "...空（タップして座ります）",
+    "publicBadge": "🌐 パブリックルーム",
+    "privateBadge": "🔒 Private Room",
+    "invalidCode": "無効なコード",
+    "googleLink": "🔐 Google へのリンク",
+    "googleUnlink": "リンク解除",
+    "googleLinked": "✓ Google へのリンク",
+    "googleSignIn": "🔐 Google でサインイン",
+    "googleHint": "アプリを再インストールしてもプロフィールを復元",
+    "loginCanceled": "ログインがキャンセルされました",
+    "googleIdTokenEmpty": "Google トークン (空の idToken) の取得に失敗しました",
+    "googleAlreadyInProgress": "すでに進行中",
+    "googlePlayServicesUnavailable": "Google Play サービスは利用できません",
+    "googleUnknownError": "[ __{{code}}__ ] __{{msg}}__",
+    "errorUnknown": "不明なエラー",
+    "loginFailedTitle": "Google ログインに失敗しました",
+    "loginOkTitle": "ログイン OK",
+    "loginOkMsg": "おかえりなさい、__{{name}}__ !ステータスが回復しました。",
+    "loginNoProfileTitle": "Google ログイン OK",
+    "loginNoProfileMsg": "この Google アカウントにリンクされている古いプロフィールが見つかりませんでした。以前にプロファイルをお持ちで、それを復元したい場合は、私にご連絡ください。古い名前で手動で復元します。ここでは、名前を選択して続行します。",
+    "unlinkTitle": "Google のリンクを解除しますか?",
+    "unlinkMsg": "プロフィールと統計情報は保存されたままになります。Google に再度ログインすると、すべてが復元されます。このデバイスでは匿名のプレイヤーになります。",
+    "dividerOr": "または",
+    "hostOfflineBanner": "ホストが __{{seconds}}__ 秒間オフラインになっているようです",
+    "errors": {
+      "createRoom": "ルームの作成に失敗しました",
+      "roomNotFound": "ルームが見つかりません",
+      "roomAbandoned": "ルームは放棄されました",
+      "roomInvalid": "無効なルーム",
+      "gameStarted": "このゲームはすでに開始されています",
+      "accountInRoom": "あなたのアカウントはすでに別のデバイスでこのルームにあります。まずはそれを残してください。",
+      "roomFull": "満室 (4/4)",
+      "joinRoom": "ルームへの参加に失敗しました",
+      "seatTaken": "この席はすでに占有されています",
+      "switchSeat": "席の変更に失敗しました: __{{msg}}__",
+      "startGame": "ゲームの開始に失敗しました",
+      "rematch": "再戦の開始に失敗しました",
+      "fetchRooms": "部屋の取得に失敗しました: __{{msg}}__",
+      "claimName": "名前の予約に失敗しました",
+      "noAuth": "認証されていません"
+    }
+  },
+  "profile": {
+    "nameTooShort": "名前が短すぎます (2 文字以上)",
+    "nameTooLong": "名前が長すぎます (最大 16 文字)",
+    "nameInvalidChars": "文字、数字、スペース、_ または - のみを使用してください",
+    "nameTaken": "この名前はすでに使用されています。別のものを選択してください。",
+    "nameRegisterOffline": "現在、名前を登録する接続がありません。",
+    "googleConnected": "Googleアカウントが接続されました！プレイする名前を選択してください。",
+    "googleLoginFail": "Google サインインに失敗しました"
+  },
+  "ranking": {
+    "title": "🏆 ランキング",
+    "subtitle": "オンライン トップ プレーヤー",
+    "noUsers": "ランキングにプレーヤーはまだいません",
+    "you": "あなた",
+    "rank": "# __{{rank}}__",
+    "rating": "評価",
+    "wins": "W",
+    "losses": "L",
+    "winRate": "レート",
+    "totalGames": "ゲーム",
+    "loading": "ランキングを読み込み中...",
+    "refreshing": "更新中...",
+    "dailyTitle": "🎁 デイリー報酬",
+    "dailyStreak": "🔥 __{{days}}__ 日連勝",
+    "dailyXp": "+ __{{xp}}__ XP",
+    "dailyClaim": "CLAIM",
+    "loadError": "ランキング"
+  },
+  "stats": {
+    "title": "統計の読み込みに失敗しました",
+    "profileHeader": "プロフィール",
+    "levelMax": "レベルマックス！",
+    "xpProgress": "__{{xpInLevel}}__ / __{{xpNeeded}}__ XP",
+    "xpTotalLabel": "合計 XP",
+    "nextLevel": "レベル __{{level}}__ : __{{rank}}__",
+    "streakLine": "__{{count}}__ 日 __{{plural}}__ 連続",
+    "longestStreakLine": "最長連続記録: __{{days}}__ 日",
+    "sectionStats": "統計",
+    "sectionAchievements": "実績 ( __{{unlocked}}__ / __{{total}}__ )",
+    "boxes": {
+      "matches": "試合",
+      "wins": "勝利",
+      "winRate": "レート",
+      "rounds": "ラウンド",
+      "totalPoints": "合計ポイント",
+      "bestRound": "ベストラウンド",
+      "canastas": "カナスタ",
+      "clean": "クリーン",
+      "c500": "+500",
+      "c1000": "+1000",
+      "bater": "アウト数",
+      "winStreak": "連勝",
+      "botWL": "ボット W/L",
+      "onlineRating": "オンライン評価",
+      "onlineWL": "オンライン W/L"
+    },
+    "categories": {
+      "victories": "🏆 勝利",
+      "canastas": "🃏 カナスタ",
+      "score": "💰 スコア",
+      "streak": "🔥 連勝",
+      "special": "⚡ スペシャル"
+    }
+  },
+  "rankingScreen": {
+    "back": "← 戻る",
+    "title": "🏆 ランキング",
+    "tabBot": "🤖 対ボット",
+    "tabOnline": "🌐 オンライン (PvP)",
+    "championsTitle": "🏆 月間チャンピオン",
+    "championsRating": "__{{rating}}__ ポイント",
+    "loading": "読み込み中...",
+    "emptyBot": "まだボットの試合は行われていません。",
+    "emptyOnline": "オンライン対戦はまだ行われていません。",
+    "sessionExpired": "セッションの有効期限が切れました (アプリを再インストールしました)。 Google でログインするとプロフィールが復元され、ランキングが表示されます。",
+    "reloginGoogle": "🔐 Google でサインイン",
+    "diagRanking": "ランキング診断: __{{diag}}__",
+    "diagDaily": "デイリー診断: __{{diag}}__",
+    "rowYou": "(あなた)",
+    "rowLevelRank": "レベル __{{level}}__ · __{{rank}}__",
+    "rowRating": "· __{{rating}}__ ポイント",
+    "rowExpert": "· 🧠 __{{wins}}__ / __{{total}}__ · __{{pct}}__ %",
+    "rowScoreSub": "__{{total}}__ ゲーム",
+    "detailLevel": "レベル __{{level}}__ · __{{rank}}__",
+    "detailLastSeen": "__{{ago}}__ 前に見た",
+    "detailBot": "🤖 対ボット",
+    "detailOnline": "🌐 オンライン (PvP)",
+    "detailMatches": "一致",
+    "detailWins": "勝ち",
+    "detailLosses": "負け",
+    "detailExpertAI": "🧠 ハード AI (PIMC)",
+    "detailExpertVal": "__{{wins}}__ / __{{total}}__",
+    "detailExpertWithPct": "__{{wins}}__ / __{{total}}__ · __{{pct}}__ %",
+    "detailCurStreak": "現在の連勝数",
+    "detailLongestStreak": "最長連勝数",
+    "detailRating": "評価",
+    "detailInvicto": "🏅 無敗 vs BOT — __{{total}}__ 試合、負けなし!",
+    "detailTrophies": "🏆 月間トロフィー ( __{{count}}__ )",
+    "detailH2H": "⚔️ 直接対決",
+    "detailH2HLine": "あなた × __{{name}}__",
+    "detailH2HSub": "__{{total}}__ オンライン マッチ",
+    "detailCanastas": "🃏 カナスタ",
+    "detailCleanLabel": "クリーン (200)",
+    "detailC500Label": "500 (13 カード)",
+    "detailC1000Label": "1000 (14)カード)",
+    "detailDirtyLabel": "ダーティ (100)",
+    "detailTotalLabel": "合計",
+    "detailBaterLabel": "ゴーアウト",
+    "detailRecords": "📊 記録",
+    "detailBiggestRound": "最高ラウンドスコア",
+    "detailBiggestMatch": "最大試合差",
+    "detailTotalPoints": "合計ポイント",
+    "detailXP": "XP",
+    "detailLongestDaily": "1 日の最長連勝数",
+    "detailHistory": "📜 最近の試合",
+    "detailMatchBot": "· ボット",
+    "detailMatchOnline": "· オンライン",
+    "detailMatchVs": "vs __{{names}}__",
+    "detailClose": "閉じる",
+    "timeNow": "今",
+    "timeMin": "__{{n}}__ 分",
+    "timeHour": "__{{n}}__ h",
+    "timeDay": "__{{n}}__ d"
+  },
+  "achievements": {
+    "first_win": {
+      "title": "最初の勝利",
+      "description": "最初の試合に勝つ"
+    },
+    "wins_10": {
+      "title": "勝者",
+      "description": "10 試合に勝つ"
+    },
+    "wins_25": {
+      "title": "ドミネーター",
+      "description": "25 試合に勝つ"
+    },
+    "wins_50": {
+      "title": "征服者",
+      "description": "50 試合で勝利"
+    },
+    "wins_100": {
+      "title": "無敵",
+      "description": "100 試合で勝利"
+    },
+    "wins_200": {
+      "title": "無敗のレジェンド",
+      "description": "200 試合で勝利"
+    },
+    "first_canasta": {
+      "title": "初代カナスタ",
+      "description": "最初のカナスタを作る"
+    },
+    "clean_canastas_10": {
+      "title": "コレクター",
+      "description": "10 クリーン カナスタ"
+    },
+    "clean_canastas_25": {
+      "title": "クラフトマン",
+      "description": "25 クリーン カナスタ"
+    },
+    "clean_canastas_50": {
+      "title": "カナスタ マスター",
+      "description": "50 クリーン カナスタ"
+    },
+    "clean_canastas_100": {
+      "title": "グランドマスター",
+      "description": "100 クリーン カナスタ"
+    },
+    "canasta_500_first": {
+      "title": "スペシャル カナスタ",
+      "description": "最初の 13 カード カナスタ (+500)"
+    },
+    "canasta_500_5": {
+      "title": "スペシャリスト",
+      "description": "5 13 カードカナスタ (+500)"
+    },
+    "canasta_500_15": {
+      "title": "Virtuoso",
+      "description": "15 13 カード カナスタ (+500)"
+    },
+    "canasta_1000_first": {
+      "title": "Supreme Canasta",
+      "description": "1 番目の 14 カード カナスタ (+1000)"
+    },
+    "canasta_1000_3": {
+      "title": "Merciless",
+      "description": "3 14 カード カナスタ (+1000)"
+    },
+    "points_10k": {
+      "title": "Millionaire",
+      "description": "10,000 ポイント獲得"
+    },
+    "points_50k": {
+      "title": "グレート スコアラー",
+      "description": "50,000 ポイント獲得"
+    },
+    "points_100k": {
+      "title": "レジェンド",
+      "description": "100,000 ポイント獲得"
+    },
+    "points_250k": {
+      "title": "カナスタ神",
+      "description": "250,000 ポイント獲得"
+    },
+    "canasta_1000_10": {
+      "title": "選ばれし者",
+      "description": "14 カード カナスタ 10 枚 (+1000)"
+    },
+    "round_500": {
+      "title": "パーフェクト ラウンド",
+      "description": "シングルで 500+ スコアラウンド"
+    },
+    "round_1000": {
+      "title": "Explosion",
+      "description": "1 ラウンドで 1,000 以上のスコア"
+    },
+    "round_1500": {
+      "title": "ULTRA",
+      "description": "1 ラウンドで 1,500 以上のスコア"
+    },
+    "streak_3": {
+      "title": "専用",
+      "description": "3 日連続"
+    },
+    "streak_7": {
+      "title": "習慣的",
+      "description": "7 日連続"
+    },
+    "streak_30": {
+      "title": "ファナティック",
+      "description": "30日連続"
+    },
+    "streak_100": {
+      "title": "夢中",
+      "description": "100日連続"
+    },
+    "first_batida": {
+      "title": "アウト！",
+      "description": "初めて出かける"
+    },
+    "win_by_1000": {
+      "title": "クラッシャー",
+      "description": "1,000 点以上の差で勝利"
+    },
+    "hard_wins_10": {
+      "title": "ハードモードマスター",
+      "description": "ハードで 10 勝"
+    },
+    "win_streak_5": {
+      "title": "Relentless",
+      "description": "5 連勝"
+    },
+    "expert_win_first": {
+      "title": "マインド vs マシン",
+      "description": "ハードボット (AI) に初勝利"
+    },
+    "expert_wins_10": {
+      "title": "AI ハンター",
+      "description": "ハードボットに 10 勝"
+    }
+  },
+  "ranks": {
+    "1": "ルーキー",
+    "3": "好奇心旺盛",
+    "5": "見習い",
+    "7": "プレイヤー",
+    "9": "経験豊富な",
+    "11": "ベテラン",
+    "14": "スペシャリスト",
+    "17": "マスター",
+    "19": "グランドマスター",
+    "20": "カナスタ レジェンド"
+  },
+  "achievementToast": {
+    "unlocked": "実績解除！",
+    "xpReward": "+ __{{xp}}__ XP"
+  },
+  "onboarding": {
+    "welcomeTitle": "ようこそ!",
+    "welcomeSubtitle": "開始するには名前を選択してください",
+    "namePlaceholder": "あなたの名前",
+    "googleSignIn": "🔐 Google でサインイン",
+    "continueOffline": "オフラインでプレイ",
+    "skipForNow": "名前なしで続行",
+    "googleLoginFail": "Google サインインに失敗しました"
+  },
+  "update": {
+    "title": "更新が必要です",
+    "body": "新しいバージョンの Canasta が利用可能です。引き続きプレイするにはアップデートしてください。",
+    "btn": "今すぐ更新してください"
+  }
+}

@@ -10,6 +10,8 @@ import { useForceUpdate } from '@/hooks/useForceUpdate';
 import { ThemedAlertHost } from '../components/ThemedAlert';
 import { useThemeStore } from '../store/themeStore';
 import { useLocaleStore, useT } from '../store/localeStore';
+import { useStatsStore } from '../store/statsStore';
+import { useProfileStore } from '../store/profileStore';
 import { bootstrapAuth } from '../hooks/useGoogleAuth';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.lucasapereira.buraco';
@@ -43,14 +45,35 @@ export default function RootLayout() {
     return localePersist?.onFinishHydration?.(() => setLocaleHydrated(true));
   }, [localeHydrated]);
 
+  // statsStore e profileStore TAMBÉM precisam terminar a rehydration do
+  // AsyncStorage ANTES de bootstrapAuth rodar. Senão tem race: bootstrap faz
+  // hydrateFromRemoteProfile (Firebase → setState), e logo depois a
+  // rehydration vazia da AsyncStorage (após reinstalação) sobrescreve com
+  // defaults → vitórias zeradas. Esperar primeiro elimina a janela.
+  const statsPersist = (useStatsStore as any).persist;
+  const [statsHydrated, setStatsHydrated] = useState<boolean>(() => !!statsPersist?.hasHydrated?.());
+  useEffect(() => {
+    if (statsHydrated) return;
+    return statsPersist?.onFinishHydration?.(() => setStatsHydrated(true));
+  }, [statsHydrated]);
+
+  const profilePersist = (useProfileStore as any).persist;
+  const [profileHydrated, setProfileHydrated] = useState<boolean>(() => !!profilePersist?.hasHydrated?.());
+  useEffect(() => {
+    if (profileHydrated) return;
+    return profilePersist?.onFinishHydration?.(() => setProfileHydrated(true));
+  }, [profileHydrated]);
+
   // Restaura a sessão Firebase no startup (reinstalar apaga o token e quebra
   // todas as leituras do Firebase — ranking, perfis). Fire-and-forget; telas
   // que leem cedo (ex.: Ranking) também aguardam isso por conta própria.
+  // SÓ DISPARA depois que stats+profile hidrataram (ver comentário acima).
   useEffect(() => {
+    if (!statsHydrated || !profileHydrated) return;
     bootstrapAuth().catch(() => {});
-  }, []);
+  }, [statsHydrated, profileHydrated]);
 
-  if (checking || !themeHydrated || !localeHydrated) {
+  if (checking || !themeHydrated || !localeHydrated || !statsHydrated || !profileHydrated) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#FFD600" />

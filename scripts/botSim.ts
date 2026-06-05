@@ -79,6 +79,29 @@ const TEAM_PILETOP_WILD_DISC: Record<TeamId, boolean> = {
   'team-2': false,
 };
 
+// ── ISSUES A/B/C (reports do usuário sobre uso de coringa) ──
+// A = TEAM_WILD_SUIT_ALLOC: ao preencher gap numa seq de naipe X, usa um 2 do
+//     PRÓPRIO naipe X (regatável a limpo) em vez do "melhor coringa a gastar".
+//     Sem isso, melds simultâneas trocam coringas (♥ pega 2♣, ♣ pega 2♥),
+//     deixando ambas insanavelmente sujas.
+// B = TEAM_WILD_NO_LOW_ACE: não baixa A-coringa-3 ("A,2,Joker do nada"); queima
+//     coringa por ~25pts. Vale MESMO com canastra limpa.
+// C = TEAM_WILD_RESERVE: guarda ≥1 coringa na mão pra pegar lixo gordo depois;
+//     não gasta o ÚLTIMO coringa numa meld nova pequena (<5) não-crítica.
+//
+// A/B isolado e swap-tested via env: FEAT=A|B|C escolhe a feature; FEATTEAM=1|2
+// escolhe o time que a recebe (o outro fica baseline). Default: ninguém recebe.
+const FEAT = process.env.FEAT;
+const FEAT_TEAM: TeamId = process.env.FEATTEAM === '2' ? 'team-2' : 'team-1';
+// FEAT pode combinar features (ex: FEAT=AC liga A e C juntas).
+const featOn = (f: string): Record<TeamId, boolean> => ({
+  'team-1': !!FEAT && FEAT.includes(f) && FEAT_TEAM === 'team-1',
+  'team-2': !!FEAT && FEAT.includes(f) && FEAT_TEAM === 'team-2',
+});
+const TEAM_WILD_SUIT_ALLOC = featOn('A');
+const TEAM_WILD_NO_LOW_ACE = featOn('B');
+const TEAM_WILD_RESERVE = featOn('C');
+
 // PROXY = adversário-alvo "humano forte" (scripts/proxyBot.ts). Sobrepõe
 // pile-take e descarte com planner de distância-de-bater + modelo de oponente.
 // Usado pra MEDIR o gap do bot de produção contra jogo estratégico (o sim
@@ -635,7 +658,7 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, al
     }
   }
   // (3) forma nova sequência com o topo
-  const sequences = findBestSequences(p.hand, s.gameMode);
+  const sequences = findBestSequences(p.hand, s.gameMode, TEAM_WILD_SUIT_ALLOC[team.id]);
   for (const seq of sequences) {
     if (!seq.some(c => c.id === pileTopId)) continue;
     if (isBadWild3(seq)) continue;
@@ -659,7 +682,7 @@ function playSequencesPhase(s: GameState, playerId: PlayerId): void {
     const team = teamOf(s, playerId);
     if (p.hand.length === 0) return;
     const accelerating = canTeamBater(team.games, s.gameMode, team.hasGottenDead) && p.hand.length <= 5;
-    const sequences = findBestSequences(p.hand, s.gameMode);
+    const sequences = findBestSequences(p.hand, s.gameMode, TEAM_WILD_SUIT_ALLOC[team.id]);
     let played = false;
     for (const seq of sequences) {
       const normalCards = seq.filter(c => !c.isJoker);
@@ -703,6 +726,34 @@ function playSequencesPhase(s: GameState, playerId: PlayerId): void {
               if (TEAM_SMART_WILD[team.id] && seq.length === 3) continue;
             }
           }
+        }
+      }
+      // ISSUE B: não baixa A-coringa-3 ("A,2,Joker do nada"). Ás usado baixo
+      // (sem Q/K na seq) + coringa não-natural num meld de ≤3 → queima coringa
+      // por ~25pts. Vale mesmo COM canastra limpa. Escape: indo bater/morto.
+      if (TEAM_WILD_NO_LOW_ACE[team.id] && s.gameMode === 'classic') {
+        const sn = seq.filter(c => !c.isJoker);
+        const wild = seq.find(c => c.isJoker);
+        const seqSuit = sn.length > 0 ? sn[0].suit : null;
+        const wildIsNatural = !!wild && wild.suit !== 'joker' && wild.suit === seqSuit;
+        const hasAce = sn.some(c => c.value === 14);
+        const hasHigh = sn.some(c => c.value === 12 || c.value === 13);
+        if (!!wild && !wildIsNatural && seq.length <= 3 && hasAce && !hasHigh) {
+          const remainingAfter = p.hand.length - seq.length;
+          if (remainingAfter > 1 && !accelerating) continue;
+        }
+      }
+      // ISSUE C: guarda ≥1 coringa pra pegar lixo gordo. Não gasta o ÚLTIMO
+      // coringa numa meld nova pequena (<5) não-crítica. Escape: indo bater/
+      // morto, pode bater já, ou deck baixo (não vai sobrar pra pegar lixo).
+      if (TEAM_WILD_RESERVE[team.id] && s.gameMode === 'classic') {
+        const wildsInSeq = seq.filter(c => c.isJoker).length;
+        const wildsInHand = p.hand.filter(c => c.isJoker).length;
+        if (wildsInSeq > 0 && wildsInHand - wildsInSeq === 0 && seq.length < 5) {
+          const remainingAfter = p.hand.length - seq.length;
+          const canBaterNow = canTeamBater(team.games, s.gameMode, team.hasGottenDead);
+          const deckLow = s.deck.length <= 8;
+          if (remainingAfter > 1 && !canBaterNow && !deckLow && !accelerating) continue;
         }
       }
       if (playCards(s, playerId, seq.map(c => c.id))) {
@@ -1101,6 +1152,9 @@ function main() {
     if (TEAM_SMART_DISCARD[t]) bits.push('SMART discard');
     if (TEAM_SMART_WILD[t]) bits.push('SMART wild');
     if (TEAM_SMART_CLOSE[t]) bits.push('SMART close');
+    if (TEAM_WILD_SUIT_ALLOC[t]) bits.push('A:wild-suit-alloc');
+    if (TEAM_WILD_NO_LOW_ACE[t]) bits.push('B:no-low-ace');
+    if (TEAM_WILD_RESERVE[t]) bits.push('C:wild-reserve');
     return bits.length ? bits.join(' + ') : 'baseline';
   };
   console.log(`\n=== Buraco Bot Sim ===`);

@@ -35,6 +35,10 @@ const LOCALE_MAP = {
   lt: { ios: 'lt',      android: 'lt' },
   lv: { ios: 'lv',      android: 'lv' },
   et: { ios: 'et',      android: 'et' },
+  fr: { ios: 'fr',      android: 'fr' },
+  bn: { ios: 'bn',      android: 'bn' },
+  hi: { ios: 'hi',      android: 'hi' },
+  ar: { ios: 'ar',      android: 'ar' },
 };
 
 function escapeXml(s) {

@@ -1,0 +1,49 @@
+default_platform(:android)
+
+# Caminhos relativos à raiz do projeto (fastlane roda de lá, fora de fastlane/).
+AAB_PATH = "android/app/build/outputs/bundle/release/app-release.aab"
+
+platform :android do
+  desc "Sobe o AAB pra Play Console (track padrão: internal)."
+  desc "Uso: bundle exec fastlane deploy [track:beta|alpha|production]"
+  lane :deploy do |options|
+    track = options[:track] || "internal"
+
+    unless File.exist?(AAB_PATH)
+      UI.user_error!("AAB não encontrado em #{AAB_PATH}. Rode o build antes (ou use ./release.sh, que faz bump+build+deploy).")
+    end
+
+    upload_to_play_store(
+      track: track,
+      aab: AAB_PATH,
+      # changelogs em fastlane/metadata/android/<locale>/changelogs/<versionCode>.txt
+      # listing (título/descrição) NÃO subimos automaticamente — alteramos pelo Play Console.
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: false,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      # release_status: "draft" pra revisar antes de publicar.
+      # Em internal o track já é gated, então pode ir como "completed".
+      release_status: track == "production" ? "draft" : "completed",
+    )
+
+    UI.success("Upload concluído no track '#{track}'. Confira em https://play.google.com/console")
+  end
+
+  desc "Promove um build do internal pro production (sem rebuild)."
+  desc "Útil quando você testou no internal e quer publicar."
+  lane :promote_to_production do
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "production",
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      release_status: "draft",
+    )
+  end
+end

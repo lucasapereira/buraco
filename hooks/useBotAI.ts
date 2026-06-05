@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, LayoutAnimation } from 'react-native';
 import { Card } from '../game/deck';
 import { BotDifficulty, GameMode, PlayerId } from '../game/engine';
-import { validateSequence, checkCanasta } from '../game/rules';
+import { validateSequence, checkCanasta, findPileTopPlay } from '../game/rules';
 import {
   wouldDirtyGame,
   canCleanCandidateGrow,
@@ -12,6 +12,9 @@ import {
   opponentRecentlyTookPile,
   shouldTakePileSmart,
   canastaBonusValue,
+  findPileTopNonDegradingPlay,
+  pileTakeForcesDirtyingCleanPath,
+  longestNaturalRun,
 } from '../game/botHelpers';
 import { useGameStore } from '../store/gameStore';
 import { pimcShouldTakePile } from '../game/pimc';
@@ -178,6 +181,19 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           takePile = shouldTakePileSmart(pile, freshBot.hand, difficulty, teamGames, fresh.gameMode, aggressiveness);
         }
 
+        // VETO difícil-agnóstico (cobre o PIMC 'expert', que decide por rollout e
+        // cujo horizonEval NÃO enxerga o custo real de perder a batida). Não pega
+        // o lixo se cumprir a obrigação do topo forçar sujar uma meld limpa
+        // protegida (canastra, ou candidata viável ≥5 sem canastra). Mesmo veto que
+        // shouldTakePileSmart usa na heurística; aqui garante o caminho PIMC também.
+        if (takePile) {
+          const vs = useGameStore.getState();
+          const vbot = vs.players.find(p => p.id === botId);
+          if (vbot && pileTakeForcesDirtyingCleanPath(vbot.hand, vs.pile, vs.teams[vbot.teamId].games, vs.gameMode)) {
+            takePile = false;
+          }
+        }
+
         animate(); // Animação de compra
         if (takePile) {
           const tookPile = useGameStore.getState().drawFromPile(botId);
@@ -283,6 +299,23 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
 
     const teamGames = s.teams[bot.teamId].games;
 
+    // CUMPRIMENTO SEM DEGRADAR (1ª tentativa, antes das fases A/B): procura uma
+    // jogada que mele o topo sem sujar NENHUMA meld limpa — canastra OU candidata
+    // (<7). Inclui formar jogo NOVO (mesmo sujo) quando essa é a única forma de
+    // não tocar numa meld limpa. Isso conserta o ordering-bug: as fases B sujavam
+    // uma canastra/candidata limpa ANTES de tentar um jogo novo que a preservaria.
+    if (!allowWild3) {
+      const handNoTop = bot.hand.filter(c => c.id !== pileTopId);
+      const nd = findPileTopNonDegradingPlay(handNoTop, topCard, teamGames, s.gameMode, true);
+      if (nd) {
+        animate();
+        const ok = nd.gameIndex >= 0
+          ? useGameStore.getState().addToExistingGame(botId, nd.cardIds, nd.gameIndex)
+          : useGameStore.getState().playCards(botId, nd.cardIds);
+        if (ok) return;
+      }
+    }
+
     // Disciplina de coringa no caminho da OBRIGAÇÃO do lixo (espelha item #3,
     // que só existia em doBotPlaySequencesAsync). No 1º passe (strict) NÃO cria
     // meld NOVA de 3 cartas com coringa não-natural sem canastra limpa — assim
@@ -387,7 +420,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     // Só considera sequências em que topo é do mesmo naipe da seq e TODOS os demais
     // curingas da seq também são naturais do mesmo naipe — ou seja, jogada 100% limpa.
     if (topCard.isJoker && topCard.suit !== 'joker') {
-      const sequences = findBestSequences(bot.hand, s.gameMode);
+      const sequences = findBestSequences(bot.hand, s.gameMode, true); // issue A: aloca coringa por naipe
       for (const seq of sequences) {
         if (!seq.some(c => c.id === pileTopId)) continue;
         const seqNormal = seq.filter(c => !c.isJoker);
@@ -470,7 +503,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     }
 
     // B3) Tenta via findBestSequences (qualquer jogo novo, mesmo com curinga sujo)
-    const sequences = findBestSequences(bot.hand, s.gameMode);
+    const sequences = findBestSequences(bot.hand, s.gameMode, true); // issue A: aloca coringa por naipe
     for (const seq of sequences) {
       if (seq.some(c => c.id === pileTopId)) {
         if (isBadWild3(seq)) continue; // adia meld de 3 com coringa não-natural
@@ -514,7 +547,37 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     // (a regra do Clássico exige baixar o topo; melhor sujar do que travar).
     if (!allowWild3) { await doBotPlayWithPileTop(botId, pileTopId, true); return; }
 
-    // 4) Fallback: impossível jogar o topo — limpa a obrigação pra não travar o bot
+    // 4) Fallback exaustivo: espelha canTakePile via findPileTopPlay. Garante que
+    // toda pegada de lixo permitida pela regra seja de fato cumprida — sem isso,
+    // lacunas entre canTakePile e as fases acima largam a obrigação (bot fica com o
+    // lixo sem baixar o topo, jogada ilegal no Clássico).
+    {
+      const fs = useGameStore.getState();
+      const fbot = fs.players.find(p => p.id === botId);
+      const ftop = fbot?.hand.find(c => c.id === pileTopId);
+      if (fbot && ftop) {
+        const handWithoutTop = fbot.hand.filter(c => c.id !== pileTopId);
+        const teamGamesNow = fs.teams[fbot.teamId].games;
+        // Recusa jogadas que sujariam canastra limpa de 500/1000 (≥13): prefere
+        // largar a obrigação a perder 400/900 (ver feedback_bot_nunca_suja_500_1000).
+        const realize = findPileTopPlay(handWithoutTop, ftop, teamGamesNow, fs.gameMode, (gi, cardIds) => {
+          if (gi < 0) return true;
+          const game = teamGamesNow[gi];
+          if (game.length < 13 || checkCanasta(game) !== 'clean') return true;
+          const added = fbot.hand.filter(c => cardIds.includes(c.id));
+          return checkCanasta([...game, ...added]) === 'clean';
+        });
+        if (realize) {
+          animate();
+          const ok = realize.gameIndex >= 0
+            ? useGameStore.getState().addToExistingGame(botId, realize.cardIds, realize.gameIndex)
+            : useGameStore.getState().playCards(botId, realize.cardIds);
+          if (ok) return;
+        }
+      }
+    }
+
+    // 5) Impossível jogar o topo — limpa a obrigação pra não travar o bot
     useGameStore.setState({ mustPlayPileTopId: null });
   }
 
@@ -541,7 +604,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const accelerating = canTeamBater(teamState.games, s.gameMode, teamState.hasGottenDead)
         && bot.hand.length <= 5;
 
-      const sequences = findBestSequences(bot.hand, s.gameMode);
+      const sequences = findBestSequences(bot.hand, s.gameMode, true); // issue A: aloca coringa por naipe
 
       for (const seq of sequences) {
         // Evita criar um NOVO jogo de um naipe que já temos na mesa.
@@ -601,12 +664,34 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
                   canCleanCandidateGrow(g, allTableGames, bot.hand)
                 );
                 if (hasViableCandidate) continue; // Preserva coringa para candidato viável
-                // Bloqueia meld NOVA de 3 cartas com coringa antes do time ter qualquer canastra —
-                // uma seq de 3 com coringa nunca vira canastra limpa naquele naipe.
-                if (seq.length === 3) continue;
-                // Nenhum candidato viável — permite usar coringa em jogo novo (>=4 cartas)
+                // Não gasta coringa pra fazer um gap numa meld NOVA quando a MÃO já
+                // tem uma corrida natural limpa de ≥3 no mesmo naipe (report: 3,4,5
+                // + ★ + 7 → baixava [..★..] sujo em vez de baixar [3,4,5] limpo e
+                // guardar o ★). Checa o naipe na MÃO, não só na seq — senão o bot
+                // rota por uma sub-seq menor ([4,5,★,7]) e remonta a meld suja no
+                // doBotAddToGamesAsync. seq.length===3 cobre o gap puro ([3,★,5]).
+                const handSuitRun = seqSuit
+                  ? longestNaturalRun(bot.hand.filter(c => !c.isJoker && c.suit === seqSuit))
+                  : 0;
+                if (seq.length === 3 || handSuitRun >= 3) continue;
+                // Sem corrida limpa de ≥3 no naipe e sem candidato viável: o coringa
+                // é realmente necessário → permite usar em jogo novo (>=4 cartas).
               }
             }
+          }
+        }
+
+        // ISSUE C: guarda ≥1 coringa pra pegar lixo gordo depois — não gasta o
+        // ÚLTIMO coringa numa meld nova pequena (<5) não-crítica. Escape: indo
+        // bater/morto, pode bater já, deck baixo, ou acelerando pra bater.
+        if (s.gameMode === 'classic') {
+          const wildsInSeq = seq.filter(c => c.isJoker).length;
+          const wildsInHand = bot.hand.filter(c => c.isJoker).length;
+          if (wildsInSeq > 0 && wildsInHand - wildsInSeq === 0 && seq.length < 5) {
+            const remainingAfter = bot.hand.length - seq.length;
+            const canBaterNow = canTeamBater(teamState.games, s.gameMode, teamState.hasGottenDead);
+            const deckLow = s.deck.length <= 8;
+            if (remainingAfter > 1 && !canBaterNow && !deckLow && !accelerating) continue;
           }
         }
 

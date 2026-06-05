@@ -3,7 +3,7 @@
 
 import { Card } from './deck';
 import { BotDifficulty, GameMode } from './engine';
-import { canTakePile, sortCardsBySuitAndValue, validateSequence, checkCanasta } from './rules';
+import { canTakePile, findPileTopPlay, sortCardsBySuitAndValue, validateSequence, checkCanasta } from './rules';
 
 export function getCardPoints(card: Card): number {
   if (card.isJoker) return 20;
@@ -34,6 +34,106 @@ export function wouldDirtyGame(card: Card, game: Card[]): boolean {
     if (consecutive) return false;
   }
   return true;
+}
+
+/**
+ * Uma meld é "limpa" (não usa coringa como wild). Para canastras (≥7) usa
+ * checkCanasta (que sabe distinguir 2 natural de 2-curinga). Para candidatas
+ * (<7), conservador: limpa = sem nenhum coringa físico/2-curinga presente.
+ */
+export function isMeldClean(game: Card[]): boolean {
+  if (game.length >= 7) return checkCanasta(game) === 'clean';
+  return !game.some(c => c.isJoker);
+}
+
+/**
+ * Maior corrida natural CONTÍGUA (mesmo naipe, valores consecutivos, sem coringa)
+ * dentro de uma sequência candidata. Usado pela disciplina de coringa: se a seq
+ * já contém uma sub-meld limpa de ≥3, não vale a pena gastar o coringa pra
+ * formar uma meld suja maior — baixa a parte limpa e guarda o coringa.
+ */
+export function longestNaturalRun(seq: Card[]): number {
+  const vals = seq.filter(c => !c.isJoker).map(c => c.value).sort((a, b) => a - b);
+  if (vals.length === 0) return 0;
+  let best = 1, cur = 1;
+  for (let i = 1; i < vals.length; i++) {
+    if (vals[i] === vals[i - 1] + 1) { cur++; if (cur > best) best = cur; }
+    else if (vals[i] !== vals[i - 1]) { cur = 1; }
+  }
+  return best;
+}
+
+/**
+ * Procura uma jogada que mele `topCard` (obrigação do lixo no Clássico) SEM
+ * degradar nenhuma meld limpa do time. `hand` NÃO contém topCard.
+ *
+ * `protectCandidates=false` (canasta-strict): protege só canastras limpas (≥7) —
+ * usado no VETO de pegar-lixo (perder a batida é o custo inaceitável).
+ * `protectCandidates=true`: protege também candidatas limpas (<7) — usado na
+ * ORDEM de cumprimento (tenta esta jogada ANTES das fases que podem sujar).
+ *
+ * Retorna a jogada ({gameIndex:-1=jogo novo} + cardIds c/ topCard) ou null se
+ * TODA realização da obrigação degrada uma meld limpa protegida.
+ */
+export function findPileTopNonDegradingPlay(
+  hand: Card[],
+  topCard: Card,
+  teamGames: Card[][],
+  gameMode: GameMode,
+  protectCandidates: boolean
+): { gameIndex: number; cardIds: string[] } | null {
+  return findPileTopPlay(hand, topCard, teamGames, gameMode, (gameIndex, cardIds) => {
+    if (gameIndex < 0) return true; // jogo novo não toca melds existentes
+    const game = teamGames[gameIndex];
+    const addedFromHand = hand.filter(c => cardIds.includes(c.id));
+    const combined = [...game, topCard, ...addedFromHand];
+    if (protectCandidates) {
+      return !(isMeldClean(game) && !isMeldClean(combined));
+    }
+    return !(checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean');
+  });
+}
+
+/**
+ * VETO de pegar-lixo (Clássico): true se pegar o lixo FORÇARIA sujar uma meld
+ * limpa "protegida" pra cumprir a obrigação do topo — perdendo a via de canastra
+ * limpa (e a batida). Usado por shouldTakePileSmart E pelo gate pós-PIMC.
+ *
+ * Pontos críticos (ver feedback do advisor):
+ * - Usa a MÃO PÓS-PEGADA (`hand + lixo − topo`): o cumprimento mela o topo com
+ *   QUALQUER carta da mão, incluindo o resto do lixo absorvido. Checar só a mão
+ *   pré-pegada faria o veto recusar demais (acharia o topo "preso" quando uma
+ *   carta do lixo formaria meld nova limpa). veto ⇔ cumprimento concordam.
+ * - Proteção MAIS ESTREITA que a do cumprimento (que é só preferência c/ fallback):
+ *   o veto é recusa DURA, então protege só (a) canastra limpa ≥7 (sempre) e
+ *   (b) candidata limpa VIÁVEL de ≥5 cartas QUANDO o time ainda não tem canastra
+ *   limpa (a única via de bater). NÃO protege meld limpa de 3-4 (recusar lixo
+ *   gordo por causa dela sai caro). report: joker no único jogo limpo de 6 cartas.
+ */
+export function pileTakeForcesDirtyingCleanPath(
+  hand: Card[],
+  pile: Card[],
+  teamGames: Card[][],
+  gameMode: GameMode
+): boolean {
+  if (gameMode !== 'classic' || pile.length === 0) return false;
+  const topCard = pile[pile.length - 1];
+  const simHand = [...hand, ...pile.slice(0, -1)]; // mão pós-pegada (sem o topo)
+  const hasCleanCanasta = teamGames.some(g => checkCanasta(g) === 'clean');
+  const isProtected = (game: Card[]): boolean => {
+    if (checkCanasta(game) === 'clean') return true;           // canastra limpa ≥7: sempre
+    if (hasCleanCanasta) return false;                         // já tem canastra → não bloqueia
+    return game.length >= 5 && isMeldClean(game)               // candidata limpa viável ≥5 =
+      && canCleanCandidateGrow(game, teamGames, simHand);      //   única via de canastra limpa
+  };
+  const play = findPileTopPlay(simHand, topCard, teamGames, gameMode, (gameIndex, cardIds) => {
+    if (gameIndex < 0) return true; // jogo novo não toca melds existentes
+    const game = teamGames[gameIndex];
+    if (!isProtected(game)) return true;
+    const added = [topCard, ...simHand.filter(c => cardIds.includes(c.id))];
+    return isMeldClean([...game, ...added]); // meld protegida: só aceita se continuar limpa
+  });
+  return play === null;
 }
 
 /**
@@ -113,8 +213,22 @@ export function canTeamBater(teamGames: Card[][], gameMode: GameMode, hasGottenD
   });
 }
 
-/** Encontra todas as sequências válidas (e trincas) possíveis dentro de uma mão. */
-export function findBestSequences(hand: Card[], gameMode: GameMode = 'classic'): Card[][] {
+/**
+ * Encontra todas as sequências válidas (e trincas) possíveis dentro de uma mão.
+ *
+ * `preferSameSuitWild` (issue A): ao preencher um gap numa sequência de naipe X,
+ * prefere um 2 do PRÓPRIO naipe X em vez do "melhor coringa a gastar" (físico/
+ * off-suit). Um 2 do mesmo naipe é REGATÁVEL a limpo (se a meld virar corrida
+ * baixa que alcança a posição-2 natural — checkCanasta o reconhece); um 2 de
+ * outro naipe ou coringão deixa a meld suja PARA SEMPRE. Sem isso, melds
+ * simultâneas trocam coringas (♥ pega 2♣, ♣ pega 2♥) e ambas ficam insanáveis.
+ * Default false = comportamento de produção (byte-idêntico).
+ */
+export function findBestSequences(
+  hand: Card[],
+  gameMode: GameMode = 'classic',
+  preferSameSuitWild: boolean = false
+): Card[][] {
   const sequences: Card[][] = [];
   const jokers = hand.filter(c => c.isJoker);
   const normal = hand.filter(c => !c.isJoker);
@@ -140,7 +254,9 @@ export function findBestSequences(hand: Card[], gameMode: GameMode = 'classic'):
     if (seq.length >= 3) sequences.push([...seq]);
 
     if (jokers.length > 0 && cards.length >= 2) {
-      const jokerToUse = pickBestJokerToSpend(jokers, []);
+      const jokerToUse = preferSameSuitWild
+        ? (jokers.find(j => j.suit === suit) ?? pickBestJokerToSpend(jokers, []))
+        : pickBestJokerToSpend(jokers, []);
       for (let i = 0; i < cards.length; i++) {
         const innerSeq: Card[] = [cards[i]];
         let expectedNext = cards[i].value + 1;
@@ -767,6 +883,14 @@ export function shouldTakePileSmart(
         );
         if (dirtiesAnyCleanCanasta) return false;
       }
+    }
+
+    // VETO geral (qualquer carta de topo): não pega se cumprir a obrigação forçar
+    // sujar uma meld limpa protegida (canastra ≥7, ou candidata viável ≥5 sem o
+    // time ter canastra) — perderia a via de bater. Cobre J-com-coringa numa
+    // canastra 2-9 E joker no único jogo limpo de 6 cartas (reports do usuário).
+    if (pileTakeForcesDirtyingCleanPath(hand, pile, teamGames, gameMode)) {
+      return false;
     }
   }
 

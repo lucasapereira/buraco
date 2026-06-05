@@ -23,7 +23,7 @@ import {
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { auth, db } from '../config/firebase';
-import { useStatsStore, RecentMatch } from './statsStore';
+import { SYNCED_STATS_KEYS, SyncedStats, useStatsStore } from './statsStore';
 
 // Diagnóstico temporário (v1.51.1): última tentativa de carregar o ranking.
 // Exibido na tela de Ranking quando a lista vem vazia, pra distinguir
@@ -53,45 +53,20 @@ function prevMonthKey(ref: string): string {
   return pm === 0 ? `${y - 1}-12` : `${y}-${String(pm).padStart(2, '0')}`;
 }
 
-export interface UserProfile {
+/**
+ * Perfil do jogador no Firebase. Os stats vêm de `SyncedStats` (= todos os
+ * campos do statsStore marcados como sincronizáveis) — assim adicionar um
+ * stat novo lá já o inclui aqui automaticamente. Os campos extras abaixo
+ * são metadata só-Firebase (identidade, nome, timestamps).
+ */
+export type UserProfile = {
   uid: string;
   displayName: string;
   displayNameLower: string;
   joinedAt: number;
   lastSeen: number;
   lastNameChangeAt?: number;
-
-  level: number;
-  totalXP: number;
-  matchesPlayed: number;
-  matchesWon: number;
-  totalCanastas: number;
-  totalCleanCanastas: number;
-  total500Canastas: number;
-  total1000Canastas: number;
-  totalDirtyCanastas: number;
-  totalBatidas: number;
-  biggestRoundScore: number;
-  biggestMatchDiff: number;
-  totalPointsEarned: number;
-  longestStreak: number;
-  longestWinStreak: number;
-
-  botMatchesPlayed: number;
-  botMatchesWon: number;
-  currentBotWinStreak: number;
-  longestBotWinStreak: number;
-  hardWins: number;
-  expertWins?: number;            // vitórias contra o bot Difícil (PIMC)
-  expertMatchesPlayed?: number;   // partidas terminadas no Difícil
-
-  onlineMatchesPlayed: number;
-  onlineMatchesWon: number;
-  onlineRating: number;
-
-  unlockedAchievements: string[];
-  recentMatches: RecentMatch[];
-}
+} & SyncedStats;
 
 interface ProfileState {
   myUid: string | null;
@@ -102,6 +77,15 @@ interface ProfileState {
   migratedFromLocal: boolean;
   isClaiming: boolean;
   claimError: string | null;
+  /**
+   * Trava do auto-sync: false até hydrate ter tido a chance de rodar (ou
+   * sabermos que não há perfil remoto pra hidratar). Sem isso, stats locais
+   * zerados (porque hydrate ainda não trouxe os campos) sobrescreveriam o
+   * Firebase via dbSet — foi assim que vitórias do Difícil sumiram em
+   * reinstalações antigas. Não é persistido: começa false toda inicialização
+   * e é liberada pelo bootstrap/auth.
+   */
+  syncEnabled: boolean;
 }
 
 interface ProfileActions {
@@ -134,6 +118,7 @@ const PROFILE_DEFAULTS = {
   migratedFromLocal: false,
   isClaiming: false,
   claimError: null,
+  syncEnabled: false,
 };
 
 function normalize(name: string): string {
@@ -153,38 +138,15 @@ function validateName(name: string): string | null {
  * Fonte única de verdade — usada tanto pra escrever no Firebase quanto pra
  * sobrepor a própria linha no Ranking (que senão mostraria o snapshot
  * defasado do Firebase logo após terminar uma partida).
+ *
+ * As chaves vêm de `SYNCED_STATS_KEYS` (statsStore) — adicionar um stat lá
+ * já o coloca aqui sem precisar editar este arquivo.
  */
-export function localStatsSnapshot() {
+export function localStatsSnapshot(): SyncedStats {
   const s = useStatsStore.getState();
-  return {
-    level: s.level,
-    totalXP: s.totalXP,
-    matchesPlayed: s.matchesPlayed,
-    matchesWon: s.matchesWon,
-    totalCanastas: s.totalCanastas,
-    totalCleanCanastas: s.totalCleanCanastas,
-    total500Canastas: s.total500Canastas,
-    total1000Canastas: s.total1000Canastas,
-    totalDirtyCanastas: s.totalDirtyCanastas,
-    totalBatidas: s.totalBatidas,
-    biggestRoundScore: s.biggestRoundScore,
-    biggestMatchDiff: s.biggestMatchDiff,
-    totalPointsEarned: s.totalPointsEarned,
-    longestStreak: s.longestStreak,
-    longestWinStreak: s.longestWinStreak,
-    botMatchesPlayed: s.botMatchesPlayed,
-    botMatchesWon: s.botMatchesWon,
-    currentBotWinStreak: s.currentBotWinStreak,
-    longestBotWinStreak: s.longestBotWinStreak,
-    hardWins: s.hardWins,
-    expertWins: s.expertWins ?? 0,
-    expertMatchesPlayed: s.expertMatchesPlayed ?? 0,
-    onlineMatchesPlayed: s.onlineMatchesPlayed,
-    onlineMatchesWon: s.onlineMatchesWon,
-    onlineRating: s.onlineRating,
-    unlockedAchievements: s.unlockedAchievements,
-    recentMatches: s.recentMatches,
-  };
+  const out = {} as Record<string, unknown>;
+  for (const k of SYNCED_STATS_KEYS) out[k] = s[k];
+  return out as SyncedStats;
 }
 
 function snapshotStatsForFirebase(uid: string, displayName: string, displayNameLower: string, joinedAt: number, lastNameChangeAt: number | null): Omit<UserProfile, never> {
@@ -241,6 +203,9 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
             joinedAt,
             isClaiming: false,
             claimError: null,
+            // Perfil acabou de ser criado a partir do snapshot local — Firebase
+            // já tem o estado certo, libera auto-sync pra próximas partidas.
+            syncEnabled: true,
           });
         } catch (e: any) {
           if (!get().claimError) set({ claimError: e?.message ?? i18n.t('online.errors.claimName'), isClaiming: false });
@@ -310,9 +275,16 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
       },
 
       syncProfileToFirebase: async () => {
-        const { myUid, myUsername, myUsernameLower, joinedAt, lastNameChangeAt } = get();
+        const { myUid, myUsername, myUsernameLower, joinedAt, lastNameChangeAt, syncEnabled } = get();
         if (!myUid || !myUsername || !myUsernameLower) {
           console.log('[profile] sync skipped: missing uid/username', { hasUid: !!myUid, hasName: !!myUsername });
+          return;
+        }
+        // Defesa em profundidade: o subscribe do auto-sync já checa syncEnabled,
+        // mas callers diretos (Ranking.reload, migrateLocalStatsIfNeeded) também
+        // não podem escrever zeros sobre o Firebase antes do hydrate ter rodado.
+        if (!syncEnabled) {
+          console.log('[profile] sync skipped: hydrate ainda não confirmou (syncEnabled=false)');
           return;
         }
         try {
@@ -451,8 +423,13 @@ export const useProfileStore = create<ProfileState & ProfileActions>()(
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 useStatsStore.subscribe((state, prev) => {
   if (state === prev) return;
-  const { myUid } = useProfileStore.getState();
+  const { myUid, syncEnabled } = useProfileStore.getState();
   if (!myUid) return;
+  // Trava de segurança: NÃO sincroniza antes do hydrate ter tido a chance de
+  // rodar. Senão stats locais zerados (porque hydrate ainda não veio do
+  // Firebase) sobrescrevem o snapshot remoto via dbSet — exatamente o que
+  // destruía vitórias do Difícil em reinstalações anteriores.
+  if (!syncEnabled) return;
   // Defesa: se a sessão de auth atual não bate com o myUid (ex.: caiu numa
   // sessão anônima nova após reinstalar), NÃO sincroniza — escreveria o
   // perfil sob o uid errado e orfanaria a conta Google real.

@@ -48,3 +48,11 @@ app-example
 
 # release build artifacts (APKs/AABs muito grandes pro git)
 /builds
+
+# fastlane / Play Store deploy
+/vendor/bundle
+/.bundle
+fastlane/play-store-key.json
+fastlane/report.xml
+fastlane/README.md
+*.bak

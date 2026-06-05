@@ -17,10 +17,11 @@ import {
   GameState, GameMode, PlayerId, TeamId, Player, TeamState,
   getNextPlayer, calculateRoundScore,
 } from './engine';
-import { canTakePile, sortCardsBySuitAndValue, sortGameCards, validateSequence, checkCanasta } from './rules';
+import { canTakePile, findPileTopPlay, sortCardsBySuitAndValue, sortGameCards, validateSequence, checkCanasta } from './rules';
 import {
   shouldTakePileSmart, findBestSequences, chooseBestDiscard, canTeamBater,
   wouldDirtyGame, canCleanCandidateGrow, opponentRecentlyTookPile, canastaBonusValue,
+  findPileTopNonDegradingPlay, longestNaturalRun,
 } from './botHelpers';
 
 const MAX_RESHUFFLES = 99;
@@ -209,6 +210,19 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, al
   const team = teamOf(s, playerId);
   const topCard = p.hand.find(c => c.id === pileTopId);
   if (!topCard) { s.mustPlayPileTopId = null; return; }
+  // CUMPRIMENTO SEM DEGRADAR (1ª tentativa — espelha useBotAI): jogada que mele o
+  // topo sem sujar nenhuma meld limpa (canastra ou candidata <7), inclusive jogo
+  // novo. Tentada ANTES das fases abaixo que poderiam sujar uma canastra limpa.
+  if (!allowWild3) {
+    const handNoTop = p.hand.filter(c => c.id !== pileTopId);
+    const nd = findPileTopNonDegradingPlay(handNoTop, topCard, team.games, s.gameMode, true);
+    if (nd) {
+      const ok = nd.gameIndex >= 0
+        ? addToExistingGame(s, playerId, nd.cardIds, nd.gameIndex)
+        : playCards(s, playerId, nd.cardIds);
+      if (ok) return;
+    }
+  }
   // Espelha a disciplina de coringa do useBotAI no caminho da obrigação:
   // 1º passe não cria meld de 3 com coringa não-natural sem canastra limpa.
   const teamHasCleanCanasta = team.games.some(g => checkCanasta(g) === 'clean');
@@ -255,7 +269,7 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, al
       }
     }
   }
-  const sequences = findBestSequences(p.hand, s.gameMode);
+  const sequences = findBestSequences(p.hand, s.gameMode, true); // issue A: aloca coringa por naipe
   for (const seq of sequences) {
     if (!seq.some(c => c.id === pileTopId)) continue;
     if (isBadWild3(seq)) continue;
@@ -268,6 +282,26 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, al
     }
   }
   if (!allowWild3) { playWithPileTop(s, playerId, pileTopId, true); return; }
+
+  // Fallback exaustivo: espelha canTakePile via findPileTopPlay. Garante que toda
+  // pegada de lixo permitida pela regra seja de fato cumprida — sem isso, lacunas
+  // entre canTakePile e as fases acima largam a obrigação (bot fica com o lixo sem
+  // baixar o topo, jogada ilegal no Clássico). Recusa jogadas que sujariam canastra
+  // limpa de 500/1000 (≥13): prefere largar a obrigação a perder 400/900.
+  const handWithoutTop = p.hand.filter(c => c.id !== pileTopId);
+  const realize = findPileTopPlay(handWithoutTop, topCard, team.games, s.gameMode, (gi, cardIds) => {
+    if (gi < 0) return true;
+    const game = team.games[gi];
+    if (game.length < 13 || checkCanasta(game) !== 'clean') return true;
+    const added = p.hand.filter(c => cardIds.includes(c.id));
+    return checkCanasta([...game, ...added]) === 'clean';
+  });
+  if (realize) {
+    const ok = realize.gameIndex >= 0
+      ? addToExistingGame(s, playerId, realize.cardIds, realize.gameIndex)
+      : playCards(s, playerId, realize.cardIds);
+    if (ok) return;
+  }
   s.mustPlayPileTopId = null;
 }
 
@@ -277,7 +311,7 @@ function playSequencesPhase(s: GameState, playerId: PlayerId): void {
     const team = teamOf(s, playerId);
     if (p.hand.length === 0) return;
     const accelerating = canTeamBater(team.games, s.gameMode, team.hasGottenDead) && p.hand.length <= 5;
-    const sequences = findBestSequences(p.hand, s.gameMode);
+    const sequences = findBestSequences(p.hand, s.gameMode, true); // issue A: aloca coringa por naipe
     let played = false;
     for (const seq of sequences) {
       const normalCards = seq.filter(c => !c.isJoker);
@@ -315,11 +349,32 @@ function playSequencesPhase(s: GameState, playerId: PlayerId): void {
               const cleanCandidates = team.games.filter(g => !g.some(c => c.isJoker) && g.length >= 5);
               const hasViable = cleanCandidates.some(g => canCleanCandidateGrow(g, allTableGames, p.hand));
               if (hasViable) continue;
-              // wild-discipline (item #3, mergeado em produção): bloqueia meld
-              // nova de 3 cartas com coringa antes de qualquer canastra.
-              if (seq.length === 3) continue;
+              // wild-discipline (espelha useBotAI): não gasta coringa pra fazer um
+              // gap numa meld NOVA quando a MÃO já tem uma corrida natural limpa de
+              // ≥3 no mesmo naipe (report: 3,4,5 + ★ + 7 → baixava [..★..] sujo em
+              // vez de baixar [3,4,5] limpo e guardar o ★). Checa o naipe na MÃO,
+              // não só na seq — senão o bot rota por uma sub-seq menor ([4,5,★,7])
+              // e remonta a meld suja no addToGamesPhase. seq.length===3 cobre o
+              // gap puro ([3,★,5]) sem corrida limpa.
+              const handSuitRun = seqSuit
+                ? longestNaturalRun(p.hand.filter(c => !c.isJoker && c.suit === seqSuit))
+                : 0;
+              if (seq.length === 3 || handSuitRun >= 3) continue;
             }
           }
+        }
+      }
+      // ISSUE C: guarda ≥1 coringa pra pegar lixo gordo depois — não gasta o
+      // ÚLTIMO coringa numa meld nova pequena (<5) não-crítica. Escape: indo
+      // bater/morto, pode bater já, deck baixo, ou acelerando pra bater.
+      if (s.gameMode === 'classic') {
+        const wildsInSeq = seq.filter(c => c.isJoker).length;
+        const wildsInHand = p.hand.filter(c => c.isJoker).length;
+        if (wildsInSeq > 0 && wildsInHand - wildsInSeq === 0 && seq.length < 5) {
+          const remainingAfter = p.hand.length - seq.length;
+          const canBaterNow = canTeamBater(team.games, s.gameMode, team.hasGottenDead);
+          const deckLow = s.deck.length <= 8;
+          if (remainingAfter > 1 && !canBaterNow && !deckLow && !accelerating) continue;
         }
       }
       if (playCards(s, playerId, seq.map(c => c.id))) { played = true; break; }

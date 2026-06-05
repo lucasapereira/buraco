@@ -1,0 +1,582 @@
+{
+  "appName": "Canasta",
+  "appBrand": "Queti's",
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "ok": "OK",
+    "back": "← Back",
+    "backMenu": "← Main menu",
+    "yes": "Yes",
+    "no": "No",
+    "loading": "Loading...",
+    "retry": "Try again",
+    "save": "Save",
+    "close": "Close",
+    "continue": "CONTINUE →",
+    "playerFallback": "Player"
+  },
+  "home": {
+    "level": "Lv  __{{level}}__",
+    "modeTitle": "Game Mode",
+    "modeClassic": "Classic",
+    "modeAraujo": "सॉफ्ट कॅनास्टा",
+    "modeDescClassic": "मूळ नियम: सेट नाही, बाहेर जाण्यासाठी स्वच्छ मेल्ड.",
+    "modeDescAraujo": "कौटुंबिक प्रकार: संचांना परवानगी आहे, विनामूल्य ढीग घेणे, गलिच्छ गो-आउट.",
+    "difficultyTitle": "अडचण",
+    "difficultyHard": "सामान्य",
+    "difficultyExpert": "कठीण",
+    "difficultyDescHard": "ह्युरिस्टिक बॉट — शिकण्यासाठी आणि वेगवान खेळांसाठी चांगले.",
+    "difficultyDescExpert": "शोध-आधारित बॉट (PIMC): पुढे योजना. प्रति हलवा ~1से विचार करते.",
+    "targetTitle": "लक्ष्य स्कोअर",
+    "continueGame": "गेम सुरू ठेवा",
+    "restartGame": "पुन्हा सुरू करा",
+    "play": "🃏 खेळा",
+    "playOnline": "🌐 ऑनलाइन खेळा",
+    "ranking": "🏆 रँकिंग",
+    "layoutBtn": "लेआउट",
+    "themeTitle": "थीम निवडा",
+    "themeSubtitle": "अर्ज करण्यासाठी ॲप रीलोड होईल.",
+    "languageTitle": "भाषा निवडा",
+    "languageSubtitle": "बदल लगेच लागू होतो.",
+    "restart": {
+      "title": "रीस्टार्ट",
+      "msgConfirm": "तुम्हाला खात्री आहे की तुम्ही सध्याचा सामना टाकून देऊ इच्छिता?",
+      "msgWouldLose": "तुम्ही __{{diff}}__ गुणांनी हरत आहात. आता रीस्टार्ट करणे नुकसान म्हणून गणले जाईल.",
+      "confirmNormal": "होय, टाकून द्या",
+      "confirmRisk": "तरीही रीस्टार्ट करा"
+    },
+    "daily": {
+      "title": "दैनिक रिवॉर्ड!",
+      "streak": "🔥 __{{days}}__ दिवसांचा सिलसिला!",
+      "welcomeBack": "आपले स्वागत आहे!",
+      "claim": "दावा"
+    }
+  },
+  "game": {
+    "menuOpen": "☰",
+    "us": "यूएस",
+    "them": "ते",
+    "yourTurn": "आपले वळण",
+    "phaseDraw": "🃏 काढा",
+    "phasePlay": "🎴 खेळा/डिस्कॉर्ड",
+    "target": "लक्ष्य: __{{target}}__ |  __{{mode}}__",
+    "rodadaSuffix": "फेरी",
+    "noGamesYet": "अद्याप कोणतेही मेल्ड्स नाहीत",
+    "deads": "डेक",
+    "you": "आपण",
+    "emptyHand": "परत जा आणि नवीन गेम सुरू करा",
+    "playerLeft": "__{{player}}__ बाकी.  __{{bot}}__ ने पदभार स्वीकारला.",
+    "alerts": {
+      "waitTitle": "थांबा",
+      "waitMsg": "ही __{{name}}__ ची पाळी आहे. टप्पा: __{{phase}}__",
+      "waitMsgShort": "आता __{{name}}__ ची पाळी आहे.",
+      "alreadyDrewTitle": "आधीच काढले",
+      "alreadyDrewMsg": "तुम्ही हे वळण आधीच काढले आहे. मेल्ड कार्ड्स किंवा टाकून देण्यासाठी 1 कार्ड निवडा.",
+      "emptyPileTitle": "रिकामा ढीग",
+      "emptyPileMsg": "टाकून दिलेला ढीग रिकामा आहे.",
+      "cantTakePileTitle": "❌ ढीग घेऊ शकत नाही",
+      "cantTakePileDeadlock": "पाइल घेतल्याने तुम्हाला __{{card}}__ वापरून बाहेर जाण्यास भाग पाडले जाईल, परंतु तुमच्या टीममध्ये स्वच्छ कॅनस्टा नाही.",
+      "cantTakePileNeedUse": "तुम्ही मेल्डमध्ये __{{card}}__ वापरणे आवश्यक आहे (नवीन किंवा विद्यमान).",
+      "selectCardsTitle": "प्रथम कार्ड निवडा!",
+      "selectCardsMsg": "पाइल घेण्यासाठी, प्रथम तुमच्या हातातील कार्डे निवडा जी __{{card}}__ सह मेल्ड बनवतात.\n(किंवा कार्ड थेट तुमच्या विद्यमान मेल्ड्सपैकी एक जोडल्यास टॅप करा)",
+      "blockedTitle": "⚠️ अवरोधित क्रिया",
+      "blockedMsg": "कॅनस्टा घेतल्याशिवाय किंवा मृत घेतल्याशिवाय तुम्ही तुमचा हात रिकामा करू शकत नाही.",
+      "blockedPlayValidButBlock": "मेल्ड वैध आहे, परंतु बाहेर जाण्यासाठी आवश्यकता पूर्ण केल्याशिवाय तुम्ही तुमचा हात रिकामा करू शकत नाही. मेख परत तुझ्या हातात गेली.",
+      "playFirstTitle": "⚠️ आधी मेल्ड वाजवा",
+      "playFirstMsg": "तुम्ही पाइल घेतला आणि टाकण्यापूर्वी __{{card}}__ वापरून मेल्ड प्ले करणे आवश्यक आहे.",
+      "select1Title": "1 कार्ड निवडा",
+      "select1Msg": "टाकून देण्यासाठी, अगदी 1 कार्ड निवडा.",
+      "cantBaterTitle": "⚠️ बाहेर जाऊ शकत नाही",
+      "cantBaterMsg": "तुमच्या टीमला बाहेर जाण्यासाठी आणि फेरी संपवण्यासाठी __{{cleanQualifier}}__ कॅनस्टा आवश्यक आहे.",
+      "cantBaterClean": "स्वच्छ",
+      "pileRuleTitle": "⚠️ पाइल नियम",
+      "pileRuleNewPlay": "तुमच्या पहिल्या नाटकात __{{card}}__ (पाइल टॉप) समाविष्ट असणे आवश्यक आहे.\n\nतुम्ही हे करू शकता:\n• टेबलवरील तुमच्या मेल्डपैकी एकावर टॅप करा (__{{card}}__ + अतिरिक्त कार्डे निवडून)\n• किंवा 3+ कार्डांसह एक नवीन मेल्ड खेळा",
+      "pileRuleAdd": "तुम्ही तुमच्या पहिल्या प्लेमध्ये __{{card}}__ (पाइल टॉप) वापरणे आवश्यक आहे (नवीन मेल्ड किंवा विद्यमान एकामध्ये जोडणे).",
+      "minCardsTitle": "किमान 3 कार्डे",
+      "minCardsMsg": "क्लासिक मेल्ड खेळण्यासाठी किमान 3 कार्डे निवडा.",
+      "invalidCombTitle": "अवैध संयोजन",
+      "invalidCombAraujo": "कार्ड वैध रन किंवा सेट तयार करत नाहीत (सॉफ्ट कॅनास्टामध्ये कमाल 1 जंगली).",
+      "invalidCombClassic": "निवडलेली कार्डे वैध रन बनवत नाहीत.\n\nस्मरणपत्र: समान सूट, सलग मूल्ये, कमाल 1 जंगली (2).",
+      "invalidTitle": "अवैध",
+      "invalidAddMsg": "निवडलेली कार्डे या मेल्डमध्ये बसत नाहीत.",
+      "restartTitle": "मॅच पुन्हा सुरू करा",
+      "exitTitle": "बाहेर पडा",
+      "exitMsg": "मुख्य मेनूमधून बाहेर पडायचे?",
+      "restartMsg": "तुम्हाला खात्री आहे का? सध्याची प्रगती नष्ट होईल.",
+      "wouldLoseRestart": "तुम्ही __{{diff}}__ गुणांनी हरत आहात. आता रीस्टार्ट करणे नुकसान म्हणून गणले जाईल.",
+      "wouldLoseExit": "तुम्ही __{{diff}}__ गुणांनी हरत आहात. आता बाहेर पडणे नुकसान म्हणून गणले जाईल.",
+      "restartAnyway": "तरीही रीस्टार्ट करा",
+      "exitAnyway": "तरीही बाहेर पडा",
+      "restartLabel": "पुन्हा सुरू करा",
+      "exitLabel": "बाहेर पडा",
+      "cardOfTop": "शीर्ष कार्ड",
+      "cardDrawn": "काढलेले कार्ड"
+    },
+    "players": {
+      "user": "You",
+      "partner": "Partner",
+      "opponent1": "Opponent 1",
+      "opponent2": "Opponent 2",
+      "opponentShort": "Opponent",
+      "botSeat": "Bot {{n}}"
+    },
+    "menu": {
+      "title": "Menu",
+      "restart": "🔄 Restart Match",
+      "exit": "🚪 Exit Game",
+      "close": "Close",
+      "rules": "Rules",
+      "online": "Online Mode",
+      "achievements": "Achievements",
+      "stats": "Stats",
+      "sound": "Sound",
+      "soundOn": "On",
+      "soundOff": "Off"
+    },
+    "pileLabel": "Pile",
+    "discardHint": "▲ discard a card ▲",
+    "ourMeld": "Our Meld",
+    "oppMeld": "Opponent Meld",
+    "tapOutToClose": "Tap outside to close",
+    "tauntPickerTitle": "Trash Talk 😤",
+    "endRound": {
+      "youWonMatch": "🏆 YOU WON THE MATCH!",
+      "theyWonMatch": "😢 Opponents won!",
+      "roundEnd": "Round Ended",
+      "expertBadge": "🧠 You beat the AI (Hard)!  Double XP 🔥",
+      "ourTeam": "🟢 Our team",
+      "oppTeam": "🔴 Opponent team",
+      "tableScore": "Melds on table: +{{score}}",
+      "handPenalty": "Hand penalty: -{{penalty}}",
+      "wentOutBonus": "Went out: +100",
+      "noDeadPenalty": "No dead pile: -100",
+      "thisRound": "This round: {{score}}",
+      "total": "Total: {{score}}",
+      "target": "Target: {{target}} points",
+      "rematch": "🔁 Rematch",
+      "exitMatch": "Exit",
+      "waitingRematch": "Waiting for host to start rematch...",
+      "nextRound": "पुढील फेरी ▶",
+      "waitingNextRound": "यजमानाची पुढची फेरी सुरू होण्याची वाट पाहत आहे..."
+    },
+    "hostLeft": {
+      "title": "😵 यजमानाने खेळ सोडला",
+      "msg": "होस्टने सोडले किंवा कनेक्शन गमावले. सामन्यात व्यत्यय आला.",
+      "back": "मेनूवर परत"
+    },
+    "hostOffline": {
+      "titleSec": "⚠️ __{{seconds}}_ s साठी होस्ट ऑफलाइन दिसतो",
+      "titleMin": "⚠️ होस्ट __{{minutes}}_ मिनिटांसाठी ऑफलाइन दिसतो",
+      "msg": "सामना यजमान परत येण्याची वाट पाहत आहे. तुम्ही कधीही सोडू शकता.",
+      "leave": "सामना सोडा"
+    },
+    "trashTalk": {
+      "0": "ते घ्या! 💥",
+      "1": "बूम! 🥊",
+      "2": "लकी ड्रॉ, हं?",
+      "3": "तिथे भाग्यवान झालो",
+      "4": "माझे वाईट 💩",
+      "5": "कचरा टाका!",
+      "6": "ढीग घेऊ नका!",
+      "7": "कॅनस्टा कुठे आहे?",
+      "8": "खूप विचार करत आहे 🐌",
+      "9": "घाई करा!",
+      "10": "ते सापडले? 👀",
+      "11": "😂",
+      "12": "🤡",
+      "13": "🔥"
+    }
+  },
+  "events": {
+    "newRound": "▶ नवीन फेरी सुरु",
+    "drewFromDeck": "__{{player}}_ डेकवरून काढले",
+    "tookPile": "__{{player}}_ ने पाइल घेतला ( __{{count}}_ कार्ड)",
+    "discarded": "__{{player}}_ टाकून दिले __{{card}}_",
+    "playedGame": "__{{player}}_ खेळला: __{{cards}}_",
+    "addedToGame": "__{{player}}_ ने __{{cards}}_ एका मेल्डमध्ये जोडले",
+    "gotDead": "📦 __{{player}}_ ने डेड पाइल घेतला!",
+    "bateu": "🏆 __{{player}}_ बाहेर गेला!",
+    "roundEnd": "फेरी संपली",
+    "mortoToDeck": "📦 डेक रिकामा! मृतांचा ढीग झाला डेक!",
+    "deckExhausted3x": "⏹️ डेक 3 वेळा संपला — गोल ओव्हर!",
+    "pileReshuffled": "🔀 डेक रिकामा ( __{{n}}_ / __{{max}}_ ) — ढीग बदलला!",
+    "allExhausted": "🃏 सर्व काही संपले — पूर्ण!",
+    "layoutMode": "🔧 लेआउट मोड",
+    "system": "प्रणाली"
+  },
+  "online": {
+    "namePrompt": "तुझे नाव काय आहे?",
+    "nameSubtitle": "इतर खेळाडू हे पाहतील",
+    "namePlaceholder": "तुमचे नाव",
+    "homeTitle": "Play Online",
+    "changeName": "Change name",
+    "createRoom": "🏠 CREATE ROOM",
+    "browseRooms": "🌐 BROWSE PUBLIC ROOMS",
+    "joinCodeLabel": "Room code",
+    "join": "JOIN",
+    "joinShort": "Full",
+    "configRoom": "Configure Room",
+    "modeTitle": "Game Mode",
+    "targetTitle": "Target Score",
+    "visibilityTitle": "Room Visibility",
+    "visibilityPublic": "🌐 Public",
+    "visibilityPrivate": "🔒 Private",
+    "visibilityHintPublic": "Any player ही खोली शोधून त्यात सामील होऊ शकतात",
+    "visibilityHintPrivate": "कोड असलेले लोकच त्यात सामील होऊ शकतात",
+    "createRoomBtn": "खोली तयार करा →",
+    "browseTitle": "सार्वजनिक खोल्या",
+    "refresh": "↻ रिफ्रेश",
+    "searching": "खोल्या शोधत आहेत...",
+    "emptyRooms": "सार्वजनिक खोल्या उपलब्ध नाहीत",
+    "emptyRoomsSub": "प्रारंभ करण्यासाठी सार्वजनिक कक्ष तयार करा!",
+    "roomCodeTitle": "रूम कोड",
+    "roomCodeTap": "कॉपी करण्यासाठी टॅप करा",
+    "roomCodeCopied": "✓ कॉपी केले!",
+    "shareWhatsApp": "WhatsApp वर शेअर करा",
+    "whatsAppMsg": "चला कॅनस्टा खेळूया! 🃏\nया कोडसह रूममध्ये सामील व्हा:\n\n __{{code}}__",
+    "playersCount": "Players ( __{{filled}}__ /4)",
+    "playersOf": "__{{count}}__ /4 players",
+    "startGame": "▶ START GAME",
+    "waitingPlayers": "Waiting for players...",
+    "waitingHost": "Waiting for host to start...",
+    "leaveRoom": "← Leave room",
+    "team1": "Team 1",
+    "team2": "Team 2",
+    "you": "(you)",
+    "seatBot": "🤖 बॉट (बसण्यासाठी टॅप करा)",
+    "seatFree": "...रिक्त (बसण्यासाठी टॅप करा)",
+    "publicBadge": "🌐 सार्वजनिक खोली",
+    "privateBadge": "🔒 खाजगी खोली",
+    "invalidCode": "अवैध कोड",
+    "googleLink": "🔐 Link to Google",
+    "googleUnlink": "Unlink",
+    "googleLinked": "✓ Linked to Google",
+    "googleSignIn": "🔐 Sign in with Google",
+    "googleHint": "Restores your profile even after reinstalling the app",
+    "loginCanceled": "Login canceled",
+    "googleIdTokenEmpty": "Failed to obtain Google token (empty idToken)",
+    "googleAlreadyInProgress": "Already in progress",
+    "googlePlayServicesUnavailable": "Google Play Services unavailable",
+    "googleUnknownError": "[{{code}}] {{msg}}",
+    "errorUnknown": "Unknown error",
+    "loginFailedTitle": "Google login failed",
+    "loginOkTitle": "Login OK",
+    "loginOkMsg": "Welcome back, {{name}}! Stats restored.",
+    "loginNoProfileTitle": "Google login OK",
+    "loginNoProfileMsg": "I couldn't find an old profile linked to this Google account. If you had a profile before and want to recover it, contact me and I'll restore it manually by your old name. For now, pick a name to continue.",
+    "unlinkTitle": "Unlink Google?",
+    "unlinkMsg": "Your profile and stats stay saved — when you sign back in with Google, everything is restored. You'll become an anonymous player on this device.",
+    "dividerOr": "or",
+    "hostOfflineBanner": "Host appears offline for {{seconds}}s",
+    "errors": {
+      "createRoom": "Failed to create room",
+      "roomNotFound": "Room not found",
+      "roomAbandoned": "Room abandoned",
+      "roomInvalid": "Invalid room",
+      "gameStarted": "This game already started",
+      "accountInRoom": "Your account is already in this room on another device. Leave that one first.",
+      "roomFull": "Room full (4/4)",
+      "joinRoom": "Failed to join room",
+      "seatTaken": "This seat is already taken",
+      "switchSeat": "Failed to change seat: {{msg}}",
+      "startGame": "Failed to start game",
+      "rematch": "Failed to start rematch",
+      "fetchRooms": "Failed to fetch rooms: {{msg}}",
+      "claimName": "Failed to reserve name",
+      "noAuth": "Not authenticated"
+    }
+  },
+  "profile": {
+    "nameTooShort": "Name too short (min 2 letters)",
+    "nameTooLong": "Name too long (max 16)",
+    "nameInvalidChars": "Use only letters, numbers, space, _ or -",
+    "nameTaken": "This name is already taken. Pick another.",
+    "nameRegisterOffline": "No connection to register the name right now.",
+    "googleConnected": "Google account connected! Now pick a name to play.",
+    "googleLoginFail": "Google sign-in failed"
+  },
+  "ranking": {
+    "title": "🏆 Ranking",
+    "subtitle": "Top online players",
+    "noUsers": "No players in the ranking yet",
+    "you": "You",
+    "rank": "#{{rank}}",
+    "rating": "Rating",
+    "wins": "W",
+    "losses": "L",
+    "winRate": "Rate",
+    "totalGames": "Games",
+    "loading": "Loading ranking...",
+    "refreshing": "Refreshing...",
+    "dailyTitle": "🎁 Daily Reward",
+    "dailyStreak": "🔥 {{days}} day streak",
+    "dailyXp": "+{{xp}} XP",
+    "dailyClaim": "CLAIM",
+    "loadError": "Failed to load ranking"
+  },
+  "stats": {
+    "title": "Stats",
+    "profileHeader": "Profile",
+    "levelMax": "Max level!",
+    "xpProgress": "{{xpInLevel}} / {{xpNeeded}} XP",
+    "xpTotalLabel": "Total XP",
+    "nextLevel": "Level {{level}}: {{rank}}",
+    "streakLine": "{{count}} day{{plural}} in a row",
+    "longestStreakLine": "सर्वात लांब स्ट्रीक: __{{days}}_ दिवस",
+    "sectionStats": "आकडेवारी",
+    "sectionAchievements": "Achievements ({{unlocked}}/{{total}})",
+    "boxes": {
+      "matches": "जुळतात",
+      "wins": "जिंकतो",
+      "winRate": "रेट करा",
+      "rounds": "फेऱ्या",
+      "totalPoints": "एकूण पं",
+      "bestRound": "सर्वोत्तम फेरी",
+      "canastas": "कॅनस्टास",
+      "clean": "स्वच्छ",
+      "c500": "+५००",
+      "c1000": "+1000",
+      "bater": "जा-बाहेर",
+      "winStreak": "विन स्ट्रीक",
+      "botWL": "बॉट W/L",
+      "onlineRating": "ऑनलाइन रेटिंग",
+      "onlineWL": "ऑनलाइन W/L"
+    },
+    "categories": {
+      "victories": "🏆 विजय",
+      "canastas": "🃏 कॅनस्टास",
+      "score": "💰 स्कोअर",
+      "streak": "🔥 स्ट्रीक",
+      "special": "⚡ विशेष"
+    }
+  },
+  "rankingScreen": {
+    "back": "← मागे",
+    "title": "🏆 रँकिंग",
+    "tabBot": "🤖 वि बॉट",
+    "tabOnline": "🌐 ऑनलाइन (PvP)",
+    "championsTitle": "🏆 मासिक चॅम्पियन्स",
+    "championsRating": "__{{rating}}_ गुण",
+    "loading": "लोड करत आहे...",
+    "emptyBot": "अद्याप कोणतेही बॉट सामने खेळलेले नाहीत.",
+    "emptyOnline": "अद्याप कोणतेही ऑनलाइन सामने खेळलेले नाहीत.",
+    "sessionExpired": "तुमचे सत्र कालबाह्य झाले (तुम्ही ॲप पुन्हा स्थापित केले). तुमचे प्रोफाइल पुनर्संचयित करण्यासाठी आणि रँकिंग पाहण्यासाठी Google सह साइन इन करा.",
+    "reloginGoogle": "🔐 Google सह साइन इन करा",
+    "diagRanking": "रँकिंग डायग: __{{diag}}_",
+    "diagDaily": "दैनिक डायग: __{{diag}}_",
+    "rowYou": "(तुम्ही)",
+    "rowLevelRank": "स्तर __{{level}}_ · __{{rank}}_",
+    "rowRating": "· __{{rating}}_ गुण",
+    "rowExpert": "· 🧠 __{{wins}}_ / __{{total}}_ · __{{pct}}_ %",
+    "rowScoreSub": "__{{total}}_ खेळ",
+    "detailLevel": "स्तर __{{level}}_ · __{{rank}}_",
+    "detailLastSeen": "__{{ago}}_ पूर्वी पाहिले",
+    "detailBot": "🤖 वि बॉट",
+    "detailOnline": "🌐 ऑनलाइन (PvP)",
+    "detailMatches": "Matches",
+    "detailWins": "Wins",
+    "detailLosses": "नुकसान",
+    "detailExpertAI": "🧠 Hard AI (PIMC)",
+    "detailExpertVal": "{{wins}}/{{total}}",
+    "detailExpertWithPct": "{{wins}}/{{total}}  ·  {{pct}}%",
+    "detailCurStreak": "Current streak",
+    "detailLongestStreak": "Longest streak",
+    "detailRating": "Rating",
+    "detailInvicto": "🏅 UNDEFEATED vs BOT — {{total}} games, no losses!",
+    "detailTrophies": "🏆 Monthly trophies ({{count}})",
+    "detailH2H": "⚔️ Head-to-head",
+    "detailH2HLine": "You × {{name}}",
+    "detailH2HSub": "in {{total}} online matches",
+    "detailCanastas": "🃏 Canastas",
+    "detailCleanLabel": "Clean (200)",
+    "detailC500Label": "500 (13 cards)",
+    "detailC1000Label": "1000 (14 cards)",
+    "detailDirtyLabel": "Dirty (100)",
+    "detailTotalLabel": "Total",
+    "detailBaterLabel": "Go-outs",
+    "detailRecords": "📊 Records",
+    "detailBiggestRound": "Highest round score",
+    "detailBiggestMatch": "Biggest match diff",
+    "detailTotalPoints": "Total points",
+    "detailXP": "XP",
+    "detailLongestDaily": "Longest daily streak",
+    "detailHistory": "📜 Recent matches",
+    "detailMatchBot": "· bot",
+    "detailMatchOnline": "· ऑनलाइन",
+    "detailMatchVs": "वि __{{names}}_",
+    "detailClose": "बंद करा",
+    "timeNow": "आता",
+    "timeMin": "{{n}} min",
+    "timeHour": "{{n}} h",
+    "timeDay": "{{n}} d"
+  },
+  "achievements": {
+    "first_win": {
+      "title": "First Win",
+      "description": "Win your first match"
+    },
+    "wins_10": {
+      "title": "Winner",
+      "description": "Win 10 matches"
+    },
+    "wins_25": {
+      "title": "Dominator",
+      "description": "Win 25 matches"
+    },
+    "wins_50": {
+      "title": "Conqueror",
+      "description": "Win 50 matches"
+    },
+    "wins_100": {
+      "title": "Unbeatable",
+      "description": "Win 100 matches"
+    },
+    "wins_200": {
+      "title": "Undefeated Legend",
+      "description": "Win 200 matches"
+    },
+    "first_canasta": {
+      "title": "First Canasta",
+      "description": "Make your first canasta"
+    },
+    "clean_canastas_10": {
+      "title": "Collector",
+      "description": "10 clean canastas"
+    },
+    "clean_canastas_25": {
+      "title": "Craftsman",
+      "description": "25 clean canastas"
+    },
+    "clean_canastas_50": {
+      "title": "Canasta Master",
+      "description": "50 clean canastas"
+    },
+    "clean_canastas_100": {
+      "title": "ग्रँडमास्टर",
+      "description": "100 clean canastas"
+    },
+    "canasta_500_first": {
+      "title": "Special Canasta",
+      "description": "1st 13-card canasta (+500)"
+    },
+    "canasta_500_5": {
+      "title": "Specialist",
+      "description": "5 13-card canastas (+500)"
+    },
+    "canasta_500_15": {
+      "title": "Virtuoso",
+      "description": "15 13-card canastas (+500)"
+    },
+    "canasta_1000_first": {
+      "title": "Supreme Canasta",
+      "description": "1st 14-card canasta (+1000)"
+    },
+    "canasta_1000_3": {
+      "title": "Merciless",
+      "description": "3 14-card canastas (+1000)"
+    },
+    "points_10k": {
+      "title": "Millionaire",
+      "description": "Earn 10,000 points"
+    },
+    "points_50k": {
+      "title": "Great Scorer",
+      "description": "Earn 50,000 points"
+    },
+    "points_100k": {
+      "title": "Legendary",
+      "description": "Earn 100,000 points"
+    },
+    "points_250k": {
+      "title": "Canasta God",
+      "description": "Earn 250,000 points"
+    },
+    "canasta_1000_10": {
+      "title": "The Chosen One",
+      "description": "10 14-card canastas (+1000)"
+    },
+    "round_500": {
+      "title": "Perfect Round",
+      "description": "Score 500+ in a single round"
+    },
+    "round_1000": {
+      "title": "Explosion",
+      "description": "एकाच फेरीत 1,000+ स्कोअर करा"
+    },
+    "round_1500": {
+      "title": "अल्ट्रा",
+      "description": "एकाच फेरीत 1,500+ स्कोअर करा"
+    },
+    "streak_3": {
+      "title": "समर्पित",
+      "description": "सलग ३ दिवस"
+    },
+    "streak_7": {
+      "title": "सवयीचा",
+      "description": "सलग ७ दिवस"
+    },
+    "streak_30": {
+      "title": "धर्मांध",
+      "description": "सलग 30 दिवस"
+    },
+    "streak_100": {
+      "title": "ध्यास घेतलेला",
+      "description": "सलग 100 दिवस"
+    },
+    "first_batida": {
+      "title": "बाहेर!",
+      "description": "प्रथमच बाहेर जा"
+    },
+    "win_by_1000": {
+      "title": "क्रशर",
+      "description": "1,000+ गुणांनी जिंका"
+    },
+    "hard_wins_10": {
+      "title": "हार्ड मोड मास्टर",
+      "description": "हार्ड वर 10 विजय"
+    },
+    "win_streak_5": {
+      "title": "अथक",
+      "description": "सलग 5 विजय"
+    },
+    "expert_win_first": {
+      "title": "मन विरुद्ध मशीन",
+      "description": "हार्ड बॉट (AI) विरुद्ध पहिला विजय"
+    },
+    "expert_wins_10": {
+      "title": "एआय हंटर",
+      "description": "हार्ड बॉट विरुद्ध 10 विजय"
+    }
+  },
+  "ranks": {
+    "1": "रुकी",
+    "3": "जिज्ञासू",
+    "5": "शिकाऊ",
+    "7": "खेळाडू",
+    "9": "अनुभवी",
+    "11": "अनुभवी",
+    "14": "विशेषज्ञ",
+    "17": "मास्टर",
+    "19": "ग्रँडमास्टर",
+    "20": "कॅनस्टा लीजेंड"
+  },
+  "achievementToast": {
+    "unlocked": "उपलब्धी अनलॉक!",
+    "xpReward": "+ __{{xp}}__ XP"
+  },
+  "onboarding": {
+    "welcomeTitle": "स्वागत आहे!",
+    "welcomeSubtitle": "प्रारंभ करण्यासाठी नाव निवडा",
+    "namePlaceholder": "आपले नाव",
+    "googleSignIn": "🔐 Google सह साइन इन करा",
+    "continueOffline": "ऑफलाइन प्ले करा",
+    "skipForNow": "नावाशिवाय सुरू ठेवा",
+    "googleLoginFail": "Google साइन-इन अयशस्वी"
+  },
+  "update": {
+    "title": "अद्यतन आवश्यक आहे",
+    "body": "कॅनस्टा ची नवीन आवृत्ती उपलब्ध आहे. खेळत राहण्यासाठी अपडेट करा.",
+    "btn": "आता अपडेट करा"
+  }
+}
