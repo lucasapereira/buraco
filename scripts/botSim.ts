@@ -101,6 +101,10 @@ const featOn = (f: string): Record<TeamId, boolean> => ({
 const TEAM_WILD_SUIT_ALLOC = featOn('A');
 const TEAM_WILD_NO_LOW_ACE = featOn('B');
 const TEAM_WILD_RESERVE = featOn('C');
+// D = TEAM_WILD_PROTECT6: corrige o furo do carve-out `closingCanasta` — NÃO suja
+// candidata limpa viável de 6 cartas pra fechar canastra suja quando o time não
+// tem canastra limpa (report: "sapecou joker na 3-8♠ de 6, sem canastra").
+const TEAM_WILD_PROTECT6 = featOn('D');
 
 // PROXY = adversário-alvo "humano forte" (scripts/proxyBot.ts). Sobrepõe
 // pile-take e descarte com planner de distância-de-bater + modelo de oponente.
@@ -827,18 +831,27 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
             const allTableGames = [...team.games, ...s.teams[oppTeamId].games];
             const hasCleanElsewhere = team.games.some((g, idx) => idx !== gi && checkCanasta(g) === 'clean');
             if (!hasCleanElsewhere) {
-              const cleanCandidates = team.games.filter(g => !g.some(c => c.isJoker) && g.length >= 5);
-              const closingCanasta = game.length === 6;
-              // SMART_CLOSE: ao fechar (size 6→7), também protege se candidato viável existir.
-              // Escape: goingOutNext — bater agora vale o dirty close.
-              const goingOutNext = pNow.hand.length <= 2 && canTeamBater([...team.games.slice(0, gi), [...game, card], ...team.games.slice(gi + 1)], s.gameMode, team.hasGottenDead);
-              const smartCloseActive = TEAM_SMART_CLOSE[team.id] && !goingOutNext;
-              if (cleanCandidates.length <= 1 && !game.some(c => c.isJoker) && game.length >= 5) {
-                const isViable = canCleanCandidateGrow(game, allTableGames, pNow.hand);
-                if (isViable && (!closingCanasta || smartCloseActive)) continue;
-              } else if (!closingCanasta || smartCloseActive) {
-                const thisIsViable = canCleanCandidateGrow(game, allTableGames, pNow.hand);
-                if (thisIsViable) continue;
+              if (TEAM_WILD_PROTECT6[team.id]) {
+                // FIX (issue D): protege QUALQUER candidata limpa viável ≥5 — INCLUI
+                // fechar 6→7 sujo (remove o carve-out closingCanasta). Escape: indo
+                // bater (mão ≤ 2). Não-viável segue fechando suja.
+                const goingOutNext = pNow.hand.length <= 2;
+                if (!goingOutNext && !game.some(c => c.isJoker)
+                    && canCleanCandidateGrow(game, allTableGames, pNow.hand)) continue;
+              } else {
+                const cleanCandidates = team.games.filter(g => !g.some(c => c.isJoker) && g.length >= 5);
+                const closingCanasta = game.length === 6;
+                // SMART_CLOSE: ao fechar (size 6→7), também protege se candidato viável existir.
+                // Escape: goingOutNext — bater agora vale o dirty close.
+                const goingOutNext = pNow.hand.length <= 2 && canTeamBater([...team.games.slice(0, gi), [...game, card], ...team.games.slice(gi + 1)], s.gameMode, team.hasGottenDead);
+                const smartCloseActive = TEAM_SMART_CLOSE[team.id] && !goingOutNext;
+                if (cleanCandidates.length <= 1 && !game.some(c => c.isJoker) && game.length >= 5) {
+                  const isViable = canCleanCandidateGrow(game, allTableGames, pNow.hand);
+                  if (isViable && (!closingCanasta || smartCloseActive)) continue;
+                } else if (!closingCanasta || smartCloseActive) {
+                  const thisIsViable = canCleanCandidateGrow(game, allTableGames, pNow.hand);
+                  if (thisIsViable) continue;
+                }
               }
             }
           }
@@ -1155,6 +1168,7 @@ function main() {
     if (TEAM_WILD_SUIT_ALLOC[t]) bits.push('A:wild-suit-alloc');
     if (TEAM_WILD_NO_LOW_ACE[t]) bits.push('B:no-low-ace');
     if (TEAM_WILD_RESERVE[t]) bits.push('C:wild-reserve');
+    if (TEAM_WILD_PROTECT6[t]) bits.push('D:protect6');
     return bits.length ? bits.join(' + ') : 'baseline';
   };
   console.log(`\n=== Buraco Bot Sim ===`);

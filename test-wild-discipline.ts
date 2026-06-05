@@ -216,5 +216,49 @@ console.log('\n── P6 (issue C): preserva o último coringa pra pegar lixo go
   check('coringa preservado na mão', handAfter.some(c => c.id === wild.id));
 }
 
+// ── P7 (report regressão): NÃO suja candidata limpa de 6 cartas pra fechar suja ──
+console.log('\n── P7 (issue D): não sapeca joker na 3-8♠ (6 cartas) sem canastra ──');
+{
+  const botId: PlayerId = 'bot-1';
+  const s = freshState(botId);
+  const bot = s.players.find(p => p.id === botId)!;
+  const clean6 = [3,4,5,6,7,8].map(v => card(`s${v}`, 'spades', v as Card['value']));
+  s.teams[bot.teamId].games = [clean6]; // 6 cartas limpas, time SEM canastra
+  bot.hand = [
+    card('jk', 'joker', 2 as Card['value']),
+    card('hk', 'hearts', 13), card('hq', 'hearts', 12), card('h10', 'hearts', 10),
+    card('dq', 'diamonds', 12), card('d10', 'diamonds', 10), // mão grande, não vai bater
+  ];
+  s.deck = Array.from({ length: 30 }, (_, i) => card(`dk${i}`, 'hearts', 4));
+  s.turnPhase = 'play';
+  botTurn(s, botId, false);
+  const spades = s.teams[bot.teamId].games.find(g => g.some(c => c.id === 's3'));
+  check('candidata 3-8♠ preservada limpa (sem joker)',
+    !!spades && !meldHasJoker(spades!),
+    `spades=${JSON.stringify(spades?.map(c => c.id))}`);
+}
+
+// ── P7-controle: fechar LIMPO com 2♠ natural NÃO é bloqueado (good move) ──
+console.log('\n── P7-controle: fechar com 2♠ natural vira canastra limpa ──');
+{
+  const botId: PlayerId = 'bot-1';
+  const s = freshState(botId);
+  const bot = s.players.find(p => p.id === botId)!;
+  const clean6 = [3,4,5,6,7,8].map(v => card(`s${v}`, 'spades', v as Card['value']));
+  s.teams[bot.teamId].games = [clean6];
+  bot.hand = [
+    card('s2', 'spades', 2 as Card['value']), // 2♠ fecha 2-8♠ LIMPO (posição 2 natural)
+    card('hk', 'hearts', 13), card('hq', 'hearts', 12), card('h10', 'hearts', 10),
+    card('dq', 'diamonds', 12),
+  ];
+  s.deck = Array.from({ length: 30 }, (_, i) => card(`dk${i}`, 'hearts', 4));
+  s.turnPhase = 'play';
+  botTurn(s, botId, false);
+  const spades = s.teams[bot.teamId].games.find(g => g.some(c => c.id === 's3'));
+  check('2♠ foi adicionado → canastra LIMPA de 7',
+    !!spades && spades!.length === 7 && checkCanasta(spades!) === 'clean',
+    `spades=${JSON.stringify(spades?.map(c => c.id))} type=${spades ? checkCanasta(spades) : '?'}`);
+}
+
 console.log(`\n═══ ${passed} passed, ${failed} failed ═══`);
 process.exit(failed > 0 ? 1 : 0);

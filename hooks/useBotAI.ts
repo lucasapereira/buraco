@@ -817,70 +817,29 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           }
 
           if (freshState.gameMode === 'classic') {
-            // No clássico, sujar é arriscado: sem canastra limpa separada, você não pode bater.
+            // No clássico, sujar é arriscado: sem canastra limpa separada, você
+            // não pode bater. Protege QUALQUER candidata limpa viável (sem
+            // coringa, qualquer tamanho) de ser suja — única via de canastra
+            // LIMPA. INCLUI
+            // fechar 6→7 sujo: dirty NÃO habilita bater, só destrói a via limpa
+            // (report do usuário: "sapecou joker na 3-8♠ de 6 cartas, sem
+            // canastra, começo de jogo"). O carve-out `closingCanasta` antigo era
+            // o furo (sujava candidata de 6). Escape: indo bater no próximo lance
+            // (mão ≤ 2). Candidata NÃO-viável segue fechando suja (senão o coringa
+            // encalha num naipe sem saída).
             const allGames = freshState.teams[bot.teamId].games;
-            const otherGames = allGames.filter((_, i) => i !== gi);
-            const hasCleanCanastaElsewhere = otherGames.some(g => checkCanasta(g) === 'clean');
-            const closingCanasta = game.length === 6;
-
+            const hasCleanCanastaElsewhere = allGames.some((g, i) => i !== gi && checkCanasta(g) === 'clean');
             if (!hasCleanCanastaElsewhere) {
-              // O time NÃO tem canastra limpa ainda.
-              // Conta quantos jogos limpos com 5+ cartas existem (candidatos a virar canastra limpa).
-              const cleanCandidates = allGames.filter(g =>
-                !g.some(c => c.isJoker) && g.length >= 5
-              );
-
-              // Coleta TODOS os jogos na mesa (ambos os times) para análise de viabilidade
               const opponentTeamId = bot.teamId === 'team-1' ? 'team-2' : 'team-1';
               const allTableGames = [...allGames, ...freshState.teams[opponentTeamId].games];
-
-              if (cleanCandidates.length <= 1 && !game.some(c => c.isJoker) && game.length >= 5) {
-                // Este jogo é o ÚLTIMO (ou único) candidato a canastra limpa.
-                // Verifica se é VIÁVEL: as cartas necessárias ainda estão disponíveis?
-                const isViable = canCleanCandidateGrow(game, allTableGames, freshBot.hand);
-                if (isViable) {
-                  // Candidato viável — NUNCA suja! Preserva para canastra limpa natural.
-                  continue;
-                }
-                // Candidato INVIÁVEL (cartas presas na mesa) — não adianta preservar.
-                // Se está fechando canastra suja (6→7), permite sujar.
-                if (!closingCanasta) continue; // Mesmo inviável, não suja um jogo <6 sem motivo
-                // closingCanasta + inviável → suja para ao menos ter canastra suja
+              const goingOutNext = freshBot.hand.length <= 2;
+              if (!goingOutNext && !game.some(c => c.isJoker)
+                  && canCleanCandidateGrow(game, allTableGames, freshBot.hand)) {
+                continue;
               }
-
-              // Se temos vários candidatos a canastra limpa E vamos fechar uma canastra suja (6→7),
-              // aí pode sujar este, desde que sobre pelo menos um candidato VIÁVEL limpo.
-              const otherViableCandidates = cleanCandidates.filter(g =>
-                g !== game && canCleanCandidateGrow(g, allTableGames, freshBot.hand)
-              );
-              if (closingCanasta && otherViableCandidates.length >= 1) {
-                // OK, fecha essa como suja — temos outro candidato viável para canastra limpa
-              } else if (!closingCanasta) {
-                // Verifica se ALGUM candidato (incluindo este) é viável
-                const thisIsViable = canCleanCandidateGrow(game, allTableGames, freshBot.hand);
-                if (thisIsViable) continue; // Preserva — ainda tem chance
-                // Nenhum candidato é viável? Libera sujar se vantajoso
-                if (otherViableCandidates.length === 0 && !thisIsViable) {
-                  // Nenhum caminho para canastra limpa — permite sujar para não ficar travado
-                } else {
-                  continue;
-                }
-              } else {
-                // closingCanasta mas nenhum outro candidato viável
-                const hasGottenDead = freshState.teams[bot.teamId].hasGottenDead;
-                if (hasGottenDead) {
-                  // Depois do morto: verifica se este jogo é viável
-                  const thisIsViable = canCleanCandidateGrow(game, allTableGames, freshBot.hand);
-                  if (thisIsViable) continue; // Preserva — ainda tem chance de canastra limpa
-                  // Inviável mesmo depois do morto — suja para não travar
-                }
-                // Antes do morto: permite sujar para fechar canastra e bater (pegar morto)
-              }
-            } else {
-              // Já tem canastra limpa: pode usar o coringa livremente nos outros jogos.
-              // Não precisa de threshold de tamanho — sem risco de ficar sem poder bater.
-              // (a canastra limpa já está protegida pelo checkCanasta === 'clean' acima)
             }
+            // Já tem canastra limpa: usa o coringa livremente (a canastra limpa em
+            // si já está protegida pelo checkCanasta === 'clean' acima).
           } else {
             // Araujo Pereira: qualquer canastra conta → mas sujar tem custo estratégico
             // Só suja se está fechando canastra (6 → 7 suja) ou se jogo tem cartas suficientes.

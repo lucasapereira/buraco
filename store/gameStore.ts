@@ -615,7 +615,12 @@ export const useGameStore = create<GameState & GameActions>()(
               const combined = [...game, topCard, handWithoutTop[i]];
               if (validateSequence(combined, state.gameMode)) {
                 const remaining = futureHand.filter(c => c.id !== topCard.id && c.id !== handWithoutTop[i].id);
-                if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId)) {
+                // `combined` é a meld PÓS-jogada: se estender este jogo com o topo
+                // vira canastra limpa, o bater forçado é LEGAL. Passar `combined`
+                // (não só o estado atual) corrige o veto que bloqueava pegar o lixo
+                // quando a carta do topo FECHAVA a canastra limpa (report do usuário:
+                // Q♣ fechando 6-J♣ em canastra limpa de 7).
+                if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId, combined)) {
                   hasAtLeastOneEscape = true;
                 }
               }
@@ -624,7 +629,9 @@ export const useGameStore = create<GameState & GameActions>()(
               const combined = [...game, topCard];
               if (validateSequence(combined, state.gameMode)) {
                 const remaining = futureHand.filter(c => c.id !== topCard.id);
-                if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId)) {
+                // `combined` é a meld PÓS-jogada (estende o jogo só com o topo):
+                // se vira canastra limpa, o bater forçado é LEGAL (ver acima).
+                if (remaining.length >= 2 || canStillGetDead || teamHasCleanCanasta(state, player.teamId, combined)) {
                   hasAtLeastOneEscape = true;
                 }
               }

@@ -443,14 +443,18 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
             const allTableGames = [...team.games, ...s.teams[oppTeamId].games];
             const hasCleanElsewhere = team.games.some((g, idx) => idx !== gi && checkCanasta(g) === 'clean');
             if (!hasCleanElsewhere) {
-              const cleanCandidates = team.games.filter(g => !g.some(c => c.isJoker) && g.length >= 5);
-              const closingCanasta = game.length === 6;
-              if (cleanCandidates.length <= 1 && !game.some(c => c.isJoker) && game.length >= 5) {
-                const isViable = canCleanCandidateGrow(game, allTableGames, pNow.hand);
-                if (isViable && !closingCanasta) continue;
-              } else if (!closingCanasta) {
-                const thisIsViable = canCleanCandidateGrow(game, allTableGames, pNow.hand);
-                if (thisIsViable) continue;
+              // Protege QUALQUER candidata limpa viável (sem coringa, qualquer
+              // tamanho) de ser suja — é a única via de canastra LIMPA (bater no
+              // clássico). INCLUI fechar 6→7 sujo: dirty NÃO habilita bater, só
+              // destrói a via limpa (report: "sapecou joker na 3-8♠ de 6 cartas,
+              // sem canastra, começo de jogo"). O carve-out `closingCanasta`
+              // antigo era o furo. Escape: indo bater no próximo lance (mão ≤ 2).
+              // Candidata NÃO-viável segue fechando suja (senão o coringa encalha
+              // num naipe sem saída).
+              const goingOutNext = pNow.hand.length <= 2;
+              if (!goingOutNext && !game.some(c => c.isJoker)
+                  && canCleanCandidateGrow(game, allTableGames, pNow.hand)) {
+                continue;
               }
             }
           }
