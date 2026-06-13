@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Pile rule",
       "pileRuleNewPlay": "Your first play MUST include {{card}} (pile top).\n\nYou can:\n• Tap one of your melds on the table (selecting {{card}} + extra cards)\n• Or play a new meld with 3+ cards",
       "pileRuleAdd": "You must use {{card}} (pile top) on your first play (new meld or adding to an existing one).",
+      "pileBuriedMsg": "اللعبة التي تُنزِل الورقة العليا من كومة النفايات يجب أن تستخدم أوراقًا من يدك — لا يمكنك استخدام أوراق أتت من داخل الكومة. استخدم أوراق يدك (أو ورقة الجوكر) لإنزال الورقة العليا.",
       "minCardsTitle": "Min 3 cards",
       "minCardsMsg": "Select at least 3 cards to play a Classic meld.",
       "invalidCombTitle": "Invalid combination",

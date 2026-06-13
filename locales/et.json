@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Paki reegel",
       "pileRuleNewPlay": "Sinu esimene käik PEAB sisaldama {{card}} (paki ülemine).\n\nVõid:\n• Puudutada oma kombinatsiooni laual (valides {{card}} + lisakaardid)\n• Või panna välja uue kombinatsiooni 3+ kaardiga",
       "pileRuleAdd": "Pead kasutama {{card}} (paki ülemine) oma esimeses käigus (uus kombinatsioon või lisamine olemasolevale).",
+      "pileBuriedMsg": "Käik, mis käib välja prügipaki pealmise kaardi, peab kasutama kaarte sinu KÄEST — sa ei tohi kasutada kaarte, mis tulid prügipaki seest. Pealmise kaardi väljakäimiseks kasuta käes olevaid kaarte (või jokkerit).",
       "minCardsTitle": "Min 3 kaarti",
       "minCardsMsg": "Vali vähemalt 3 kaarti, et kombinatsioon välja panna.",
       "invalidCombTitle": "Vigane kombinatsioon",

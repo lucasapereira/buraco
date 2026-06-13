@@ -41,6 +41,7 @@ export interface UndoState {
   deads: Card[][];
   gameLog: GameEvent[];
   mustPlayPileTopId: string | null;
+  pileTakenBuriedIds: string[];
 }
 
 export interface GameState {
@@ -62,6 +63,11 @@ export interface GameState {
   botDifficulty: BotDifficulty;      // tier escolhido no início (por-partida)
   discardedCardHistory: string[];
   mustPlayPileTopId: string | null; // ID da carta do topo do lixo que deve ser baixada
+  // IDs das cartas ENTERRADAS do lixo (todas menos o topo) trazidas pra mão na
+  // última pegada cuja obrigação ainda está pendente. A jogada que cumpre a
+  // obrigação (mela o topo) NÃO pode usar essas cartas — a captura tem de ser
+  // justificada por cartas da MÃO (regra clássica). Limpa ao cumprir/fim de turno.
+  pileTakenBuriedIds: string[];
   deckReshuffleCount: number;        // Quantas vezes o lixo foi reembaralhado como novo monte
   roundNumber: number;               // Contador de rodadas para sincronização
   gameId: string;                    // ID único da partida (para sincronização online)
@@ -121,6 +127,7 @@ export function createInitialGameState(targetScore: number = 1500, gameMode: Gam
     botDifficulty,
     discardedCardHistory: [],
     mustPlayPileTopId: null,
+    pileTakenBuriedIds: [],
     deckReshuffleCount: 0,
     turnHistory: [],
     roundNumber: 1,

@@ -7,8 +7,8 @@
  * - Marca 🔥 quem está invicto vs bot (currentBotWinStreak >= 5 e nunca perdeu)
  */
 
-import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -125,11 +125,17 @@ export default function RankingScreen() {
     setLoading(false);
   }, [finalizePastMonthlyChampions, loadAllProfiles, loadMonthlyChampions, syncProfileToFirebase]);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => { if (mounted) await reload(); })();
-    return () => { mounted = false; };
-  }, [reload]);
+  // Recarrega SEMPRE que a aba ganha foco — não só ao montar. Nas abas do
+  // expo-router a tela fica montada, então "abrir ranking → jogar → voltar"
+  // mostrava dados velhos (a vitória só aparecia ao reiniciar o app). O overlay
+  // local já reflete a partida na hora; o reload no foco fecha o gap.
+  useFocusEffect(
+    React.useCallback(() => {
+      let active = true;
+      (async () => { if (active) await reload(); })();
+      return () => { active = false; };
+    }, [reload])
+  );
 
   const handleRelogin = async () => {
     setReloginBusy(true);

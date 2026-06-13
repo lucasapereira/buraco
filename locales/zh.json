@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ 弃牌堆规则",
       "pileRuleNewPlay": "你的第一次出牌必须包含 {{card}}(弃牌堆顶)。\n\n你可以:\n• 点击桌上你的组合(选择 {{card}} + 额外的牌)\n• 或打出 3+ 张牌的新组合",
       "pileRuleAdd": "你必须在第一次出牌时使用 {{card}}(弃牌堆顶)(新组合或加入现有组合)。",
+      "pileBuriedMsg": "打出弃牌堆顶牌的那手牌必须使用你手中的牌——不能使用来自弃牌堆里面的牌。请用手牌（或万能牌）来打出顶牌。",
       "minCardsTitle": "至少 3 张牌",
       "minCardsMsg": "至少选择 3 张牌才能打出经典组合。",
       "invalidCombTitle": "组合无效",

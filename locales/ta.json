@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Pile rule",
       "pileRuleNewPlay": "Your first play MUST include {{card}} (pile top).\n\nYou can:\n• Tap one of your melds on the table (selecting {{card}} + extra cards)\n• Or play a new meld with 3+ cards",
       "pileRuleAdd": "You must use {{card}} (pile top) on your first play (new meld or adding to an existing one).",
+      "pileBuriedMsg": "குப்பைக் கட்டின் மேல் சீட்டை இறக்கும் நகர்வு உங்கள் கையிலுள்ள சீட்டுகளைப் பயன்படுத்த வேண்டும் — கட்டுக்குள் இருந்து வந்த சீட்டுகளைப் பயன்படுத்த முடியாது. மேல் சீட்டை இறக்க கையிலுள்ள சீட்டுகளை (அல்லது வைல்டை) பயன்படுத்தவும்.",
       "minCardsTitle": "Min 3 cards",
       "minCardsMsg": "Select at least 3 cards to play a Classic meld.",
       "invalidCombTitle": "Invalid combination",

@@ -64,6 +64,48 @@ export function longestNaturalRun(seq: Card[]): number {
 }
 
 /**
+ * Uma canastra SUJA (≥7, com coringa) é "REGATÁVEL" quando o coringa está numa
+ * ponta da corrida — existe UMA carta natural do naipe que, adicionada, desloca o
+ * coringa pra sua posição-2 natural e LIMPA a canastra (suja→limpa). Ex.:
+ * [4,5,6,7,8,9♣ + 2♣wild] → adicionar 3♣ natural ⇒ 2,3,4,5,6,7,8,9 limpa.
+ *
+ * Gate em `checkCanasta(game) === 'dirty'` (não len≥7 cru): só aqui o argumento
+ * de segurança vale (a canastra suja já pontua; não estender não perde nada, e
+ * 13/14 suja não ganha bônus de tamanho). Coringa FÍSICO ou 2 de outro naipe nunca
+ * é regatável — checkCanasta retorna 'dirty' pra qualquer carta, então o loop dá false.
+ */
+export function isRedeemableDirty(game: Card[]): boolean {
+  if (checkCanasta(game) !== 'dirty') return false;
+  const normal = game.filter(c => !c.isJoker);
+  if (normal.length === 0) return false;
+  // Trinca suja nunca limpa (mesmo valor + coringa = sempre suja).
+  if (normal.every(c => c.value === normal[0].value)) return false;
+  const suit = normal[0].suit;
+  for (let v = 3; v <= 14; v++) {
+    const synthetic: Card = { id: `__redeem-${suit}-${v}`, deck: 1, suit, value: v as Card['value'], isJoker: false };
+    if (checkCanasta([...game, synthetic]) === 'clean') return true;
+  }
+  return false;
+}
+
+/**
+ * true se adicionar a carta NATURAL `card` a uma canastra suja REGATÁVEL travaria
+ * o coringa no miolo — destruindo a via de limpeza (suja→limpa) sem limpá-la agora.
+ * Report do usuário: bot tinha [4..9♣ + 2♣] e meteu J♣, prendendo o 2♣ no 10 →
+ * canastra suja para sempre. Bloqueia esse tipo de extensão (a canastra já pontua;
+ * preservar o upgrade limpo vale +100..+800). NÃO bloqueia se a própria carta limpa
+ * (vira o redeemer) nem se a canastra continua regatável depois.
+ */
+export function wouldLockRedeemableWild(game: Card[], card: Card, gameMode: GameMode): boolean {
+  if (card.isJoker) return false;
+  if (!isRedeemableDirty(game)) return false;
+  const combined = [...game, card];
+  if (!validateSequence(combined, gameMode)) return false;
+  if (checkCanasta(combined) === 'clean') return false;  // a carta É o redeemer → ok
+  return !isRedeemableDirty(combined);                    // só trava se perdeu a regatabilidade
+}
+
+/**
  * Procura uma jogada que mele `topCard` (obrigação do lixo no Clássico) SEM
  * degradar nenhuma meld limpa do time. `hand` NÃO contém topCard.
  *
@@ -134,6 +176,40 @@ export function pileTakeForcesDirtyingCleanPath(
     return isMeldClean([...game, ...added]); // meld protegida: só aceita se continuar limpa
   });
   return play === null;
+}
+
+/**
+ * VETO de topo-CORINGA no pegar-lixo (Clássico). Espelha as hard rules do bloco
+ * wild-top do shouldTakePileSmart, pra aplicar também no caminho PIMC ('expert'),
+ * que decide por rollout material e adora o coringa de 20 pts (report: "agora ele
+ * usa o coringa pra pegar lixo"). true = recusa pegar. NÃO veta quando o topo:
+ *  (a) encaixa NATURAL num jogo do time (2 do naipe na posição-2), ou
+ *  (b) forma jogada LIMPA nova com 2 cartas do próprio naipe da mão.
+ * Veta quando, sem encaixe natural/limpo:
+ *  (c) o time não tem canastra limpa e tem candidata limpa ≥4 (gastar o coringa
+ *      sujo compete com a única via de bater), ou
+ *  (d) meldar o topo direto sujaria uma canastra limpa existente.
+ */
+export function wildTopTakeVeto(
+  pile: Card[], hand: Card[], teamGames: Card[][], gameMode: GameMode
+): boolean {
+  if (gameMode !== 'classic' || pile.length === 0) return false;
+  const topCard = pile[pile.length - 1];
+  if (!topCard.isJoker) return false;
+  const isNaturalFit = teamGames.some(g => !wouldDirtyGame(topCard, g) && validateSequence([...g, topCard], gameMode));
+  if (isNaturalFit) return false;
+  const suit = topCard.suit !== 'joker' ? topCard.suit : null;
+  if (suit) {
+    const sameSuit = hand.filter(c => !c.isJoker && c.suit === suit);
+    for (let i = 0; i < sameSuit.length; i++) {
+      for (let j = i + 1; j < sameSuit.length; j++) {
+        if (validateSequence([topCard, sameSuit[i], sameSuit[j]], gameMode)) return false;
+      }
+    }
+  }
+  const hasCleanCanasta = teamGames.some(g => checkCanasta(g) === 'clean');
+  if (!hasCleanCanasta && teamGames.some(g => !g.some(c => c.isJoker) && g.length >= 4)) return true;
+  return teamGames.some(g => checkCanasta(g) === 'clean' && validateSequence([...g, topCard], gameMode));
 }
 
 /**

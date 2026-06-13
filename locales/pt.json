@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Regra do Lixo",
       "pileRuleNewPlay": "Sua primeira jogada DEVE incluir o {{card}} (topo do lixo).\n\nVocê pode:\n• Tocar num jogo seu já na mesa (selecionando o {{card}} + cartas para completar)\n• Ou baixar um novo jogo com 3+ cartas",
       "pileRuleAdd": "Você deve usar o {{card}} (topo do lixo) na sua primeira jogada (novo jogo ou adicionar a um existente).",
+      "pileBuriedMsg": "A jogada que baixa o topo do lixo precisa usar cartas da sua MÃO — não vale usar cartas que vieram de dentro do lixo. Use cartas da mão (ou o coringa) para baixar o topo.",
       "minCardsTitle": "Mínimo 3 cartas",
       "minCardsMsg": "Selecione no mínimo 3 cartas para baixar um jogo STBL.",
       "invalidCombTitle": "Combinação Inválida",

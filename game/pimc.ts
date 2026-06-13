@@ -10,10 +10,10 @@
  * Async + fatiado pra NÃO travar a UI; motor de rollout auditado vs gameStore.
  */
 import { Card, generateDeck, shuffle } from './deck';
-import { GameState, PlayerId, TeamId } from './engine';
+import { GameState, PlayerId, TeamId, getNextPlayer } from './engine';
 import { checkCanasta } from './rules';
-import { getCardPoints, canastaBonusValue } from './botHelpers';
-import { botTurn } from './headlessEngine';
+import { getCardPoints, canastaBonusValue, opponentDangerScore, canTeamBater } from './botHelpers';
+import { botTurn, discard, endRound, playerOf, teamOf, addToGamesPhase, playSequencesPhase } from './headlessEngine';
 
 // ── fastClone: copia TODA a estrutura de containers, COMPARTILHA os Card
 //    (imutáveis — o motor só os MOVE entre arrays, nunca muta um Card).
@@ -38,9 +38,29 @@ export function fastClone(s: GameState): GameState {
   };
 }
 
+/** Crédito de PROGRESSO rumo à canastra limpa OBRIGATÓRIA (clássico). Sem ela
+ *  o time não bate, mas o rollout truncado (8 plies) raramente alcança a batida
+ *  — o eval material puro é cego a isso e troca a via limpa por pontos (report:
+ *  bot não suja a canastra limpa que tem, mas fica sem condições de FAZER uma;
+ *  pega lixo com topo-coringa e queima o coringa em meld suja). Espelha o
+ *  cleanCanastaProximityBonus do evaluateHandPotential (+7.4pp validado):
+ *  candidata limpa de 6 cartas → +90, de 5 → +45; zera quando o time já tem a
+ *  canastra limpa (daí o gradiente vem do próprio canastaBonusValue). */
+function cleanPathProximity(games: Card[][]): number {
+  let best = 0;
+  for (const g of games) {
+    if (checkCanasta(g) === 'clean') return 0; // requisito já cumprido
+    if (g.length >= 7 || g.some(c => c.isJoker)) continue;
+    if (g.length === 6) best = Math.max(best, 90);
+    else if (g.length === 5) best = Math.max(best, 45);
+  }
+  return best;
+}
+
 /** Valor da posição p/ `myTeam` num estado de meio-de-jogo. Espelha o scoring
- *  real: pts melded + bônus de canastra − pts na mão − 100 se sem morto. */
-export function horizonEval(state: GameState, myTeam: TeamId): number {
+ *  real: pts melded + bônus de canastra − pts na mão − 100 se sem morto.
+ *  `cleanEval` liga o crédito de proximidade de canastra limpa (clássico). */
+export function horizonEval(state: GameState, myTeam: TeamId, cleanEval: boolean = true): number {
   const oppTeam: TeamId = myTeam === 'team-1' ? 'team-2' : 'team-1';
   const pseudo = (t: TeamId): number => {
     const team = state.teams[t];
@@ -49,6 +69,7 @@ export function horizonEval(state: GameState, myTeam: TeamId): number {
       for (const c of g) v += getCardPoints(c);
       v += canastaBonusValue(g);
     }
+    if (cleanEval && state.gameMode === 'classic') v += cleanPathProximity(team.games);
     v -= state.players.filter(p => p.teamId === t)
       .reduce((a, p) => a + p.hand.reduce((x, c) => x + getCardPoints(c), 0), 0);
     if (!team.hasGottenDead) v -= 100;
@@ -87,7 +108,7 @@ export function determinize(real: GameState, selfId: PlayerId): GameState {
  *  de horizonte. Núcleo compartilhado por pimcShouldTakePile (async/produção) e
  *  pimcDecideSync (harness A/B) — garante que os 2 caminhos são idênticos. */
 function scoreDeterminization(
-  real: GameState, selfId: PlayerId, myTeam: TeamId, depth: number
+  real: GameState, selfId: PlayerId, myTeam: TeamId, depth: number, cleanEval: boolean
 ): { take: number; deck: number } {
   const det = determinize(real, selfId); // mesmo hidden state p/ as 2 ações
   const out = { take: 0, deck: 0 };
@@ -102,7 +123,7 @@ function scoreDeterminization(
       plies++;
       if (c.currentTurnPlayerId === before && !c.roundOver) break;
     }
-    const v = horizonEval(c, myTeam);
+    const v = horizonEval(c, myTeam, cleanEval);
     if (action) out.take = v; else out.deck = v;
   }
   return out;
@@ -112,27 +133,39 @@ function scoreDeterminization(
  *  re-port contra o +39pp. Produção usa a async fatiada abaixo. */
 export function pimcDecideSync(
   real: GameState, selfId: PlayerId,
-  opts: { determinizations?: number; depth?: number } = {}
+  opts: { determinizations?: number; depth?: number; cleanEval?: boolean } = {}
 ): boolean {
   const D = opts.determinizations ?? 30;
   const DEPTH = opts.depth ?? 8;
+  const cleanEval = opts.cleanEval ?? true;
   const myTeam = real.players.find(p => p.id === selfId)!.teamId;
   let sumTake = 0, sumDeck = 0;
   for (let d = 0; d < D; d++) {
-    const r = scoreDeterminization(real, selfId, myTeam, DEPTH);
+    const r = scoreDeterminization(real, selfId, myTeam, DEPTH, cleanEval);
     sumTake += r.take; sumDeck += r.deck;
   }
   return sumTake >= sumDeck;
 }
 
+/** Peso default da correção de perigo no descarte PIMC (ver dangerPenalties).
+ *  Calibrado no harness — ver scripts/botSim.ts swap test. */
+export const DEFAULT_DISCARD_DANGER_WEIGHT = 1.0;
+
 export interface PimcOpts {
   determinizations?: number;
   depth?: number;
   deadlineMs?: number;
+  /** peso da penalidade de perigo (estende meld visível do oponente) no descarte */
+  dangerWeight?: number;
   /** chama o yield (cede o frame) a cada ~yieldEveryMs de trabalho síncrono */
   yieldEveryMs?: number;
   /** primitiva de yield fornecida pelo caller (RN: InteractionManager/rAF) */
   onYield?: () => Promise<void>;
+  /** crédito de proximidade de canastra limpa no horizonEval (default ON) */
+  cleanEval?: boolean;
+  /** escala a penalidade de perigo pela proximidade de bater do oponente
+   *  (default ON — validado swap n=300: +4.7pp simétrico) */
+  dangerProximity?: boolean;
 }
 
 /**
@@ -147,6 +180,7 @@ export async function pimcShouldTakePile(
 ): Promise<boolean> {
   const D = opts.determinizations ?? 30;
   const DEPTH = opts.depth ?? 8;
+  const cleanEval = opts.cleanEval ?? true;
   const deadline = Date.now() + (opts.deadlineMs ?? 1200);
   const yieldEvery = opts.yieldEveryMs ?? 50;
   const doYield = opts.onYield ?? (() => new Promise<void>(r => setTimeout(r, 0)));
@@ -158,11 +192,265 @@ export async function pimcShouldTakePile(
   let lastYield = Date.now();
 
   for (let d = 0; d < D; d++) {
-    const r = scoreDeterminization(real, selfId, myTeam, DEPTH);
+    const r = scoreDeterminization(real, selfId, myTeam, DEPTH, cleanEval);
     sumTake += r.take; sumDeck += r.deck;
     done++;
     if (Date.now() - lastYield >= yieldEvery) { await doYield(); lastYield = Date.now(); }
     if (Date.now() >= deadline) break; // anytime: usa o que completou
   }
   return done === 0 ? false : sumTake >= sumDeck;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PIMC TIMING DE MELD (Stage 4) — decisão binária "baixo agora vs seguro este
+// turno". A fase de meld era a última grande decisão 100% heurística (a
+// heurística SEMPRE baixa o que pode, sujeito às regras de disciplina). Baixar
+// cedo revela informação e alimenta jogos que o oponente estende; segurar
+// acumula dívida de pontos na mão e atrasa canastra/morto. O timing certo é
+// exatamente o tipo de plano multi-turno que o rollout enxerga e a heurística
+// não. Mesma estrutura do pile-take: 2 ações × D determinizações × depth plies.
+// "hold" vale só para ESTE turno (a política de rollout volta a baixar
+// normalmente nos turnos seguintes) e NUNCA pula a obrigação do lixo (regra).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** true se as fases de meld da política mudariam a mão AGORA (senão segurar ==
+ *  baixar e a busca é desperdício — pula). Roda as fases num clone. */
+export function meldsAvailable(real: GameState, selfId: PlayerId): boolean {
+  const c = fastClone(real);
+  c.turnPhase = 'play';
+  c.mustPlayPileTopId = null;
+  const before = playerOf(c, selfId).hand.length;
+  addToGamesPhase(c, selfId);
+  playSequencesPhase(c, selfId);
+  addToGamesPhase(c, selfId);
+  return playerOf(c, selfId).hand.length !== before;
+}
+
+/** Avalia 1 determinização: roda "baixa" vs "segura" e devolve os valores. */
+function scoreHoldDeterminization(
+  real: GameState, selfId: PlayerId, myTeam: TeamId, depth: number, cleanEval: boolean
+): { play: number; hold: number } {
+  const det = determinize(real, selfId); // mesmo hidden state p/ as 2 ações
+  const out = { play: 0, hold: 0 };
+  for (const hold of [false, true]) {
+    const c = fastClone(det);
+    let plies = 0;
+    botTurn(c, selfId, undefined, hold); // turnPhase já é 'play' → só meld+descarte
+    plies++;
+    while (!c.roundOver && plies < depth) {
+      const before = c.currentTurnPlayerId;
+      botTurn(c, c.currentTurnPlayerId);
+      plies++;
+      if (c.currentTurnPlayerId === before && !c.roundOver) break;
+    }
+    const v = horizonEval(c, myTeam, cleanEval);
+    if (hold) out.hold = v; else out.play = v;
+  }
+  return out;
+}
+
+/** Versão SÍNCRONA (harness A/B). true = SEGURAR os melds neste turno.
+ *  Empate → baixa (comportamento atual). */
+export function pimcShouldHoldMeldsSync(
+  real: GameState, selfId: PlayerId,
+  opts: { determinizations?: number; depth?: number; cleanEval?: boolean } = {}
+): boolean {
+  const D = opts.determinizations ?? 30;
+  const DEPTH = opts.depth ?? 8;
+  const cleanEval = opts.cleanEval ?? true;
+  const myTeam = real.players.find(p => p.id === selfId)!.teamId;
+  let sumPlay = 0, sumHold = 0;
+  for (let d = 0; d < D; d++) {
+    const r = scoreHoldDeterminization(real, selfId, myTeam, DEPTH, cleanEval);
+    sumPlay += r.play; sumHold += r.hold;
+  }
+  return sumHold > sumPlay;
+}
+
+/** Decisão PIMC de timing de meld. ASYNC e fatiada (produção). Anytime.
+ *  true = segurar os melds neste turno. */
+export async function pimcShouldHoldMelds(
+  real: GameState, selfId: PlayerId, opts: PimcOpts = {}
+): Promise<boolean> {
+  const D = opts.determinizations ?? 30;
+  const DEPTH = opts.depth ?? 8;
+  const cleanEval = opts.cleanEval ?? true;
+  const deadline = Date.now() + (opts.deadlineMs ?? 1200);
+  const yieldEvery = opts.yieldEveryMs ?? 50;
+  const doYield = opts.onYield ?? (() => new Promise<void>(r => setTimeout(r, 0)));
+  const myTeam = real.players.find(p => p.id === selfId)!.teamId;
+  let sumPlay = 0, sumHold = 0, done = 0;
+  let lastYield = Date.now();
+  for (let d = 0; d < D; d++) {
+    const r = scoreHoldDeterminization(real, selfId, myTeam, DEPTH, cleanEval);
+    sumPlay += r.play; sumHold += r.hold;
+    done++;
+    if (Date.now() - lastYield >= yieldEvery) { await doYield(); lastYield = Date.now(); }
+    if (Date.now() >= deadline) break; // anytime
+  }
+  return done === 0 ? false : sumHold > sumPlay;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PIMC DESCARTE (Stage 2) — busca por determinização na decisão de QUAL carta
+// descartar. Espelha a estrutura do pile-take: amostra D estados escondidos e,
+// pra CADA carta candidata, simula o resto da rodada `depth` plies à frente com
+// a política heurística e avalia o horizonte. Common random numbers: o MESMO
+// estado escondido pontua todas as candidatas (determinize FORA do loop de
+// candidatas) — crítico porque os deltas entre candidatas são pequenos.
+//
+// Sinal novo vs heurística: o rollout enxerga se o descarte ALIMENTA o lixo do
+// próximo oponente (ele pega e ganha → horizonEval cai) e o timing de bater/
+// morto, coisas que a heurística (opponentDangerScore + cardUtility) só aproxima.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Candidatas a descarte: não-coringas distintas por naipe+valor (cartas
+ *  idênticas são intercambiáveis). A legalidade (bater ilegal ao zerar mão) é
+ *  filtrada na hora pelo retorno de `discard`. */
+function discardCandidates(hand: Card[]): Card[] {
+  const seen = new Set<string>();
+  const out: Card[] = [];
+  for (const c of hand) {
+    if (c.isJoker) continue;
+    const key = `${c.suit}-${c.value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+  }
+  return out;
+}
+
+/** Roda o estado `depth` plies à frente com a política heurística e avalia. */
+function rolloutFromState(c: GameState, myTeam: TeamId, depth: number, cleanEval: boolean): number {
+  let plies = 0;
+  while (!c.roundOver && plies < depth) {
+    const before = c.currentTurnPlayerId;
+    botTurn(c, c.currentTurnPlayerId);
+    plies++;
+    if (c.currentTurnPlayerId === before && !c.roundOver) break;
+  }
+  return horizonEval(c, myTeam, cleanEval);
+}
+
+/** Pontua TODAS as candidatas contra UMA determinização (common random numbers).
+ *  Núcleo compartilhado por pimcChooseDiscardSync (harness) e pimcChooseDiscard
+ *  (produção async) — garante que o que medimos é o que enviamos. */
+function scoreDiscardDet(
+  det: GameState, selfId: PlayerId, myTeam: TeamId, cands: Card[],
+  depth: number, sums: number[], valid: number[], cleanEval: boolean
+): void {
+  for (let ci = 0; ci < cands.length; ci++) {
+    const c = fastClone(det);
+    const me = playerOf(c, selfId);
+    const team = teamOf(c, selfId);
+    // Força o descarte da candidata (turnPhase já é 'play' no clone). Se ilegal
+    // (zeraria a mão sem poder bater nem pegar morto), pula nesta determinização.
+    if (!discard(c, selfId, cands[ci].id)) continue;
+    valid[ci]++;
+    if (me.hand.length === 0) {
+      endRound(c, true, team.id); // bateu
+    } else {
+      // descarte normal (ou pegou morto, mão=11) → encerra turno, passa a vez
+      c.currentTurnPlayerId = getNextPlayer(selfId);
+      c.turnPhase = 'draw';
+      c.lastDrawnCardId = null;
+    }
+    sums[ci] += rolloutFromState(c, myTeam, depth, cleanEval);
+  }
+}
+
+/** Penalidade de PERIGO por candidata, calculada do estado REAL (não
+ *  determinizado). `determinize` randomiza as mãos ocultas dos oponentes, então
+ *  o rollout é CEGO ao sinal "esse descarte estende uma meld VISÍVEL do
+ *  oponente" — o eval material do horizonEval ainda premia despejar a carta de
+ *  maior pontos. Reinjetamos aqui a info real que a determinização destrói.
+ *  (Confound documentado pelo advisor — sem isso, o PIMC só despeja carta alta.)
+ *
+ *  `proximity`: escala a penalidade pela PROXIMIDADE DE BATER do oponente —
+ *  alimentar o lixo de quem já pode bater com mão curta é muito mais caro que
+ *  alimentar quem tem 9 cartas (o danger estático tratava igual). Gated p/ A/B. */
+function dangerPenalties(
+  real: GameState, selfId: PlayerId, cands: Card[], weight: number, proximity: boolean
+): number[] {
+  if (weight <= 0) return cands.map(() => 0);
+  const myTeam = real.players.find(p => p.id === selfId)!.teamId;
+  const oppTeam: TeamId = myTeam === 'team-1' ? 'team-2' : 'team-1';
+  const oppGames = real.teams[oppTeam].games;
+  let mult = 1.0;
+  if (proximity) {
+    const oppHands = real.players.filter(p => p.teamId === oppTeam).map(p => p.hand.length);
+    const minHand = oppHands.length ? Math.min(...oppHands) : 99;
+    const oppCanBater = canTeamBater(oppGames, real.gameMode, real.teams[oppTeam].hasGottenDead);
+    if (oppCanBater && minHand <= 3) mult = 2.0;
+    else if (oppCanBater && minHand <= 6) mult = 1.5;
+  }
+  return cands.map(c => weight * mult * opponentDangerScore(c, oppGames, real.gameMode));
+}
+
+/** Escolhe a candidata de maior (média de rollout − penalidade de perigo). */
+function bestDiscard(cands: Card[], sums: number[], valid: number[], penalty: number[]): string | null {
+  let bestIdx = -1, bestScore = -Infinity;
+  for (let ci = 0; ci < cands.length; ci++) {
+    if (valid[ci] === 0) continue;
+    const score = sums[ci] / valid[ci] - penalty[ci];
+    if (score > bestScore) { bestScore = score; bestIdx = ci; }
+  }
+  return bestIdx >= 0 ? cands[bestIdx].id : null;
+}
+
+/** Versão SÍNCRONA — usada pelo harness (scripts/botSim) p/ A/B. Retorna o id
+ *  da carta a descartar, ou null se não houver candidata (cai na heurística). */
+export function pimcChooseDiscardSync(
+  real: GameState, selfId: PlayerId,
+  opts: { determinizations?: number; depth?: number; dangerWeight?: number; cleanEval?: boolean; dangerProximity?: boolean } = {}
+): string | null {
+  const D = opts.determinizations ?? 20;
+  const DEPTH = opts.depth ?? 8;
+  const W = opts.dangerWeight ?? DEFAULT_DISCARD_DANGER_WEIGHT;
+  const cleanEval = opts.cleanEval ?? true;
+  const dangerProx = opts.dangerProximity ?? true;
+  const self = real.players.find(p => p.id === selfId)!;
+  const myTeam = self.teamId;
+  const cands = discardCandidates(self.hand);
+  if (cands.length === 0) return null;
+  if (cands.length === 1) return cands[0].id;
+  const sums = new Array(cands.length).fill(0);
+  const valid = new Array(cands.length).fill(0);
+  for (let d = 0; d < D; d++) {
+    const det = determinize(real, selfId);
+    scoreDiscardDet(det, selfId, myTeam, cands, DEPTH, sums, valid, cleanEval);
+  }
+  return bestDiscard(cands, sums, valid, dangerPenalties(real, selfId, cands, W, dangerProx));
+}
+
+/** Decisão PIMC de descarte. ASYNC e fatiada (cede o frame) — não trava a UI.
+ *  Anytime (deadline). Retorna o id da carta, ou null (→ fallback heurístico). */
+export async function pimcChooseDiscard(
+  real: GameState, selfId: PlayerId, opts: PimcOpts = {}
+): Promise<string | null> {
+  const D = opts.determinizations ?? 20;
+  const DEPTH = opts.depth ?? 8;
+  const W = opts.dangerWeight ?? DEFAULT_DISCARD_DANGER_WEIGHT;
+  const cleanEval = opts.cleanEval ?? true;
+  const dangerProx = opts.dangerProximity ?? true;
+  const deadline = Date.now() + (opts.deadlineMs ?? 1200);
+  const yieldEvery = opts.yieldEveryMs ?? 50;
+  const doYield = opts.onYield ?? (() => new Promise<void>(r => setTimeout(r, 0)));
+  const self = real.players.find(p => p.id === selfId)!;
+  const myTeam = self.teamId;
+  const cands = discardCandidates(self.hand);
+  if (cands.length === 0) return null;
+  if (cands.length === 1) return cands[0].id;
+  const sums = new Array(cands.length).fill(0);
+  const valid = new Array(cands.length).fill(0);
+  let lastYield = Date.now();
+  let done = 0;
+  for (let d = 0; d < D; d++) {
+    const det = determinize(real, selfId);
+    scoreDiscardDet(det, selfId, myTeam, cands, DEPTH, sums, valid, cleanEval);
+    done++;
+    if (Date.now() - lastYield >= yieldEvery) { await doYield(); lastYield = Date.now(); }
+    if (Date.now() >= deadline) break; // anytime
+  }
+  return done === 0 ? null : bestDiscard(cands, sums, valid, dangerPenalties(real, selfId, cands, W, dangerProx));
 }

@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Regla del descarte",
       "pileRuleNewPlay": "Tu primera jugada DEBE incluir {{card}} (tope del descarte).\n\nPuedes:\n• Tocar una bajada tuya en la mesa (seleccionando {{card}} + cartas para completar)\n• O bajar una nueva combinación con 3+ cartas",
       "pileRuleAdd": "Debes usar {{card}} (tope del descarte) en tu primera jugada (nueva bajada o añadir a una existente).",
+      "pileBuriedMsg": "La jugada que baja la carta superior del pozo debe usar cartas de tu MANO — no puedes usar cartas que vinieron de dentro del pozo. Usa cartas de la mano (o un comodín) para bajar la carta superior.",
       "minCardsTitle": "Mínimo 3 cartas",
       "minCardsMsg": "Selecciona al menos 3 cartas para bajar una combinación.",
       "invalidCombTitle": "Combinación inválida",

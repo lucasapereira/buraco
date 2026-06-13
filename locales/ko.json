@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Pile rule",
       "pileRuleNewPlay": "Your first play MUST include {{card}} (pile top).\n\nYou can:\n• Tap one of your melds on the table (selecting {{card}} + extra cards)\n• Or play a new meld with 3+ cards",
       "pileRuleAdd": "You must use {{card}} (pile top) on your first play (new meld or adding to an existing one).",
+      "pileBuriedMsg": "버린 패 더미의 맨 위 카드를 내려놓는 플레이는 반드시 당신의 손패 카드를 사용해야 합니다 — 더미 안에서 가져온 카드는 사용할 수 없습니다. 맨 위 카드를 내려놓으려면 손패 카드(또는 와일드)를 사용하세요.",
       "minCardsTitle": "Min 3 cards",
       "minCardsMsg": "Select at least 3 cards to play a Classic meld.",
       "invalidCombTitle": "Invalid combination",

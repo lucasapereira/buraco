@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Regola dello scarto",
       "pileRuleNewPlay": "La tua prima mossa DEVE includere {{card}} (cima dello scarto).\n\nPuoi:\n• Toccare una tua combinazione sul tavolo (selezionando {{card}} + carte extra)\n• Oppure calare una nuova combinazione di 3+ carte",
       "pileRuleAdd": "Devi usare {{card}} (cima dello scarto) nella tua prima mossa (nuova combinazione o aggiunta a una esistente).",
+      "pileBuriedMsg": "La giocata che cala la carta in cima al pozzo deve usare carte della tua MANO — non puoi usare carte provenienti dall'interno del pozzo. Usa le carte in mano (o una matta) per calare la carta in cima.",
       "minCardsTitle": "Min 3 carte",
       "minCardsMsg": "Seleziona almeno 3 carte per calare una combinazione.",
       "invalidCombTitle": "Combinazione non valida",

@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Izgāztuves likums",
       "pileRuleNewPlay": "Tavam pirmajam gājienam JĀIETVER {{card}} (izgāztuves virsma).\n\nVari:\n• Pieskarties savai kombinācijai uz galda (izvēloties {{card}} + papildu kārtis)\n• Vai izlikt jaunu kombināciju ar 3+ kārtīm",
       "pileRuleAdd": "Tev jāizmanto {{card}} (izgāztuves virsma) pirmajā gājienā (jauna kombinācija vai pievienošana esošai).",
+      "pileBuriedMsg": "Gājienam, ar kuru izliek kaudzes augšējo kārti, jāizmanto kārtis no tavas ROKAS — nedrīkst izmantot kārtis, kas nāca no pašas kaudzes. Augšējās kārts izlikšanai izmanto rokas kārtis (vai jokeri).",
       "minCardsTitle": "Min 3 kārtis",
       "minCardsMsg": "Izvēlies vismaz 3 kārtis, lai izliktu kombināciju.",
       "invalidCombTitle": "Nederīga kombinācija",

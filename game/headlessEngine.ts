@@ -21,7 +21,7 @@ import { canTakePile, findPileTopPlay, sortCardsBySuitAndValue, sortGameCards, v
 import {
   shouldTakePileSmart, findBestSequences, chooseBestDiscard, canTeamBater,
   wouldDirtyGame, canCleanCandidateGrow, opponentRecentlyTookPile, canastaBonusValue,
-  findPileTopNonDegradingPlay, longestNaturalRun,
+  findPileTopNonDegradingPlay, longestNaturalRun, wouldLockRedeemableWild,
 } from './botHelpers';
 
 const MAX_RESHUFFLES = 99;
@@ -305,7 +305,7 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, al
   s.mustPlayPileTopId = null;
 }
 
-function playSequencesPhase(s: GameState, playerId: PlayerId): void {
+export function playSequencesPhase(s: GameState, playerId: PlayerId): void {
   for (let iter = 0; iter < 5; iter++) {
     const p = playerOf(s, playerId);
     const team = teamOf(s, playerId);
@@ -384,7 +384,7 @@ function playSequencesPhase(s: GameState, playerId: PlayerId): void {
   }
 }
 
-function addToGamesPhase(s: GameState, playerId: PlayerId): void {
+export function addToGamesPhase(s: GameState, playerId: PlayerId): void {
   const team = teamOf(s, playerId);
   const p = playerOf(s, playerId);
   const jokerSuits = new Set(p.hand.filter(c => c.isJoker && c.suit !== 'joker').map(c => c.suit));
@@ -459,6 +459,9 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
             }
           }
         }
+        // Não trava o coringa de uma canastra suja regatável metendo carta natural
+        // no miolo (report: J♣ na [4..9♣ + 2♣] prende o 2♣ no 10). Escape: indo bater.
+        if (!card.isJoker && pNow.hand.length > 2 && wouldLockRedeemableWild(game, card, s.gameMode)) continue;
         if (validateSequence([...game, card], s.gameMode)) {
           const combined = [...game, card];
           if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') {
@@ -479,8 +482,10 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
  * Um turno completo do bot com a política heurística de produção.
  * `forcedDraw`: se definido, força a 1ª decisão pegar-lixo (true) / comprar
  * (false) — usado pelo PIMC pra avaliar as 2 ações a partir do mesmo estado.
+ * `holdMelds`: pula as fases de meld DESTE turno (a obrigação do lixo segue
+ * cumprida — é regra) — usado pelo PIMC de timing (segurar vs baixar).
  */
-export function botTurn(s: GameState, playerId: PlayerId, forcedDraw?: boolean): void {
+export function botTurn(s: GameState, playerId: PlayerId, forcedDraw?: boolean, holdMelds = false): void {
   if (s.turnPhase === 'draw') {
     const take = forcedDraw !== undefined ? forcedDraw : chooseTakePileHeuristic(s, playerId);
     if (take) {
@@ -494,9 +499,11 @@ export function botTurn(s: GameState, playerId: PlayerId, forcedDraw?: boolean):
   if (s.roundOver) return;
 
   if (s.mustPlayPileTopId) playWithPileTop(s, playerId, s.mustPlayPileTopId);
-  addToGamesPhase(s, playerId);
-  playSequencesPhase(s, playerId);
-  addToGamesPhase(s, playerId);
+  if (!holdMelds) {
+    addToGamesPhase(s, playerId);
+    playSequencesPhase(s, playerId);
+    addToGamesPhase(s, playerId);
+  }
 
   if (checkBater(s, playerId)) return;
 

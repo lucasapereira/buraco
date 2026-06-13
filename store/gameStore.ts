@@ -57,6 +57,7 @@ function createUndoState(state: GameState): UndoState {
     deads: state.deads,
     gameLog: state.gameLog,
     mustPlayPileTopId: state.mustPlayPileTopId,
+    pileTakenBuriedIds: state.pileTakenBuriedIds,
   };
 }
 
@@ -228,6 +229,7 @@ export const useGameStore = create<GameState & GameActions>()(
     rest.deck             = Array.isArray(rest.deck)  ? rest.deck  : [];
     rest.gameLog          = rest.gameLog          ?? [];
     rest.turnHistory      = rest.turnHistory      ?? [];
+    rest.pileTakenBuriedIds = rest.pileTakenBuriedIds ?? [];
     rest.discardedCardHistory = rest.discardedCardHistory ?? [];
     // Firebase agrupa arrays afetados por pop() transformando-os em objetos
     let rawDeads = rest.deads;
@@ -402,6 +404,7 @@ export const useGameStore = create<GameState & GameActions>()(
       winnerTeamId: null,
       lastDrawnCardId: null,
       mustPlayPileTopId: null,
+      pileTakenBuriedIds: [],
       gameLog: [{ id: 1, playerId: 'user', playerName: 'SYS', type: 'draw_deck', message: i18n.t('events.layoutMode'), timestamp: Date.now() }],
       discardedCardHistory: [],
       deckReshuffleCount: 0,
@@ -658,6 +661,9 @@ export const useGameStore = create<GameState & GameActions>()(
         turnPhase: 'play' as const,
         lastDrawnCardId: null,
         mustPlayPileTopId: topCardId,
+        // Cartas ENTERRADAS (todas menos o topo) não podem formar a meld que
+        // cumpre a obrigação — a captura tem de ser justificada pela MÃO.
+        pileTakenBuriedIds: s.pile.filter(c => c.id !== topCardId).map(c => c.id),
         turnHistory: [],
         gameLog: addLog(s.gameLog, makeEvent(
           playerId, name, 'draw_pile',
@@ -684,7 +690,7 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       
       // Clear obligation if played or if in Araujo Pereira (where it's just a hint)
-      set({ mustPlayPileTopId: null });
+      set({ mustPlayPileTopId: null, pileTakenBuriedIds: [] });
     }
 
     const name = getPlayerName(state.players, playerId);
@@ -781,6 +787,15 @@ export const useGameStore = create<GameState & GameActions>()(
     if (state.gameMode !== 'araujo_pereira' && state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
       return false;
     }
+    // REGRA: a jogada que CUMPRE a obrigação do lixo não pode usar cartas
+    // ENTERRADAS do lixo — a captura do topo tem de ser justificada por cartas
+    // da MÃO (clássico). Sem isso, o jogador baixa o topo com uma carta que veio
+    // do próprio lixo (ex.: [8,9,10] com o 8 enterrado), economizando coringa.
+    if (state.gameMode !== 'araujo_pereira' && state.mustPlayPileTopId
+        && cardIds.includes(state.mustPlayPileTopId)
+        && cardIds.some(id => id !== state.mustPlayPileTopId && state.pileTakenBuriedIds.includes(id))) {
+      return false;
+    }
 
     const player = state.players.find(p => p.id === playerId);
     if (!player) return false;
@@ -834,6 +849,8 @@ export const useGameStore = create<GameState & GameActions>()(
         gameLog: log,
         // Limpa obrigação se a carta do topo do lixo foi usada nesta jogada
         mustPlayPileTopId: (s.mustPlayPileTopId && cardIds.includes(s.mustPlayPileTopId)) ? null : s.mustPlayPileTopId,
+        // Cumprida a obrigação, as cartas enterradas viram cartas normais da mão.
+        pileTakenBuriedIds: (s.mustPlayPileTopId && cardIds.includes(s.mustPlayPileTopId)) ? [] : s.pileTakenBuriedIds,
         turnHistory: [...s.turnHistory, createUndoState(s)],
         teams: {
           ...s.teams,
@@ -864,6 +881,14 @@ export const useGameStore = create<GameState & GameActions>()(
 
     // REGRA: Primeira jogada após comprar o lixo DEVE ser novo jogo. Não pode adicionar a jogo existente.
     if (state.gameMode !== 'araujo_pereira' && state.mustPlayPileTopId && !cardIds.includes(state.mustPlayPileTopId)) {
+      return false;
+    }
+    // REGRA: a jogada que CUMPRE a obrigação não pode usar cartas ENTERRADAS do
+    // lixo (a captura tem de ser justificada pela MÃO). Estender com o topo
+    // sozinho — ou topo + cartas da mão — segue válido; só barra cartas do lixo.
+    if (state.gameMode !== 'araujo_pereira' && state.mustPlayPileTopId
+        && cardIds.includes(state.mustPlayPileTopId)
+        && cardIds.some(id => id !== state.mustPlayPileTopId && state.pileTakenBuriedIds.includes(id))) {
       return false;
     }
 
@@ -925,6 +950,7 @@ export const useGameStore = create<GameState & GameActions>()(
         deads: newDeads,
         gameLog: log,
         mustPlayPileTopId: (s.mustPlayPileTopId && cardIds.includes(s.mustPlayPileTopId)) ? null : s.mustPlayPileTopId,
+        pileTakenBuriedIds: (s.mustPlayPileTopId && cardIds.includes(s.mustPlayPileTopId)) ? [] : s.pileTakenBuriedIds,
         turnHistory: [...s.turnHistory, createUndoState(s)],
         teams: {
           ...s.teams,
@@ -963,6 +989,7 @@ export const useGameStore = create<GameState & GameActions>()(
       deads: previousState.deads,
       gameLog: previousState.gameLog,
       mustPlayPileTopId: previousState.mustPlayPileTopId,
+      pileTakenBuriedIds: previousState.pileTakenBuriedIds,
       turnHistory: s.turnHistory.slice(0, -1)
     }));
     return true;

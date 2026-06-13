@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Pile rule",
       "pileRuleNewPlay": "Your first play MUST include {{card}} (pile top).\n\nYou can:\n• Tap one of your melds on the table (selecting {{card}} + extra cards)\n• Or play a new meld with 3+ cards",
       "pileRuleAdd": "You must use {{card}} (pile top) on your first play (new meld or adding to an existing one).",
+      "pileBuriedMsg": "捨て札の一番上のカードを場に出すプレイには、あなたの手札のカードを使わなければなりません — 捨て札の中から来たカードは使えません。一番上のカードを出すには、手札（またはワイルド）を使ってください。",
       "minCardsTitle": "Min 3 cards",
       "minCardsMsg": "Select at least 3 cards to play a Classic meld.",
       "invalidCombTitle": "Invalid combination",

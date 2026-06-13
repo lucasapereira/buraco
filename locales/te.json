@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Pile rule",
       "pileRuleNewPlay": "Your first play MUST include {{card}} (pile top).\n\nYou can:\n• Tap one of your melds on the table (selecting {{card}} + extra cards)\n• Or play a new meld with 3+ cards",
       "pileRuleAdd": "You must use {{card}} (pile top) on your first play (new meld or adding to an existing one).",
+      "pileBuriedMsg": "కుప్ప పైనున్న కార్డును మెల్డ్ చేసే ఎత్తుగడలో మీ చేతిలోని కార్డులను ఉపయోగించాలి — కుప్ప లోపలి నుండి వచ్చిన కార్డులను ఉపయోగించలేరు. పై కార్డును మెల్డ్ చేయడానికి చేతిలోని కార్డులను (లేదా వైల్డ్‌ను) ఉపయోగించండి.",
       "minCardsTitle": "Min 3 cards",
       "minCardsMsg": "Select at least 3 cards to play a Classic meld.",
       "invalidCombTitle": "Invalid combination",

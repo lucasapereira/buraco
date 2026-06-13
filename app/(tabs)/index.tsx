@@ -24,7 +24,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const t = useT();
-  const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId, teams, matchScores, botDifficulty: gameBotDifficulty } = useGameStore();
+  const { startNewGame, startLayoutTest, players, gameLog, winnerTeamId, teams, matchScores, botDifficulty: gameBotDifficulty, roundStatsRecorded, markRoundStatsRecorded } = useGameStore();
   const { level, checkDailyReward, claimDailyReward, recordRound } = useStatsStore();
   const { resetRoom, roomStatus } = useOnlineStore();
   const [targetScore, setTargetScore] = useState(1500);
@@ -94,10 +94,13 @@ export default function HomeScreen() {
     const myTotal = matchScores['team-1'] + calculateLiveScore(teams['team-1']);
     const opTotal = matchScores['team-2'] + calculateLiveScore(teams['team-2']);
     const diff = myTotal - opTotal;
-    const wouldCountAsLoss = isOfflineGame && isGameInProgress && diff < -200;
+    // !roundStatsRecorded: se esta partida já foi contabilizada (ex.: o jogador
+    // saiu perdendo pela tela do jogo e agora aperta reiniciar), não conta de novo.
+    const wouldCountAsLoss = isOfflineGame && isGameInProgress && diff < -200 && !roundStatsRecorded;
 
     const runRestart = () => {
       if (wouldCountAsLoss) {
+        markRoundStatsRecorded();
         recordRound({
           matchEnded: true,
           matchWon: false,

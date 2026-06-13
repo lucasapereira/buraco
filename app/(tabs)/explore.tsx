@@ -139,7 +139,7 @@ export default function GameScreen() {
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
     drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
     startNewRound, startNewGame,
-    gameLog, lastDrawnCardId, mustPlayPileTopId, gameMode, botDifficulty,
+    gameLog, lastDrawnCardId, mustPlayPileTopId, pileTakenBuriedIds, gameMode, botDifficulty,
     animatingDiscard, animatingDrawPlayerId,
     turnHistory, undoLastPlay,
     roundStatsRecorded, markRoundStatsRecorded
@@ -391,10 +391,13 @@ export default function GameScreen() {
     const myTotal = matchScores[myTeamId] + calculateLiveScore(teams[myTeamId]);
     const opTotal = matchScores[opTeamId] + calculateLiveScore(teams[opTeamId]);
     const diff = myTotal - opTotal;
-    const wouldCountAsLoss = !isOnlineMode && inProgress && diff < -200;
+    // !roundStatsRecorded: se esta partida já foi contabilizada (ex.: o jogador
+    // saiu perdendo e depois apertou reiniciar na home), não conta de novo.
+    const wouldCountAsLoss = !isOnlineMode && inProgress && diff < -200 && !roundStatsRecorded;
 
     const runAction = () => {
       if (wouldCountAsLoss) {
+        markRoundStatsRecorded();
         recordRound({
           matchEnded: true,
           matchWon: false,
@@ -645,6 +648,13 @@ export default function GameScreen() {
       showAlert(t('game.alerts.pileRuleTitle'), t('game.alerts.pileRuleNewPlay', { card: label }));
       return;
     }
+    // A jogada que cumpre a obrigação não pode usar cartas que VIERAM do lixo —
+    // a captura tem de ser justificada por cartas da MÃO (clássico).
+    if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && selectedCards.includes(mustPlayPileTopId)
+        && selectedCards.some(id => id !== mustPlayPileTopId && pileTakenBuriedIds.includes(id))) {
+      showAlert(t('game.alerts.pileRuleTitle'), t('game.alerts.pileBuriedMsg'));
+      return;
+    }
     if (selectedCards.length < 3) {
       showAlert(t('game.alerts.minCardsTitle'), t('game.alerts.minCardsMsg'));
       return;
@@ -690,6 +700,12 @@ export default function GameScreen() {
       const topCard = user.hand.find(c => c.id === mustPlayPileTopId);
       const label = topCard ? cardLabel(topCard) : t('game.alerts.cardOfTop');
       showAlert(t('game.alerts.pileRuleTitle'), t('game.alerts.pileRuleAdd', { card: label }));
+      return;
+    }
+    // Cumprir a obrigação não pode usar cartas que vieram do lixo (ver handlePlayCards).
+    if (gameMode !== 'araujo_pereira' && mustPlayPileTopId && selectedCards.includes(mustPlayPileTopId)
+        && selectedCards.some(id => id !== mustPlayPileTopId && pileTakenBuriedIds.includes(id))) {
+      showAlert(t('game.alerts.pileRuleTitle'), t('game.alerts.pileBuriedMsg'));
       return;
     }
 

@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Règle de la défausse",
       "pileRuleNewPlay": "Votre premier coup DOIT inclure {{card}} (sommet de la défausse).\n\nVous pouvez :\n• Compléter une de vos combinaisons sur la table (en sélectionnant {{card}} + d'autres cartes)\n• Ou poser une nouvelle combinaison de 3 cartes ou plus",
       "pileRuleAdd": "Vous devez utiliser {{card}} (sommet de la défausse) lors de votre premier coup (nouvelle combinaison ou ajout à une existante).",
+      "pileBuriedMsg": "Le coup qui pose la carte du dessus de la défausse doit utiliser des cartes de votre MAIN — vous ne pouvez pas utiliser de cartes provenant de l'intérieur de la défausse. Utilisez des cartes de votre main (ou un joker) pour poser la carte du dessus.",
       "minCardsTitle": "Minimum 3 cartes",
       "minCardsMsg": "Sélectionnez au moins 3 cartes pour poser une combinaison classique.",
       "invalidCombTitle": "Combinaison invalide",

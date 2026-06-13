@@ -26,17 +26,21 @@ import {
   canCleanCandidateGrow,
   opponentRecentlyTookPile,
   canastaBonusValue,
+  wouldLockRedeemableWild,
+  pileTakeForcesDirtyingCleanPath,
+  wildTopTakeVeto,
 } from '../game/botHelpers';
 import { proxyAdjustTakePile, proxyChooseDiscard } from './proxyBot';
 import { horizonEval, determinize, _evalSelfCheck } from './pimcBot';
-import { pimcDecideSync } from '../game/pimc';
+import { pimcDecideSync, pimcChooseDiscardSync, pimcShouldHoldMeldsSync, meldsAvailable } from '../game/pimc';
+import { getCardPoints, opponentDangerScore } from '../game/botHelpers';
 
 // ─── Config ───────────────────────────────────────────────
 const N_GAMES = process.env.N ? parseInt(process.env.N, 10) : 500;
 // (deixei SMART_PILE: false acima, mas em produção a heurística smart já é
 // padrão. Pra testar uma feature nova, ative SMART_PILE em ambos pra refletir
 // o estado real e isolar o efeito da feature em teste.)
-const TARGET_SCORE = 1500;
+const TARGET_SCORE = process.env.TARGET ? parseInt(process.env.TARGET, 10) : 1500;
 const GAME_MODE: GameMode = 'classic';
 const MAX_RESHUFFLES = 99; // sem cap prático, como a engine real
 
@@ -105,6 +109,11 @@ const TEAM_WILD_RESERVE = featOn('C');
 // candidata limpa viável de 6 cartas pra fechar canastra suja quando o time não
 // tem canastra limpa (report: "sapecou joker na 3-8♠ de 6, sem canastra").
 const TEAM_WILD_PROTECT6 = featOn('D');
+// L = TEAM_WILD_NO_LOCK: não trava o coringa de uma canastra suja REGATÁVEL metendo
+// carta natural no miolo (report 2026-06-06: bot tinha [4..9♣ + 2♣] e meteu J♣,
+// prendendo o 2♣ no 10 → canastra suja para sempre, em vez de esperar o 3♣ que a
+// limparia). Portado p/ produção (useBotAI + headlessEngine); aqui só p/ A/B.
+const TEAM_WILD_NO_LOCK = featOn('L');
 
 // PROXY = adversário-alvo "humano forte" (scripts/proxyBot.ts). Sobrepõe
 // pile-take e descarte com planner de distância-de-bater + modelo de oponente.
@@ -121,12 +130,66 @@ const TEAM_PROXY: Record<TeamId, boolean> = {
 // Resultado registrado: swap test n=100, +39pp SIMÉTRICO vs produção (PIMC
 // esmaga o teto heurístico). Ainda NÃO portado pra produção (useBotAI) —
 // experimental no harness. Deixar ambos false (não reflete produção).
+// Env-driven p/ swap tests: PIMC_BOTH=1 liga PIMC pile nos dois times (= o
+// "Difícil atual"); PIMCT1/PIMCT2=1 liga só num. PROD_PIMC=1 usa game/pimc.ts.
 const TEAM_PIMC: Record<TeamId, boolean> = {
-  'team-1': false,
-  'team-2': false,
+  'team-1': process.env.PIMC_BOTH === '1' || process.env.PIMCT1 === '1',
+  'team-2': process.env.PIMC_BOTH === '1' || process.env.PIMCT2 === '1',
 };
 const PIMC_DETERMINIZATIONS = 30;
 const PIMC_DEPTH = 8;
+
+// PIMC DESCARTE (Stage 2) — busca na escolha de QUAL carta descartar (game/pimc.ts
+// pimcChooseDiscardSync). Gate p/ swap: PIMCDISC=1|2 escolhe o time que recebe.
+// O "novo Difícil" = PIMC pile + PIMC descarte; o "Difícil atual" = só PIMC pile.
+// PIMCDISC aceita combinação: '1'|'2'|'12' (12 = ambos, refletindo o "novo
+// Difícil" de produção nos dois times — baseline p/ testar features novas).
+const TEAM_PIMC_DISCARD: Record<TeamId, boolean> = {
+  'team-1': !!process.env.PIMCDISC?.includes('1'),
+  'team-2': !!process.env.PIMCDISC?.includes('2'),
+};
+// CLEANEV = crédito de proximidade de canastra limpa no horizonEval do PIMC
+// (game/pimc.ts cleanPathProximity — fix do report "bot fica sem condições de
+// fazer canastra limpa"). unset → ON nos 2 times (default de produção);
+// '0' → OFF nos 2; '1'|'2'|'12' → por time (swap test).
+const CLEANEV = process.env.CLEANEV;
+const TEAM_PIMC_CLEANEV: Record<TeamId, boolean> = {
+  'team-1': CLEANEV === undefined ? true : CLEANEV.includes('1'),
+  'team-2': CLEANEV === undefined ? true : CLEANEV.includes('2'),
+};
+// WILDVETO = veto de topo-coringa pós-PIMC (wildTopTakeVeto, fix do report "usa
+// o coringa pra pegar lixo"). '1'|'2'|'12' por time; unset = OFF (ainda não é
+// produção — validar aqui antes de portar pro useBotAI).
+const TEAM_WILDVETO: Record<TeamId, boolean> = {
+  'team-1': !!process.env.WILDVETO?.includes('1'),
+  'team-2': !!process.env.WILDVETO?.includes('2'),
+};
+const wildVetoStats = { fired: 0 };
+// MELDHOLD = PIMC no TIMING de baixar (Stage 4): decisão binária "baixo agora
+// vs seguro este turno" por rollout. MERGEADO (swap n=300: +8.0pp simétrico,
+// limpas +28/+55%, reais ~2×) — unset = ON ambos (reflete produção expert);
+// '0' = OFF ambos; '1'|'2'|'12' por time.
+const MELDHOLD = process.env.MELDHOLD;
+const TEAM_MELDHOLD: Record<TeamId, boolean> = {
+  'team-1': MELDHOLD === undefined ? true : MELDHOLD.includes('1'),
+  'team-2': MELDHOLD === undefined ? true : MELDHOLD.includes('2'),
+};
+const meldHoldStats = { decisions: 0, held: 0 };
+// DANGERPROX = penalidade de perigo do descarte PIMC escalada pela proximidade
+// de bater do oponente (×2.0 se pode bater e mão ≤3; ×1.5 se pode bater e ≤6).
+// MERGEADO (swap n=270: +5.8pp simétrico) — unset = ON ambos (produção).
+const DANGERPROX = process.env.DANGERPROX;
+const TEAM_DANGERPROX: Record<TeamId, boolean> = {
+  'team-1': DANGERPROX === undefined ? true : DANGERPROX.includes('1'),
+  'team-2': DANGERPROX === undefined ? true : DANGERPROX.includes('2'),
+};
+const PIMC_DISCARD_D = process.env.PIMCDISC_D ? parseInt(process.env.PIMCDISC_D, 10) : 20;
+const PIMC_DISCARD_DEPTH = process.env.PIMCDISC_DEPTH ? parseInt(process.env.PIMCDISC_DEPTH, 10) : 8;
+const PIMC_DISCARD_W = process.env.PIMCDISC_W ? parseFloat(process.env.PIMCDISC_W) : 1.0;
+// Diagnóstico do confound material do horizonEval (advisor): quando o PIMC
+// diverge da heurística, ele escolhe carta MAIS SEGURA (danger menor) ou só
+// despeja a carta de maior pontos? Se for só pontos, o ganho é miragem.
+const pimcDiscardStats = { decisions: 0, flipped: 0, pimcPts: 0, heurPts: 0, pimcDanger: 0, heurDanger: 0 };
 
 // Aggressiveness no pile-take por jogador. Threshold do shouldTakePileSmart é
 // dividido por esse valor — maior = pega lixo com mais facilidade.
@@ -181,6 +244,7 @@ export function freshState(gameMode: GameMode): GameState {
     botDifficulty: 'hard',
     discardedCardHistory: [],
     mustPlayPileTopId: null,
+    pileTakenBuriedIds: [],
     deckReshuffleCount: 0,
     turnHistory: [],
     roundNumber: 1,
@@ -368,6 +432,13 @@ const wildLeak: Record<TeamId, WildLeakStats> = {
 // Contador de turnos transcorridos na rodada corrente (incrementado em runBotTurn)
 let currentRoundTurnCount = 0;
 let preventedDirty13Plus = 0; // contador: quantas vezes o hard-rule preveniu sujar 500/1000
+// Tally de canastras por time ao fim de CADA rodada (mede o intent do fix L:
+// mais canastras LIMPAS, menos sujas travadas — invisível no win-rate self-play).
+// `reais` = canastras REAIS (13/14 cartas LIMPAS, bônus 500/1000) — subconjunto de `clean`.
+const canastaTally: Record<TeamId, { clean: number; dirty: number; reais: number; rounds: number }> = {
+  'team-1': { clean: 0, dirty: 0, reais: 0, rounds: 0 },
+  'team-2': { clean: 0, dirty: 0, reais: 0, rounds: 0 },
+};
 
 /** Quantos coringas neste seq atuam como wild (não-natural). */
 function countNonNaturalWilds(seq: Card[], gameMode: GameMode): number {
@@ -555,9 +626,19 @@ function chooseTakePile(s: GameState, playerId: PlayerId): boolean {
   if (TEAM_PIMC[team.id] && !pimcRollout) {
     // PROD_PIMC=1 → usa o re-port de produção (game/pimc.ts) p/ confirmar que
     // reproduz o +39pp do pimcTakePile interno. Mesmo D/DEPTH.
-    const pimcDecision = process.env.PROD_PIMC
-      ? pimcDecideSync(s, playerId, { determinizations: PIMC_DETERMINIZATIONS, depth: PIMC_DEPTH })
+    let pimcDecision = process.env.PROD_PIMC
+      ? pimcDecideSync(s, playerId, { determinizations: PIMC_DETERMINIZATIONS, depth: PIMC_DEPTH, cleanEval: TEAM_PIMC_CLEANEV[team.id] })
       : pimcTakePile(s, playerId);
+    // Espelha o veto pós-PIMC de produção (useBotAI): não pega se cumprir a
+    // obrigação do topo forçar sujar meld limpa protegida.
+    if (pimcDecision && pileTakeForcesDirtyingCleanPath(p.hand, s.pile, team.games, s.gameMode)) {
+      pimcDecision = false;
+    }
+    // Fix 2 (gated WILDVETO): veto de topo-coringa no caminho PIMC.
+    if (pimcDecision && TEAM_WILDVETO[team.id] && wildTopTakeVeto(s.pile, p.hand, team.games, s.gameMode)) {
+      wildVetoStats.fired += 1;
+      pimcDecision = false;
+    }
     // Discriminador: com que frequência o PIMC diverge da heurística smart.
     if (TEAM_SMART_PILE[team.id]) {
       const aggr = PILE_AGGRESSIVENESS[playerId] ?? 1.0;
@@ -856,6 +937,9 @@ function addToGamesPhase(s: GameState, playerId: PlayerId): void {
             }
           }
         }
+        // L: não trava o coringa de uma canastra suja regatável (escape: indo bater).
+        if (TEAM_WILD_NO_LOCK[team.id] && !card.isJoker && pNow.hand.length > 2
+            && wouldLockRedeemableWild(game, card, s.gameMode)) continue;
         if (validateSequence([...game, card], s.gameMode)) {
           const combined = [...game, card];
           if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') {
@@ -901,9 +985,23 @@ export function runBotTurn(s: GameState, playerId: PlayerId): void {
   if (s.mustPlayPileTopId) {
     playWithPileTop(s, playerId, s.mustPlayPileTopId);
   }
-  addToGamesPhase(s, playerId);
-  playSequencesPhase(s, playerId);
-  addToGamesPhase(s, playerId);
+  // MELDHOLD (Stage 4): busca PIMC decide "baixo agora vs seguro este turno".
+  // Só na decisão real (nunca em rollout) e só se baixar mudaria algo.
+  let holdMelds = false;
+  const holdTeam = teamOf(s, playerId);
+  if (TEAM_MELDHOLD[holdTeam.id] && !pimcRollout && meldsAvailable(s, playerId)) {
+    meldHoldStats.decisions += 1;
+    holdMelds = pimcShouldHoldMeldsSync(s, playerId, {
+      determinizations: PIMC_DETERMINIZATIONS, depth: PIMC_DEPTH,
+      cleanEval: TEAM_PIMC_CLEANEV[holdTeam.id],
+    });
+    if (holdMelds) meldHoldStats.held += 1;
+  }
+  if (!holdMelds) {
+    addToGamesPhase(s, playerId);
+    playSequencesPhase(s, playerId);
+    addToGamesPhase(s, playerId);
+  }
 
   // Se bateu durante o play, encerra
   if (checkBater(s, playerId)) return;
@@ -968,6 +1066,24 @@ export function runBotTurn(s: GameState, playerId: PlayerId): void {
         p.hand, s.discardedCardHistory, DIFFICULTY, s.lastDrawnCardId, s.gameMode,
         team.games, null, oppGames, tookPile
       );
+    }
+    // PIMC DESCARTE (Stage 2): sobrepõe a escolha heurística por busca. Só na
+    // decisão real (nunca dentro de rollout PIMC → sem recursão/custo explosivo).
+    if (TEAM_PIMC_DISCARD[team.id] && !pimcRollout) {
+      const heurCard = card;
+      const pimcId = pimcChooseDiscardSync(s, playerId, { determinizations: PIMC_DISCARD_D, depth: PIMC_DISCARD_DEPTH, dangerWeight: PIMC_DISCARD_W, cleanEval: TEAM_PIMC_CLEANEV[team.id], dangerProximity: TEAM_DANGERPROX[team.id] });
+      const pc = pimcId ? p.hand.find(c => c.id === pimcId) : undefined;
+      if (pc) {
+        pimcDiscardStats.decisions++;
+        if (`${pc.suit}-${pc.value}` !== `${heurCard.suit}-${heurCard.value}`) {
+          pimcDiscardStats.flipped++;
+          pimcDiscardStats.pimcPts += getCardPoints(pc);
+          pimcDiscardStats.heurPts += getCardPoints(heurCard);
+          pimcDiscardStats.pimcDanger += opponentDangerScore(pc, oppGames, s.gameMode);
+          pimcDiscardStats.heurDanger += opponentDangerScore(heurCard, oppGames, s.gameMode);
+        }
+        card = pc;
+      }
     }
     // Se o descarte foi bloqueado (empataria bater ilegal), tenta outras cartas
     if (!discard(s, playerId, card.id)) {
@@ -1044,6 +1160,14 @@ function runOneGame(gameIdx: number, verbose: boolean): { winner: TeamId | null;
     const wentOut = state.players.some(p => p.hand.length === 0) &&
       (canTeamBater(state.teams['team-1'].games, state.gameMode, state.teams['team-1'].hasGottenDead) ||
        canTeamBater(state.teams['team-2'].games, state.gameMode, state.teams['team-2'].hasGottenDead));
+    // Tally de canastras de AMBOS os times nesta rodada (independe de quem bateu).
+    for (const teamId of ['team-1', 'team-2'] as TeamId[]) {
+      const t = state.teams[teamId];
+      canastaTally[teamId].clean += t.games.filter(g => g.length >= 7 && checkCanasta(g) === 'clean').length;
+      canastaTally[teamId].dirty += t.games.filter(g => g.length >= 7 && checkCanasta(g) === 'dirty').length;
+      canastaTally[teamId].reais += t.games.filter(g => g.length >= 13 && checkCanasta(g) === 'clean').length;
+      canastaTally[teamId].rounds += 1;
+    }
     if (wentOut) baterCount++;
     else {
       noBaterCount++;
@@ -1169,6 +1293,12 @@ function main() {
     if (TEAM_WILD_NO_LOW_ACE[t]) bits.push('B:no-low-ace');
     if (TEAM_WILD_RESERVE[t]) bits.push('C:wild-reserve');
     if (TEAM_WILD_PROTECT6[t]) bits.push('D:protect6');
+    if (TEAM_PIMC[t]) bits.push('PIMC pile');
+    if (TEAM_PIMC_DISCARD[t]) bits.push('PIMC disc');
+    if ((TEAM_PIMC[t] || TEAM_PIMC_DISCARD[t]) && TEAM_PIMC_CLEANEV[t]) bits.push('cleanEval');
+    if (TEAM_WILDVETO[t]) bits.push('wildVeto');
+    if (TEAM_MELDHOLD[t]) bits.push('meldHold');
+    if (TEAM_DANGERPROX[t]) bits.push('dangerProx');
     return bits.length ? bits.join(' + ') : 'baseline';
   };
   console.log(`\n=== Buraco Bot Sim ===`);
@@ -1203,6 +1333,18 @@ function main() {
   console.log(`rodadas totais          : ${totalRounds} (média ${(totalRounds / N_GAMES).toFixed(1)}/partida)`);
   console.log(`rodadas com bater       : ${totalBater}  sem bater: ${totalNoBater}`);
   console.log(`hard-rule 500/1000 fires: ${preventedDirty13Plus}  (vezes que o bot tentaria sujar canastra 13+ cartas)`);
+  for (const teamId of ['team-1', 'team-2'] as TeamId[]) {
+    const c = canastaTally[teamId];
+    const cleanPer = (c.clean / c.rounds).toFixed(3);
+    const dirtyPer = (c.dirty / c.rounds).toFixed(3);
+    const pctClean = c.clean + c.dirty > 0 ? (100 * c.clean / (c.clean + c.dirty)).toFixed(1) : '0';
+    console.log(`canastras ${teamId} (${label(teamId)}): limpas/rodada=${cleanPer}  sujas/rodada=${dirtyPer}  reais(13/14)/rodada=${(c.reais / c.rounds).toFixed(3)}  %limpas=${pctClean}%`);
+  }
+  // Sumário machine-readable p/ agregação de shards paralelos (1 processo/core).
+  console.log(`SUMMARY_JSON ${JSON.stringify({
+    n: N_GAMES, t1Wins, t2Wins, rounds: totalRounds, bater: teamBater, canasta: canastaTally,
+    wildVetoFired: wildVetoStats.fired, meldHold: meldHoldStats,
+  })}`);
 
   // Distribuição de tamanho de mão ao esgotamento (para diagnóstico de hoarding)
   const allExhausts = results.flatMap(r => r.exhaustHandSizes);
@@ -1340,6 +1482,25 @@ function main() {
     console.log(`bateu por time    : produção(${prodTeam})=${teamBater[prodTeam]}   PIMC(${pimcTeam})=${teamBater[pimcTeam]}`);
     console.log(`decisões PIMC     : ${pimcStats.decisions}   divergiu da heurística smart: ${pimcStats.flippedVsSmart} (${flipPct}%)`);
     console.log(`config: D=${PIMC_DETERMINIZATIONS} determinizações × 2 ações, rollout ${PIMC_DEPTH}-ply`);
+  }
+
+  // ─── PIMC DESCARTE (Stage 2): A/B + diagnóstico do confound material ──────
+  const discTeam: TeamId | null = TEAM_PIMC_DISCARD['team-1'] ? 'team-1' : (TEAM_PIMC_DISCARD['team-2'] ? 'team-2' : null);
+  if (discTeam) {
+    const otherTeam: TeamId = discTeam === 'team-1' ? 'team-2' : 'team-1';
+    const discWins = discTeam === 'team-1' ? t1Wins : t2Wins;
+    const otherWins = otherTeam === 'team-1' ? t1Wins : t2Wins;
+    const gapPp = (100 * (discWins - otherWins) / N_GAMES).toFixed(1);
+    const s = pimcDiscardStats;
+    const flipPct = s.decisions > 0 ? (100 * s.flipped / s.decisions).toFixed(1) : '-';
+    console.log(`\n─── PIMC DESCARTE Stage 2: ${discTeam} (PIMC pile+descarte) vs ${otherTeam} (só PIMC pile) ───`);
+    console.log(`venceu ${discTeam}: ${discWins}/${N_GAMES}   ${otherTeam}: ${otherWins}/${N_GAMES}   gap=${gapPp}pp (comparar MESMO assento no swap!)`);
+    console.log(`decisões de descarte PIMC: ${s.decisions}   divergiu da heurística: ${s.flipped} (${flipPct}%)`);
+    if (s.flipped > 0) {
+      console.log(`  confound check (em divergências): pts médios PIMC=${(s.pimcPts / s.flipped).toFixed(1)} vs heur=${(s.heurPts / s.flipped).toFixed(1)}  |  danger médio PIMC=${(s.pimcDanger / s.flipped).toFixed(2)} vs heur=${(s.heurDanger / s.flipped).toFixed(2)}`);
+      console.log(`  (se pts PIMC ≫ heur e danger ~igual → só despeja carta alta = miragem do horizonEval; se danger PIMC < heur → escolhe mais seguro = sinal real)`);
+    }
+    console.log(`config descarte: D=${PIMC_DISCARD_D}, rollout ${PIMC_DISCARD_DEPTH}-ply, candidatas distintas (naipe+valor)`);
   }
 }
 

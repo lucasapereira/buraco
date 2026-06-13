@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Atmetimo taisyklė",
       "pileRuleNewPlay": "Tavo pirmas ėjimas PRIVALO turėti {{card}} (atmetimo viršus).\n\nGali:\n• Paliesti savo derinį ant stalo (pasirinkdamas {{card}} + papildomas kortas)\n• Arba padėti naują derinį su 3+ kortomis",
       "pileRuleAdd": "Privalai naudoti {{card}} (atmetimo viršus) pirmame ėjime (naujas derinys arba pridėjimas prie esamo).",
+      "pileBuriedMsg": "Ėjimas, kuriuo išdedama viršutinė atvartų krūvos korta, turi naudoti kortas iš tavo RANKOS — negalima naudoti kortų, atėjusių iš pačios krūvos. Viršutinei kortai išdėti naudok rankos kortas (arba jokerį).",
       "minCardsTitle": "Min 3 kortos",
       "minCardsMsg": "Pasirink bent 3 kortas derinį padėti.",
       "invalidCombTitle": "Neteisingas derinys",

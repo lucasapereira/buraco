@@ -15,9 +15,11 @@ import {
   findPileTopNonDegradingPlay,
   pileTakeForcesDirtyingCleanPath,
   longestNaturalRun,
+  wouldLockRedeemableWild,
+  wildTopTakeVeto,
 } from '../game/botHelpers';
 import { useGameStore } from '../store/gameStore';
-import { pimcShouldTakePile } from '../game/pimc';
+import { pimcShouldTakePile, pimcChooseDiscard, pimcShouldHoldMelds, meldsAvailable } from '../game/pimc';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -181,15 +183,21 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           takePile = shouldTakePileSmart(pile, freshBot.hand, difficulty, teamGames, fresh.gameMode, aggressiveness);
         }
 
-        // VETO difícil-agnóstico (cobre o PIMC 'expert', que decide por rollout e
-        // cujo horizonEval NÃO enxerga o custo real de perder a batida). Não pega
-        // o lixo se cumprir a obrigação do topo forçar sujar uma meld limpa
-        // protegida (canastra, ou candidata viável ≥5 sem canastra). Mesmo veto que
-        // shouldTakePileSmart usa na heurística; aqui garante o caminho PIMC também.
+        // VETOS difícil-agnósticos (cobrem o PIMC 'expert', que decide por rollout
+        // material). (1) Não pega o lixo se cumprir a obrigação do topo forçar
+        // sujar uma meld limpa protegida (canastra, ou candidata viável ≥5 sem
+        // canastra). (2) Topo-CORINGA sem encaixe natural/limpo: não pega se isso
+        // queimar o coringa contra a via de canastra limpa (wildTopTakeVeto —
+        // report "agora ele usa o coringa pra pegar lixo"; swap n=300 +4.0pp
+        // simétrico). Mesmas regras que shouldTakePileSmart aplica na heurística;
+        // aqui garantem o caminho PIMC também.
         if (takePile) {
           const vs = useGameStore.getState();
           const vbot = vs.players.find(p => p.id === botId);
-          if (vbot && pileTakeForcesDirtyingCleanPath(vbot.hand, vs.pile, vs.teams[vbot.teamId].games, vs.gameMode)) {
+          if (vbot && (
+            pileTakeForcesDirtyingCleanPath(vbot.hand, vs.pile, vs.teams[vbot.teamId].games, vs.gameMode)
+            || wildTopTakeVeto(vs.pile, vbot.hand, vs.teams[vbot.teamId].games, vs.gameMode)
+          )) {
             takePile = false;
           }
         }
@@ -274,18 +282,42 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       await delay(800);
     }
 
-    // Tenta adicionar a jogos existentes PRIMEIRO (para não matar canastras)
-    await doBotAddToGamesAsync(botId);
+    // Stage 4 (meldHold): no expert, a busca PIMC decide o TIMING de baixar —
+    // "baixo tudo agora vs seguro este turno" por rollout (a obrigação do lixo
+    // já foi cumprida acima; segurar nunca a viola). Swap n=300: +8.0pp
+    // simétrico, canastras limpas +28/+55% e REAIS ~2× por assento. Só busca
+    // quando baixar mudaria algo (meldsAvailable) — senão hold == play.
+    const expertTurn = !options.isOnline && s.botDifficulty === 'expert';
+    let holdMelds = false;
+    if (expertTurn) {
+      const fresh = useGameStore.getState();
+      if (fresh.currentTurnPlayerId === botId && fresh.turnPhase === 'play' && !fresh.roundOver
+          && meldsAvailable(fresh, botId)) {
+        holdMelds = await pimcShouldHoldMelds(fresh, botId, {
+          onYield: async () => { await delay(0); },
+        });
+        // Re-valida: o cômputo é async; estado pode ter mudado.
+        const f2 = useGameStore.getState();
+        if (f2.currentTurnPlayerId !== botId || f2.turnPhase !== 'play' || f2.roundOver) return;
+      }
+    }
 
-    // Tenta baixar jogos adicionais
-    await doBotPlaySequencesAsync(botId, difficulty);
+    if (!holdMelds) {
+      // Tenta adicionar a jogos existentes PRIMEIRO (para não matar canastras)
+      await doBotAddToGamesAsync(botId);
 
-    // Como as sequências podem ter liberado cartas, tenta adicionar novamente
-    await doBotAddToGamesAsync(botId);
+      // Tenta baixar jogos adicionais
+      await doBotPlaySequencesAsync(botId, difficulty);
 
-    // Descarta (só funciona se mustPlayPileTopId foi limpo)
-    await delay(1000); // tempo de respiro longo antes de passar o "BEM!"
-    doBotDiscard(botId, pileTopId);
+      // Como as sequências podem ter liberado cartas, tenta adicionar novamente
+      await doBotAddToGamesAsync(botId);
+    }
+
+    // Descarta (só funciona se mustPlayPileTopId foi limpo). No expert a busca
+    // PIMC do descarte já é o "tempo de pensar" — encurta o respiro pra não
+    // empilhar com o cômputo (~1,2s) e deixar o turno lento.
+    await delay(expertTurn ? 150 : 1000);
+    await doBotDiscard(botId, pileTopId);
   }
 
   /** Força jogar uma sequência que inclua o topo do lixo */
@@ -852,6 +884,10 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           } // fecha else wouldDirtyGame
         }
 
+        // Não trava o coringa de uma canastra suja regatável metendo carta natural
+        // no miolo (report: J♣ na [4..9♣ + 2♣] prende o 2♣ no 10). Escape: indo bater.
+        const handNow = freshState.players.find(p => p.id === botId)?.hand.length ?? freshBot.hand.length;
+        if (!card.isJoker && handNow > 2 && wouldLockRedeemableWild(game, card, freshState.gameMode)) continue;
         const combined = [...game, card];
         if (validateSequence(combined, freshState.gameMode)) {
           // Proteção extra: carta NORMAL também pode sujar canastra limpa
@@ -874,7 +910,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     }
   }
 
-  function doBotDiscard(botId: PlayerId, pileTopId: string | null = null) {
+  async function doBotDiscard(botId: PlayerId, pileTopId: string | null = null) {
     // Sempre lê estado fresco (pode ter mudado durante os delays assíncronos)
     const s = useGameStore.getState();
     if (s.currentTurnPlayerId !== botId || s.turnPhase !== 'play' || s.roundOver) {
@@ -905,7 +941,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     const opponentGames = fresh.teams[opponentTeamId].games;
     const opponentIds = fresh.players.filter(p => p.teamId === opponentTeamId).map(p => p.id);
     const tookPileRecently = opponentRecentlyTookPile(fresh.gameLog as any, opponentIds);
-    const card = chooseBestDiscard(
+    const heurCard = chooseBestDiscard(
       bot.hand,
       fresh.discardedCardHistory,
       'hard',
@@ -916,8 +952,24 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       opponentGames,
       tookPileRecently
     );
+    let cardId = heurCard.id;
+
+    // Expert ('Difícil'): escolhe o descarte por busca PIMC (mesma estrutura do
+    // pile-take — determinização + rollout, com correção de perigo de info real).
+    // Async/fatiado pra não travar a UI; só offline. Fallback = heurística acima.
+    const isExpertDiscard = !options.isOnline && fresh.botDifficulty === 'expert';
+    if (isExpertDiscard && bot.hand.length > 1) {
+      const pimcId = await pimcChooseDiscard(fresh, botId, {
+        onYield: async () => { await delay(0); },
+      });
+      // Re-valida: o cômputo é async; estado pode ter mudado.
+      const f2 = useGameStore.getState();
+      if (f2.currentTurnPlayerId !== botId || f2.turnPhase !== 'play' || f2.roundOver) return;
+      const f2bot = f2.players.find(p => p.id === botId);
+      if (pimcId && f2bot && f2bot.hand.some(c => c.id === pimcId)) cardId = pimcId;
+    }
     animate(); // anim do lixo
-    useGameStore.getState().discard(botId, card.id);
+    useGameStore.getState().discard(botId, cardId);
 
     // Safety net: se o discard foi bloqueado (estado não mudou), força passe de turno
     const after = useGameStore.getState();

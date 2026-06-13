@@ -93,6 +93,7 @@
       "pileRuleTitle": "⚠️ Pile rule",
       "pileRuleNewPlay": "Your first play MUST include {{card}} (pile top).\n\nYou can:\n• Tap one of your melds on the table (selecting {{card}} + extra cards)\n• Or play a new meld with 3+ cards",
       "pileRuleAdd": "You must use {{card}} (pile top) on your first play (new meld or adding to an existing one).",
+      "pileBuriedMsg": "जो चाल ढेर के सबसे ऊपर वाले पत्ते को मेल्ड करती है, उसमें आपके हाथ के पत्तों का उपयोग होना चाहिए — आप ढेर के अंदर से आए पत्तों का उपयोग नहीं कर सकते। ऊपर वाले पत्ते को मेल्ड करने के लिए हाथ के पत्ते (या एक वाइल्ड) का उपयोग करें।",
       "minCardsTitle": "Min 3 cards",
       "minCardsMsg": "Select at least 3 cards to play a Classic meld.",
       "invalidCombTitle": "Invalid combination",

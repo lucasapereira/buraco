@@ -2,7 +2,7 @@
   "expo": {
     "name": "Queti's Buraco",
     "slug": "buraco",
-    "version": "2.2.7",
+    "version": "2.2.15",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "buraco",
@@ -18,7 +18,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.lucasapereira.buraco",
-      "versionCode": 70,
+      "versionCode": 78,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",

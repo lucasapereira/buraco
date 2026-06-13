@@ -134,7 +134,7 @@ export function _evalSelfCheck(): void {
     turnPhase: 'draw', winnerTeamId: null, roundOver: false, roundStatsRecorded: false,
     targetScore: 1500, matchScores: { 'team-1': 0, 'team-2': 0 }, gameLog: [],
     lastDrawnCardId: null, gameMode: 'classic', botDifficulty: 'hard', discardedCardHistory: [],
-    mustPlayPileTopId: null, deckReshuffleCount: 0, turnHistory: [],
+    mustPlayPileTopId: null, pileTakenBuriedIds: [], deckReshuffleCount: 0, turnHistory: [],
     roundNumber: 1, gameId: 'x',
   } as GameState);
 
