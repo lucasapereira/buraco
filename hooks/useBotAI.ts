@@ -171,6 +171,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         if (isExpert) {
           // Busca PIMC, fatiada (cede o frame) — não trava a UI. Anytime.
           takePile = await pimcShouldTakePile(fresh, botId, {
+            // D=60 (2× o default): swap n=300 deu +4.7pp simétrico vs D=30. Anytime
+            // (deadline 1.2s) protege a UX se o device for lento. Ver memória D-sweep.
+            determinizations: 60,
             onYield: async () => { await delay(0); },
           });
           // Re-valida: o cômputo é async (~1.2s); estado pode ter mudado.
@@ -287,6 +290,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     // já foi cumprida acima; segurar nunca a viola). Swap n=300: +8.0pp
     // simétrico, canastras limpas +28/+55% e REAIS ~2× por assento. Só busca
     // quando baixar mudaria algo (meldsAvailable) — senão hold == play.
+    // NOTA: tentativa de generalizar pra menu {playAll, extendOnly, holdAll}
+    // (Stage 5/meldPlan) REGREDIU −5.3pp simétrico — o extendOnly é EV-negativo
+    // (ver pimc.ts/botSim MELDPLAN, gated OFF). Mantido o binário.
     const expertTurn = !options.isOnline && s.botDifficulty === 'expert';
     let holdMelds = false;
     if (expertTurn) {
@@ -294,6 +300,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       if (fresh.currentTurnPlayerId === botId && fresh.turnPhase === 'play' && !fresh.roundOver
           && meldsAvailable(fresh, botId)) {
         holdMelds = await pimcShouldHoldMelds(fresh, botId, {
+          determinizations: 60, // 2× default (ver D-sweep +4.7pp)
           onYield: async () => { await delay(0); },
         });
         // Re-valida: o cômputo é async; estado pode ter mudado.
@@ -331,13 +338,22 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
 
     const teamGames = s.teams[bot.teamId].games;
 
+    // Cartas ENTERRADAS não podem compor a meld que cumpre a obrigação (regra do
+    // engine, gameStore). Excluí-las de TODA busca abaixo evita o bug em que uma
+    // carta enterrada (ex.: um 2º coringa que ordena antes do coringa REAL) é
+    // escolhida, o engine rejeita, e a obrigação é largada mesmo havendo jogada
+    // válida na MÃO (report: descartei 3♠, bot fez 2 jogos e não usou o 3♠).
+    // Só vale no clássico: no araujo_pereira a captura é livre e cartas do lixo
+    // PODEM compor melds, então não devem ser filtradas.
+    const buriedIds = new Set(s.gameMode !== 'araujo_pereira' ? (s.pileTakenBuriedIds ?? []) : []);
+
     // CUMPRIMENTO SEM DEGRADAR (1ª tentativa, antes das fases A/B): procura uma
     // jogada que mele o topo sem sujar NENHUMA meld limpa — canastra OU candidata
     // (<7). Inclui formar jogo NOVO (mesmo sujo) quando essa é a única forma de
     // não tocar numa meld limpa. Isso conserta o ordering-bug: as fases B sujavam
     // uma canastra/candidata limpa ANTES de tentar um jogo novo que a preservaria.
     if (!allowWild3) {
-      const handNoTop = bot.hand.filter(c => c.id !== pileTopId);
+      const handNoTop = bot.hand.filter(c => c.id !== pileTopId && !buriedIds.has(c.id));
       const nd = findPileTopNonDegradingPlay(handNoTop, topCard, teamGames, s.gameMode, true);
       if (nd) {
         animate();
@@ -426,7 +442,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       if (!freshBot) return;
 
       for (const c of freshBot.hand) {
-        if (c.id === pileTopId) continue;
+        if (c.id === pileTopId || buriedIds.has(c.id)) continue;
         const combined = [...game, topCard, c];
         if (validateSequence(combined, freshState.gameMode)) {
           if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
@@ -435,9 +451,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         }
       }
       for (let i = 0; i < freshBot.hand.length; i++) {
-        if (freshBot.hand[i].id === pileTopId) continue;
+        if (freshBot.hand[i].id === pileTopId || buriedIds.has(freshBot.hand[i].id)) continue;
         for (let j = i + 1; j < freshBot.hand.length; j++) {
-          if (freshBot.hand[j].id === pileTopId) continue;
+          if (freshBot.hand[j].id === pileTopId || buriedIds.has(freshBot.hand[j].id)) continue;
           const combined = [...game, topCard, freshBot.hand[i], freshBot.hand[j]];
           if (validateSequence(combined, freshState.gameMode)) {
             if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
@@ -452,7 +468,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     // Só considera sequências em que topo é do mesmo naipe da seq e TODOS os demais
     // curingas da seq também são naturais do mesmo naipe — ou seja, jogada 100% limpa.
     if (topCard.isJoker && topCard.suit !== 'joker') {
-      const sequences = findBestSequences(bot.hand, s.gameMode, true); // issue A: aloca coringa por naipe
+      const sequences = findBestSequences(bot.hand.filter(c => !buriedIds.has(c.id)), s.gameMode, true); // issue A: aloca coringa por naipe
       for (const seq of sequences) {
         if (!seq.some(c => c.id === pileTopId)) continue;
         const seqNormal = seq.filter(c => !c.isJoker);
@@ -507,7 +523,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
         if (pass === 0 && wouldDirty) continue;
 
         for (const c of freshBot.hand) {
-          if (c.id === pileTopId) continue;
+          if (c.id === pileTopId || buriedIds.has(c.id)) continue;
           const combined = [...game, topCard, c];
           if (validateSequence(combined, freshState.gameMode)) {
             const wouldDegrade = checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean';
@@ -518,9 +534,9 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           }
         }
         for (let i = 0; i < freshBot.hand.length; i++) {
-          if (freshBot.hand[i].id === pileTopId) continue;
+          if (freshBot.hand[i].id === pileTopId || buriedIds.has(freshBot.hand[i].id)) continue;
           for (let j = i + 1; j < freshBot.hand.length; j++) {
-            if (freshBot.hand[j].id === pileTopId) continue;
+            if (freshBot.hand[j].id === pileTopId || buriedIds.has(freshBot.hand[j].id)) continue;
             const combined = [...game, topCard, freshBot.hand[i], freshBot.hand[j]];
             if (validateSequence(combined, freshState.gameMode)) {
               const wouldDegrade = checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean';
@@ -535,7 +551,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     }
 
     // B3) Tenta via findBestSequences (qualquer jogo novo, mesmo com curinga sujo)
-    const sequences = findBestSequences(bot.hand, s.gameMode, true); // issue A: aloca coringa por naipe
+    const sequences = findBestSequences(bot.hand.filter(c => !buriedIds.has(c.id)), s.gameMode, true); // issue A: aloca coringa por naipe
     for (const seq of sequences) {
       if (seq.some(c => c.id === pileTopId)) {
         if (isBadWild3(seq)) continue; // adia meld de 3 com coringa não-natural
@@ -544,10 +560,12 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       }
     }
 
-    // 3) Tenta combinações brutas de 3 cartas com o topo
-    const sameSuit = bot.hand.filter(c => !c.isJoker && c.suit === topCard.suit && c.id !== pileTopId);
-    const sameValue = bot.hand.filter(c => !c.isJoker && c.value === topCard.value && c.id !== pileTopId);
-    const jokers = bot.hand.filter(c => c.isJoker);
+    // 3) Tenta combinações brutas de 3 cartas com o topo (exclui ENTERRADAS: um
+    // coringa/natural enterrado que ordenasse antes do REAL fazia o engine rejeitar
+    // e a obrigação ser largada).
+    const sameSuit = bot.hand.filter(c => !c.isJoker && c.suit === topCard.suit && c.id !== pileTopId && !buriedIds.has(c.id));
+    const sameValue = bot.hand.filter(c => !c.isJoker && c.value === topCard.value && c.id !== pileTopId && !buriedIds.has(c.id));
+    const jokers = bot.hand.filter(c => c.isJoker && !buriedIds.has(c.id));
 
     // Tenta sequência do mesmo naipe
     for (let i = 0; i < sameSuit.length; i++) {
@@ -588,18 +606,29 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const fbot = fs.players.find(p => p.id === botId);
       const ftop = fbot?.hand.find(c => c.id === pileTopId);
       if (fbot && ftop) {
-        const handWithoutTop = fbot.hand.filter(c => c.id !== pileTopId);
+        // Exclui ENTERRADAS (não podem cumprir a obrigação) — sem isso o
+        // findPileTopPlay podia devolver uma jogada com carta enterrada que o
+        // engine rejeita, largando a obrigação havendo jogada legal na mão.
+        const handWithoutTop = fbot.hand.filter(c => c.id !== pileTopId && !buriedIds.has(c.id));
         const teamGamesNow = fs.teams[fbot.teamId].games;
-        // Recusa jogadas que sujariam canastra limpa de 500/1000 (≥13): prefere
-        // largar a obrigação a perder 400/900 (ver feedback_bot_nunca_suja_500_1000).
-        const realize = findPileTopPlay(handWithoutTop, ftop, teamGamesNow, fs.gameMode, (gi, cardIds) => {
-          if (gi < 0) return true;
-          const game = teamGamesNow[gi];
-          if (game.length < 13 || checkCanasta(game) !== 'clean') return true;
-          const added = fbot.hand.filter(c => cardIds.includes(c.id));
-          return checkCanasta([...game, ...added]) === 'clean';
-        });
-        if (realize) {
+        // LOOP DE RETRY: findPileTopPlay devolve a 1ª combinação válida por
+        // validateSequence, mas o engine pode rejeitá-la (strand). Pulamos as já
+        // tentadas até o engine aceitar uma. Recusa jogadas que sujariam canastra
+        // limpa de 500/1000 (≥13): prefere largar a obrigação a perder 400/900
+        // (ver feedback_bot_nunca_suja_500_1000).
+        const tried = new Set<string>();
+        for (let attempt = 0; attempt < 16; attempt++) {
+          const realize = findPileTopPlay(handWithoutTop, ftop, teamGamesNow, fs.gameMode, (gi, cardIds) => {
+            const key = gi + ':' + [...cardIds].sort().join(',');
+            if (tried.has(key)) return false;
+            if (gi < 0) return true;
+            const game = teamGamesNow[gi];
+            if (game.length < 13 || checkCanasta(game) !== 'clean') return true;
+            const added = fbot.hand.filter(c => cardIds.includes(c.id));
+            return checkCanasta([...game, ...added]) === 'clean';
+          });
+          if (!realize) break;
+          tried.add(realize.gameIndex + ':' + [...realize.cardIds].sort().join(','));
           animate();
           const ok = realize.gameIndex >= 0
             ? useGameStore.getState().addToExistingGame(botId, realize.cardIds, realize.gameIndex)
@@ -610,7 +639,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     }
 
     // 5) Impossível jogar o topo — limpa a obrigação pra não travar o bot
-    useGameStore.setState({ mustPlayPileTopId: null });
+    useGameStore.setState({ mustPlayPileTopId: null, pileTakenBuriedIds: [] });
   }
 
 
@@ -803,6 +832,15 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const aMatch = aNormal.length > 0 && jokerSuits.has(aNormal[0].suit) ? 1 : 0;
       const bMatch = bNormal.length > 0 && jokerSuits.has(bNormal[0].suit) ? 1 : 0;
       if (aMatch !== bMatch) return bMatch - aMatch;
+      // Prioridade 3.5: NÃO engordar canastra JÁ COMPLETA que não ganha bônus.
+      // Um jogo que ainda NÃO é canastra (rumo a uma nova) recebe a carta antes de
+      // uma canastra pronta cujo bônus não muda (delta 0). Report: 8♣ cabia numa
+      // canastra suja completa E num jogo crescendo — alimentar o que cresce vale
+      // mais (rumo a 2ª canastra) que engordar a pronta de graça. Upgrades reais
+      // (suja→limpa, 13/14) já vêm antes via gameUpgradeDelta (Prioridade 2).
+      const aStagnant = checkCanasta(teamGames[a]) !== 'none' && gameUpgradeDelta[a] === 0 ? 1 : 0;
+      const bStagnant = checkCanasta(teamGames[b]) !== 'none' && gameUpgradeDelta[b] === 0 ? 1 : 0;
+      if (aStagnant !== bStagnant) return aStagnant - bStagnant; // canastra parada vai por último
       // Prioridade 4: jogos limpos antes de sujos (protege caminho para canastra limpa)
       if (aClean !== bClean) return aClean ? -1 : 1;
       // Prioridade 5: jogos maiores primeiro (mais perto de canastra)
@@ -960,6 +998,7 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     const isExpertDiscard = !options.isOnline && fresh.botDifficulty === 'expert';
     if (isExpertDiscard && bot.hand.length > 1) {
       const pimcId = await pimcChooseDiscard(fresh, botId, {
+        determinizations: 40, // 2× default (ver D-sweep +4.7pp)
         onYield: async () => { await delay(0); },
       });
       // Re-valida: o cômputo é async; estado pode ter mudado.

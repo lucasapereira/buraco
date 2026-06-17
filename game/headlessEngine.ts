@@ -127,11 +127,19 @@ export function drawFromPile(s: GameState, playerId: PlayerId): boolean {
     if (!canTakePile(p.hand, s.pile, teamGames, s.gameMode)) return false;
   }
   const topCard = s.pile[s.pile.length - 1];
+  // Cartas ENTERRADAS (todas menos o topo) não podem formar a meld que cumpre a
+  // obrigação — a captura tem de ser justificada pela MÃO (espelha gameStore).
+  const buriedIds = s.gameMode !== 'araujo_pereira'
+    ? s.pile.filter(c => c.id !== topCard.id).map(c => c.id)
+    : [];
   updatePlayerHand(s, playerId, [...p.hand, ...s.pile]);
   s.pile = [];
   s.lastDrawnCardId = topCard.id;
   s.turnPhase = 'play';
-  if (s.gameMode !== 'araujo_pereira') s.mustPlayPileTopId = topCard.id;
+  if (s.gameMode !== 'araujo_pereira') {
+    s.mustPlayPileTopId = topCard.id;
+    s.pileTakenBuriedIds = buriedIds;
+  }
   return true;
 }
 
@@ -139,6 +147,12 @@ export function playCards(s: GameState, playerId: PlayerId, cardIds: string[]): 
   if (s.turnPhase !== 'play') return false;
   const p = playerOf(s, playerId);
   if (s.gameMode !== 'araujo_pereira' && s.mustPlayPileTopId && !cardIds.includes(s.mustPlayPileTopId)) return false;
+  // A jogada que CUMPRE a obrigação do lixo não pode usar cartas ENTERRADAS.
+  if (s.gameMode !== 'araujo_pereira' && s.mustPlayPileTopId
+      && cardIds.includes(s.mustPlayPileTopId)
+      && cardIds.some(id => id !== s.mustPlayPileTopId && (s.pileTakenBuriedIds ?? []).includes(id))) {
+    return false;
+  }
   const selected = p.hand.filter(c => cardIds.includes(c.id));
   if (selected.length !== cardIds.length) return false;
   if (!validateSequence(selected, s.gameMode)) return false;
@@ -147,6 +161,7 @@ export function playCards(s: GameState, playerId: PlayerId, cardIds: string[]): 
   const team = teamOf(s, playerId);
   team.games.push(sortGameCards(selected));
   updatePlayerHand(s, playerId, remaining);
+  if (s.mustPlayPileTopId && cardIds.includes(s.mustPlayPileTopId)) s.pileTakenBuriedIds = [];
   s.mustPlayPileTopId = null;
   handleDeadIfApplicable(s, playerId);
   return true;
@@ -159,6 +174,12 @@ export function addToExistingGame(s: GameState, playerId: PlayerId, cardIds: str
   const game = team.games[gameIndex];
   if (!game) return false;
   if (s.gameMode !== 'araujo_pereira' && s.mustPlayPileTopId && !cardIds.includes(s.mustPlayPileTopId)) return false;
+  // A jogada que CUMPRE a obrigação do lixo não pode usar cartas ENTERRADAS.
+  if (s.gameMode !== 'araujo_pereira' && s.mustPlayPileTopId
+      && cardIds.includes(s.mustPlayPileTopId)
+      && cardIds.some(id => id !== s.mustPlayPileTopId && (s.pileTakenBuriedIds ?? []).includes(id))) {
+    return false;
+  }
   const selected = p.hand.filter(c => cardIds.includes(c.id));
   if (selected.length !== cardIds.length) return false;
   const combined = [...game, ...selected];
@@ -167,9 +188,24 @@ export function addToExistingGame(s: GameState, playerId: PlayerId, cardIds: str
   if (wouldStrand(s, playerId, remaining)) return false;
   team.games[gameIndex] = sortGameCards(combined);
   updatePlayerHand(s, playerId, remaining);
+  if (s.mustPlayPileTopId && cardIds.includes(s.mustPlayPileTopId)) s.pileTakenBuriedIds = [];
   s.mustPlayPileTopId = null;
   handleDeadIfApplicable(s, playerId);
   return true;
+}
+
+/** Nº de descartes recentes mantidos por jogador (sinal de inferência). */
+export const RECENT_DISCARD_K = 3;
+
+/** Registra o descarte mais recente do jogador (lazy-init, cap K). Mantido por
+ *  TODOS os motores de discard (headless, botSim, gameStore) p/ a inferência. */
+export function pushRecentDiscard(s: GameState, playerId: PlayerId, cardId: string): void {
+  if (!s.recentDiscardsByPlayer) {
+    s.recentDiscardsByPlayer = { 'user': [], 'bot-1': [], 'bot-2': [], 'bot-3': [] };
+  }
+  const arr = s.recentDiscardsByPlayer[playerId] ?? [];
+  const next = [...arr, cardId];
+  s.recentDiscardsByPlayer[playerId] = next.length > RECENT_DISCARD_K ? next.slice(next.length - RECENT_DISCARD_K) : next;
 }
 
 export function discard(s: GameState, playerId: PlayerId, cardId: string): boolean {
@@ -188,6 +224,7 @@ export function discard(s: GameState, playerId: PlayerId, cardId: string): boole
   updatePlayerHand(s, playerId, p.hand.filter(c => c.id !== cardId));
   s.pile = [...s.pile, card];
   s.discardedCardHistory = [...s.discardedCardHistory, card.id];
+  pushRecentDiscard(s, playerId, card.id);
   const postTeam = teamOf(s, playerId);
   if (p.hand.length === 0 && !postTeam.hasGottenDead && s.deads.length > 0) {
     const dead = s.deads.pop()!;
@@ -205,16 +242,21 @@ function chooseTakePileHeuristic(s: GameState, playerId: PlayerId): boolean {
   return shouldTakePileSmart(s.pile, p.hand, DIFFICULTY, team.games, s.gameMode, aggr, true);
 }
 
-function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, allowWild3 = false): void {
+export function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, allowWild3 = false): void {
   const p = playerOf(s, playerId);
   const team = teamOf(s, playerId);
   const topCard = p.hand.find(c => c.id === pileTopId);
   if (!topCard) { s.mustPlayPileTopId = null; return; }
+  // Cartas ENTERRADAS não podem compor a meld que cumpre a obrigação (regra do
+  // engine). Excluí-las de TODA busca abaixo evita o bug em que um coringa (ou
+  // natural) enterrado é escolhido antes da carta REAL equivalente, fazendo o
+  // engine rejeitar e a obrigação ser largada mesmo havendo jogada válida na MÃO.
+  const buried = new Set(s.pileTakenBuriedIds ?? []);
   // CUMPRIMENTO SEM DEGRADAR (1ª tentativa — espelha useBotAI): jogada que mele o
   // topo sem sujar nenhuma meld limpa (canastra ou candidata <7), inclusive jogo
   // novo. Tentada ANTES das fases abaixo que poderiam sujar uma canastra limpa.
   if (!allowWild3) {
-    const handNoTop = p.hand.filter(c => c.id !== pileTopId);
+    const handNoTop = p.hand.filter(c => c.id !== pileTopId && !buried.has(c.id));
     const nd = findPileTopNonDegradingPlay(handNoTop, topCard, team.games, s.gameMode, true);
     if (nd) {
       const ok = nd.gameIndex >= 0
@@ -261,7 +303,7 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, al
     const game = team.games[gi];
     if (topCard.isJoker && wouldDirtyGame(topCard, game)) continue;
     for (const c of p.hand) {
-      if (c.id === pileTopId) continue;
+      if (c.id === pileTopId || buried.has(c.id)) continue;
       const combined = [...game, topCard, c];
       if (validateSequence(combined, s.gameMode)) {
         if (checkCanasta(game) === 'clean' && checkCanasta(combined) !== 'clean') continue;
@@ -269,13 +311,13 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, al
       }
     }
   }
-  const sequences = findBestSequences(p.hand, s.gameMode, true); // issue A: aloca coringa por naipe
+  const sequences = findBestSequences(p.hand.filter(c => !buried.has(c.id)), s.gameMode, true); // issue A: aloca coringa por naipe
   for (const seq of sequences) {
     if (!seq.some(c => c.id === pileTopId)) continue;
     if (isBadWild3(seq)) continue;
     if (playCards(s, playerId, seq.map(c => c.id))) return;
   }
-  const sameSuit = p.hand.filter(c => !c.isJoker && c.suit === topCard.suit && c.id !== pileTopId);
+  const sameSuit = p.hand.filter(c => !c.isJoker && c.suit === topCard.suit && c.id !== pileTopId && !buried.has(c.id));
   for (let i = 0; i < sameSuit.length; i++) {
     for (let j = i + 1; j < sameSuit.length; j++) {
       if (playCards(s, playerId, [pileTopId, sameSuit[i].id, sameSuit[j].id])) return;
@@ -288,21 +330,30 @@ function playWithPileTop(s: GameState, playerId: PlayerId, pileTopId: string, al
   // entre canTakePile e as fases acima largam a obrigação (bot fica com o lixo sem
   // baixar o topo, jogada ilegal no Clássico). Recusa jogadas que sujariam canastra
   // limpa de 500/1000 (≥13): prefere largar a obrigação a perder 400/900.
-  const handWithoutTop = p.hand.filter(c => c.id !== pileTopId);
-  const realize = findPileTopPlay(handWithoutTop, topCard, team.games, s.gameMode, (gi, cardIds) => {
-    if (gi < 0) return true;
-    const game = team.games[gi];
-    if (game.length < 13 || checkCanasta(game) !== 'clean') return true;
-    const added = p.hand.filter(c => cardIds.includes(c.id));
-    return checkCanasta([...game, ...added]) === 'clean';
-  });
-  if (realize) {
+  // LOOP DE RETRY: findPileTopPlay devolve a 1ª combinação válida por validateSequence,
+  // mas o engine pode rejeitá-la (strand, degradação). Pulamos candidatas já tentadas
+  // até o engine aceitar uma — senão o bot largava a obrigação havendo jogada legal.
+  const handWithoutTop = p.hand.filter(c => c.id !== pileTopId && !buried.has(c.id));
+  const tried = new Set<string>();
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const realize = findPileTopPlay(handWithoutTop, topCard, team.games, s.gameMode, (gi, cardIds) => {
+      const key = gi + ':' + [...cardIds].sort().join(',');
+      if (tried.has(key)) return false;
+      if (gi < 0) return true;
+      const game = team.games[gi];
+      if (game.length < 13 || checkCanasta(game) !== 'clean') return true;
+      const added = p.hand.filter(c => cardIds.includes(c.id));
+      return checkCanasta([...game, ...added]) === 'clean';
+    });
+    if (!realize) break;
+    tried.add(realize.gameIndex + ':' + [...realize.cardIds].sort().join(','));
     const ok = realize.gameIndex >= 0
       ? addToExistingGame(s, playerId, realize.cardIds, realize.gameIndex)
       : playCards(s, playerId, realize.cardIds);
     if (ok) return;
   }
   s.mustPlayPileTopId = null;
+  s.pileTakenBuriedIds = [];
 }
 
 export function playSequencesPhase(s: GameState, playerId: PlayerId): void {
@@ -417,6 +468,15 @@ export function addToGamesPhase(s: GameState, playerId: PlayerId): void {
     const aMatch = aNormal.length > 0 && jokerSuits.has(aNormal[0].suit) ? 1 : 0;
     const bMatch = bNormal.length > 0 && jokerSuits.has(bNormal[0].suit) ? 1 : 0;
     if (aMatch !== bMatch) return bMatch - aMatch;
+    // Prioridade 3.5: NÃO engordar canastra JÁ COMPLETA que não ganha bônus.
+    // Um jogo que ainda NÃO é canastra (rumo a uma nova) deve receber a carta antes
+    // de uma canastra pronta cujo bônus não muda (delta 0). Caso do report: 8♣ cabe
+    // tanto numa canastra suja completa quanto num jogo crescendo — alimentar o que
+    // cresce vale mais (rumo a 2ª canastra) que engordar a pronta de graça. Upgrades
+    // reais (suja→limpa, 13/14) já vêm antes via gameUpgradeDelta (Prioridade 2).
+    const aStagnant = checkCanasta(team.games[a]) !== 'none' && gameUpgradeDelta[a] === 0 ? 1 : 0;
+    const bStagnant = checkCanasta(team.games[b]) !== 'none' && gameUpgradeDelta[b] === 0 ? 1 : 0;
+    if (aStagnant !== bStagnant) return aStagnant - bStagnant; // canastra parada vai por último
     if (aClean !== bClean) return aClean ? -1 : 1;
     if (aLen !== bLen) return bLen - aLen;
     return 0;
@@ -479,13 +539,36 @@ export function addToGamesPhase(s: GameState, playerId: PlayerId): void {
 }
 
 /**
+ * Plano de meld DESTE turno (a obrigação do lixo é cumprida ANTES, sempre).
+ *  - `playAll`: baixa tudo que puder (greedy = política heurística de produção).
+ *  - `extendOnly`: só ESTENDE melds existentes (addToGames) — não revela meld
+ *    nova da mão (esconde info, mantém cartas flexíveis pra descarte/futuro).
+ *  - `holdAll`: não baixa nada neste turno (acumula dívida de pontos, mas
+ *    esconde tudo e preserva coringa/cartas).
+ * O PIMC (game/pimc.ts) escolhe o plano por rollout. Generaliza o meldHold
+ * binário (Stage 4), que era só {playAll, holdAll}, com o meio-termo extendOnly.
+ */
+export type MeldPlan = 'playAll' | 'extendOnly' | 'holdAll';
+
+export function applyMeldPlan(s: GameState, playerId: PlayerId, plan: MeldPlan): void {
+  if (plan === 'holdAll') return;
+  if (plan === 'extendOnly') { addToGamesPhase(s, playerId); return; }
+  // playAll: add (não mata canastra) → seq nova → add (absorve cartas liberadas).
+  addToGamesPhase(s, playerId);
+  playSequencesPhase(s, playerId);
+  addToGamesPhase(s, playerId);
+}
+
+/**
  * Um turno completo do bot com a política heurística de produção.
  * `forcedDraw`: se definido, força a 1ª decisão pegar-lixo (true) / comprar
  * (false) — usado pelo PIMC pra avaliar as 2 ações a partir do mesmo estado.
  * `holdMelds`: pula as fases de meld DESTE turno (a obrigação do lixo segue
  * cumprida — é regra) — usado pelo PIMC de timing (segurar vs baixar).
+ * `meldPlan`: se definido, sobrepõe holdMelds e aplica um plano específico —
+ * usado pelo PIMC de escolha de meld.
  */
-export function botTurn(s: GameState, playerId: PlayerId, forcedDraw?: boolean, holdMelds = false): void {
+export function botTurn(s: GameState, playerId: PlayerId, forcedDraw?: boolean, holdMelds = false, meldPlan?: MeldPlan): void {
   if (s.turnPhase === 'draw') {
     const take = forcedDraw !== undefined ? forcedDraw : chooseTakePileHeuristic(s, playerId);
     if (take) {
@@ -499,11 +582,8 @@ export function botTurn(s: GameState, playerId: PlayerId, forcedDraw?: boolean, 
   if (s.roundOver) return;
 
   if (s.mustPlayPileTopId) playWithPileTop(s, playerId, s.mustPlayPileTopId);
-  if (!holdMelds) {
-    addToGamesPhase(s, playerId);
-    playSequencesPhase(s, playerId);
-    addToGamesPhase(s, playerId);
-  }
+  const plan: MeldPlan = meldPlan ?? (holdMelds ? 'holdAll' : 'playAll');
+  applyMeldPlan(s, playerId, plan);
 
   if (checkBater(s, playerId)) return;
 

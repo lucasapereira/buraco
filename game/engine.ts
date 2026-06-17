@@ -62,6 +62,11 @@ export interface GameState {
   gameMode: GameMode;
   botDifficulty: BotDifficulty;      // tier escolhido no início (por-partida)
   discardedCardHistory: string[];
+  // Últimos descartes POR JOGADOR (ids, mais recente ao fim), até 3. Usado pela
+  // inferência do PIMC (determinize): um jogador que descartou 7♠ provavelmente
+  // não está segurando os vizinhos de sequência / pares do 7♠. Opcional e
+  // inicializado lazy no discard (backward-safe — estados antigos não têm).
+  recentDiscardsByPlayer?: Record<PlayerId, string[]>;
   mustPlayPileTopId: string | null; // ID da carta do topo do lixo que deve ser baixada
   // IDs das cartas ENTERRADAS do lixo (todas menos o topo) trazidas pra mão na
   // última pegada cuja obrigação ainda está pendente. A jogada que cumpre a
