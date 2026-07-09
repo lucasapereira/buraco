@@ -51,7 +51,9 @@
       "streak": "🔥 Série de {{days}} jours !",
       "welcomeBack": "Bon retour !",
       "claim": "RÉCUPÉRER"
-    }
+    },
+    "pileViewLabel": "Défausse visible",
+    "pileViewDesc": "Touchez la défausse pendant la partie pour voir toutes les cartes."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "Cartes de la défausse",
+      "take": "PRENDRE LA DÉFAUSSE"
+    }
   },
   "events": {
     "newRound": "▶ Nouvelle manche commencée",

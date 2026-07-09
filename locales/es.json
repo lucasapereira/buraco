@@ -51,7 +51,9 @@
       "streak": "🔥 ¡{{days}} días seguidos!",
       "welcomeBack": "¡Bienvenido de vuelta!",
       "claim": "RECLAMAR"
-    }
+    },
+    "pileViewLabel": "Descarte abierto",
+    "pileViewDesc": "Toca el descarte durante la partida para ver todas las cartas."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "Cartas del descarte",
+      "take": "TOMAR EL DESCARTE"
+    }
   },
   "events": {
     "newRound": "▶ Nueva ronda iniciada",

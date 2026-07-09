@@ -61,6 +61,10 @@ export interface GameState {
   lastDrawnCardId: string | null;
   gameMode: GameMode;
   botDifficulty: BotDifficulty;      // tier escolhido no início (por-partida)
+  // Buraco Mole (araujo_pereira): permite tocar no lixo pra ver TODAS as cartas.
+  // Escolhido na tela inicial; irrelevante no clássico. Opcional (backward-safe —
+  // estados antigos persistidos e scripts de teste não têm o campo).
+  pileViewEnabled?: boolean;
   discardedCardHistory: string[];
   // Últimos descartes POR JOGADOR (ids, mais recente ao fim), até 3. Usado pela
   // inferência do PIMC (determinize): um jogador que descartou 7♠ provavelmente
@@ -88,7 +92,7 @@ export function getNextPlayer(currentId: PlayerId): PlayerId {
   return TURN_ORDER[(idx + 1) % 4];
 }
 
-export function createInitialGameState(targetScore: number = 1500, gameMode: GameMode = 'classic', botDifficulty: BotDifficulty = 'hard'): GameState {
+export function createInitialGameState(targetScore: number = 1500, gameMode: GameMode = 'classic', botDifficulty: BotDifficulty = 'hard', pileViewEnabled: boolean = false): GameState {
   const allCards = shuffle(generateDeck());
 
   // Separar os 2 mortos (11 cartas cada)
@@ -130,6 +134,7 @@ export function createInitialGameState(targetScore: number = 1500, gameMode: Gam
     lastDrawnCardId: null,
     gameMode,
     botDifficulty,
+    pileViewEnabled,
     discardedCardHistory: [],
     mustPlayPileTopId: null,
     pileTakenBuriedIds: [],

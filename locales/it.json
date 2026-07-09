@@ -51,7 +51,9 @@
       "streak": "🔥 {{days}} giorni di fila!",
       "welcomeBack": "Bentornato!",
       "claim": "RISCATTA"
-    }
+    },
+    "pileViewLabel": "Scarto scoperto",
+    "pileViewDesc": "Tocca lo scarto durante la partita per vedere tutte le carte."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "Carte dello scarto",
+      "take": "PRENDI LO SCARTO"
+    }
   },
   "events": {
     "newRound": "▶ Nuova mano iniziata",

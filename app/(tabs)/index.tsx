@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform, ScrollView, BackHandler } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Modal, Platform, ScrollView, BackHandler, Switch } from 'react-native';
 import { showAlert } from '../../components/ThemedAlert';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
@@ -29,6 +29,7 @@ export default function HomeScreen() {
   const { resetRoom, roomStatus } = useOnlineStore();
   const [targetScore, setTargetScore] = useState(1500);
   const [gameMode, setGameMode] = useState<GameMode>('classic');
+  const [pileViewEnabled, setPileViewEnabled] = useState(true);
   const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('expert');
   const [dailyReward, setDailyReward] = useState<DailyRewardInfo | null>(null);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -83,7 +84,7 @@ export default function HomeScreen() {
 
   const handleStart = () => {
     if (roomStatus !== 'idle') resetRoom();
-    startNewGame(targetScore, gameMode, botDifficulty);
+    startNewGame(targetScore, gameMode, botDifficulty, gameMode === 'araujo_pereira' && pileViewEnabled);
     router.replace('/(tabs)/explore' as any);
   };
 
@@ -119,7 +120,7 @@ export default function HomeScreen() {
         });
       }
       if (roomStatus !== 'idle') resetRoom();
-      startNewGame(targetScore, gameMode, botDifficulty);
+      startNewGame(targetScore, gameMode, botDifficulty, gameMode === 'araujo_pereira' && pileViewEnabled);
     };
 
     const msg = wouldCountAsLoss
@@ -240,6 +241,26 @@ export default function HomeScreen() {
       <Text style={styles.diffDesc}>
         {gameMode === 'classic' ? t('home.modeDescClassic') : t('home.modeDescAraujo')}
       </Text>
+
+      {/* Opção do Buraco Mole: lixo aberto (tocar no lixo mostra as cartas) */}
+      {gameMode === 'araujo_pereira' && (
+        <TouchableOpacity
+          style={styles.toggleRow}
+          onPress={() => setPileViewEnabled(v => !v)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.toggleTextBox}>
+            <Text style={styles.toggleLabel}>{t('home.pileViewLabel')}</Text>
+            <Text style={styles.toggleDesc}>{t('home.pileViewDesc')}</Text>
+          </View>
+          <Switch
+            value={pileViewEnabled}
+            onValueChange={setPileViewEnabled}
+            trackColor={{ false: GameColors.surface.border, true: GameColors.gold }}
+            thumbColor="#fff"
+          />
+        </TouchableOpacity>
+      )}
 
       {/* Seletor de Dificuldade dos Bots */}
       <Text style={styles.sectionTitle}>{t('home.difficultyTitle')}</Text>
@@ -549,6 +570,33 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     paddingHorizontal: 8,
     lineHeight: 17,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: GameColors.surface.border,
+    backgroundColor: GameColors.surface.low,
+    marginBottom: 14,
+    gap: 10,
+  },
+  toggleTextBox: {
+    flex: 1,
+  },
+  toggleLabel: {
+    color: GameColors.text.secondary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  toggleDesc: {
+    color: GameColors.text.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 1,
   },
   targetRow: {
     flexDirection: 'row',

@@ -51,7 +51,9 @@
       "streak": "🔥 {{days}} dias seguidos!",
       "welcomeBack": "Bem-vindo de volta!",
       "claim": "RESGATAR"
-    }
+    },
+    "pileViewLabel": "Lixo aberto",
+    "pileViewDesc": "Toque no lixo durante a partida pra ver todas as cartas."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "Cartas do lixo",
+      "take": "PEGAR O LIXO"
+    }
   },
   "events": {
     "newRound": "▶ Nova rodada iniciada",

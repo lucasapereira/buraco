@@ -51,7 +51,9 @@
       "streak": "🔥 {{days}} dienas pēc kārtas!",
       "welcomeBack": "Laipni lūdzam atpakaļ!",
       "claim": "PAŅEMT"
-    }
+    },
+    "pileViewLabel": "Atklāta izgāztuve",
+    "pileViewDesc": "Spēles laikā pieskaries izgāztuvei, lai redzētu visas kārtis."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "Izgāztuves kārtis",
+      "take": "PAŅEMT IZGĀZTUVI"
+    }
   },
   "events": {
     "newRound": "▶ Sākta jauna kārta",

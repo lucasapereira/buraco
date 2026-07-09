@@ -51,7 +51,9 @@
       "streak": "🔥 {{days}} dienų iš eilės!",
       "welcomeBack": "Sveiki sugrįžę!",
       "claim": "ATSIIMTI"
-    }
+    },
+    "pileViewLabel": "Atviras atmetimas",
+    "pileViewDesc": "Žaidimo metu paliesk atmetimų krūvą, kad pamatytum visas kortas."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "Atmetimo kortos",
+      "take": "PAIMTI ATMETIMĄ"
+    }
   },
   "events": {
     "newRound": "▶ Pradėtas naujas ratas",

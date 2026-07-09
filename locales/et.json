@@ -51,7 +51,9 @@
       "streak": "🔥 {{days}} päeva järjest!",
       "welcomeBack": "Tere tulemast tagasi!",
       "claim": "VÕTA VASTU"
-    }
+    },
+    "pileViewLabel": "Avatud pakk",
+    "pileViewDesc": "Puuduta mängu ajal pakki, et näha kõiki kaarte."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "Paki kaardid",
+      "take": "VÕTA PAKK"
+    }
   },
   "events": {
     "newRound": "▶ Uus voor alanud",

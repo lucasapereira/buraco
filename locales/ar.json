@@ -51,7 +51,9 @@
       "streak": "🔥 {{days}} day streak!",
       "welcomeBack": "Welcome back!",
       "claim": "CLAIM"
-    }
+    },
+    "pileViewLabel": "كومة مكشوفة",
+    "pileViewDesc": "اضغط على الكومة أثناء اللعب لرؤية كل الأوراق."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,6 +189,10 @@
       "11": "😂",
       "12": "🤡",
       "13": "🔥"
+    },
+    "pileViewer": {
+      "title": "أوراق الكومة",
+      "take": "خذ الكومة"
     }
   },
   "events": {

@@ -24,7 +24,7 @@ import { Hand } from '../../components/Hand';
 import { AchievementToast } from '../../components/AchievementToast';
 import { Confetti } from '../../components/Confetti';
 import { calculateCardPoints, calculateLiveScore, createInitialGameState } from '../../game/engine';
-import { canTakePile, checkCanasta, validateSequence } from '../../game/rules';
+import { canTakePile, checkCanasta, sortCardsBySuitAndValue, validateSequence } from '../../game/rules';
 import { ACHIEVEMENTS } from '../../game/achievements';
 import { useBotAI } from '../../hooks/useBotAI';
 import { useGameSounds } from '../../hooks/useGameSounds';
@@ -139,7 +139,7 @@ export default function GameScreen() {
     turnPhase, roundOver, winnerTeamId, matchScores, targetScore,
     drawFromDeck, drawFromPile, discard, playCards, addToExistingGame,
     startNewRound, startNewGame,
-    gameLog, lastDrawnCardId, mustPlayPileTopId, pileTakenBuriedIds, gameMode, botDifficulty,
+    gameLog, lastDrawnCardId, mustPlayPileTopId, pileTakenBuriedIds, gameMode, botDifficulty, pileViewEnabled,
     animatingDiscard, animatingDrawPlayerId,
     turnHistory, undoLastPlay,
     roundStatsRecorded, markRoundStatsRecorded
@@ -180,6 +180,7 @@ export default function GameScreen() {
   })();
   const showHostOfflineBanner = isOnlineMode && mySeat !== 0 && hostStaleSeconds > 60;
   const [tauntPickerOpen, setTauntPickerOpen] = useState(false);
+  const [pileViewerOpen, setPileViewerOpen] = useState(false);
   // Em modo offline sempre sou 'user' (seat 0); online, uso o assento atribuído
   const myPlayerId = isOnlineMode && mySeat !== null ? SEAT_PLAYER_IDS[mySeat] : 'user';
   const myTeamId   = isOnlineMode && mySeat !== null ? TEAM_OF_SEAT[mySeat] : 'team-1';
@@ -518,8 +519,15 @@ export default function GameScreen() {
     doPileClick();
   };
 
+  // Buraco Mole com "lixo aberto": tocar no lixo mostra todas as cartas
+  const canViewPile = gameMode === 'araujo_pereira' && pileViewEnabled && pile.length > 0;
+
   const doPileClick = () => {
     if (!isMyTurn) {
+      if (canViewPile) {
+        setPileViewerOpen(true);
+        return;
+      }
       const current = players.find(p => p.id === currentTurnPlayerId);
       showAlert(t('game.alerts.waitTitle'), t('game.alerts.waitMsgShort', { name: displayName(current?.name || '') }));
       return;
@@ -591,7 +599,20 @@ export default function GameScreen() {
       return;
     }
 
-    // Modo Araujo Pereira (puxar o lixo é livre)
+    // Modo Araujo Pereira (puxar o lixo é livre). Com lixo aberto, o toque
+    // abre o visualizador — pegar o lixo passa a ser o botão dentro dele.
+    if (canViewPile) {
+      setPileViewerOpen(true);
+      return;
+    }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    const tookPile = drawFromPile(myPlayerId);
+    if (tookPile) setSelectedCards([]);
+  };
+
+  const handleTakePileFromViewer = () => {
+    setPileViewerOpen(false);
+    if (!isMyTurn || turnPhase !== 'draw' || pile.length === 0) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     const tookPile = drawFromPile(myPlayerId);
     if (tookPile) setSelectedCards([]);
@@ -1233,7 +1254,7 @@ export default function GameScreen() {
               <View>
                 <Card card={pile[pile.length - 1]} small onPress={handlePileClick} />
                 <View pointerEvents="none" style={styles.pileCounterBadge}><Text style={styles.counterText}>{pile.length}</Text></View>
-                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>{t('game.pileLabel')}</Text></View>
+                <View pointerEvents="none" style={styles.pileNameTag}><Text style={styles.pileNameText}>{canViewPile ? `👁 ${t('game.pileLabel')}` : t('game.pileLabel')}</Text></View>
               </View>
             ) : (
               <TouchableOpacity onPress={handlePileClick}>
@@ -1457,6 +1478,26 @@ export default function GameScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* MODAL LIXO ABERTO (Buraco Mole): mostra todas as cartas do lixo */}
+      <Modal visible={pileViewerOpen} transparent animationType="fade" onRequestClose={() => setPileViewerOpen(false)}>
+        <TouchableOpacity style={styles.expandedOverlay} activeOpacity={1} onPress={() => setPileViewerOpen(false)}>
+          <View style={styles.expandedBox}>
+            <Text style={styles.expandedTitle}>{`${t('game.pileViewer.title')} (${pile.length})`}</Text>
+            <ScrollView style={styles.pileViewerScroll} contentContainerStyle={styles.pileViewerGrid}>
+              {sortCardsBySuitAndValue(pile).map(c => (
+                <Card key={c.id} card={c} small />
+              ))}
+            </ScrollView>
+            {isMyTurn && turnPhase === 'draw' && pile.length > 0 && (
+              <TouchableOpacity style={styles.pileViewerTakeBtn} onPress={handleTakePileFromViewer} activeOpacity={0.85}>
+                <Text style={styles.pileViewerTakeText}>{t('game.pileViewer.take')}</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.expandedCloseHint}>{t('game.tapOutToClose')}</Text>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -2068,6 +2109,32 @@ const styles = StyleSheet.create({
   expandedCloseHint: {
     color: 'rgba(255,255,255,0.4)', fontSize: 17, marginTop: 40,
     fontWeight: '700', letterSpacing: 1,
+  },
+  pileViewerScroll: {
+    maxHeight: 360,
+    width: '100%',
+  },
+  pileViewerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+  },
+  pileViewerTakeBtn: {
+    marginTop: 24,
+    backgroundColor: GameColors.gold,
+    paddingHorizontal: 34,
+    paddingVertical: 12,
+    borderRadius: Radius.pill,
+    ...Elevation.goldGlow,
+  },
+  pileViewerTakeText: {
+    color: GameColors.text.onGold,
+    fontWeight: '900',
+    fontSize: 17,
+    letterSpacing: 1,
   },
   handCounterSmall: {
     backgroundColor: 'rgba(255,255,255,0.1)',

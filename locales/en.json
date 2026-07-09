@@ -51,7 +51,9 @@
       "streak": "🔥 {{days}} day streak!",
       "welcomeBack": "Welcome back!",
       "claim": "CLAIM"
-    }
+    },
+    "pileViewLabel": "Open pile",
+    "pileViewDesc": "Tap the pile during the game to see all of its cards."
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "Pile cards",
+      "take": "TAKE THE PILE"
+    }
   },
   "events": {
     "newRound": "▶ New round started",

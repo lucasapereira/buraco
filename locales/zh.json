@@ -51,7 +51,9 @@
       "streak": "🔥 连续 {{days}} 天!",
       "welcomeBack": "欢迎回来!",
       "claim": "领取"
-    }
+    },
+    "pileViewLabel": "弃牌堆可见",
+    "pileViewDesc": "对局中点击弃牌堆即可查看全部弃牌。"
   },
   "game": {
     "menuOpen": "☰",
@@ -187,7 +189,11 @@
       "😂",
       "🤡",
       "🔥"
-    ]
+    ],
+    "pileViewer": {
+      "title": "弃牌堆",
+      "take": "拿取弃牌堆"
+    }
   },
   "events": {
     "newRound": "▶ 新一局开始",

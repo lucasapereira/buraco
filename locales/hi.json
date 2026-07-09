@@ -51,7 +51,9 @@
       "streak": "🔥 {{days}} day streak!",
       "welcomeBack": "Welcome back!",
       "claim": "CLAIM"
-    }
+    },
+    "pileViewLabel": "खुली गड्डी",
+    "pileViewDesc": "खेल के दौरान गड्डी पर टैप करके सभी पत्ते देखें।"
   },
   "game": {
     "menuOpen": "☰",
@@ -187,6 +189,10 @@
       "11": "😂",
       "12": "🤡",
       "13": "🔥"
+    },
+    "pileViewer": {
+      "title": "गड्डी के पत्ते",
+      "take": "गड्डी उठाएँ"
     }
   },
   "events": {
