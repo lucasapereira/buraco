@@ -72,8 +72,7 @@ export function horizonEval(state: GameState, myTeam: TeamId): number {
  * Retorna um clone profundo determinizado (não muta `real`).
  */
 export function determinize(real: GameState, selfId: PlayerId): GameState {
-  const isClassic = real.gameMode === 'classic';
-  const allCards = generateDeck(isClassic);
+  const allCards = generateDeck();
 
   // Conjunto conhecido: minha mão + todas as cartas em melds + lixo.
   const knownIds = new Set<string>();

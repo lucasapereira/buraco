@@ -213,6 +213,33 @@ export function wildTopTakeVeto(
 }
 
 /**
+ * OVERRIDE positivo de pegar-lixo: o topo estende DIRETO um jogo do time rumo à
+ * canastra — pega mesmo que o PIMC recuse. Diagnóstico (report "descartei a 6ª
+ * do jogo de 5 deles e ele não pegou"): o rollout material recusa 27% (meld
+ * limpa) a 37% (suja) dessas extensões com lixo pequeno — absorver o lixo custa
+ * pontos-na-mão imediatos e o avanço 5→6/6→7 fica sub-valorizado no horizonte.
+ * Jogador forte pega ~sempre. Condições (estreitas de propósito):
+ *  - topo encaixa DIRETO num jogo do time (validateSequence), e
+ *  - o jogo está a caminho da canastra (len 5-6) OU a adição sobe o bônus
+ *    (fecha 7ª, 13/14), e
+ *  - não degrada meld limpa (limpa continua limpa — coringa no topo não passa).
+ * Os vetos duros (cleanPath/wildTop/strand) continuam valendo DEPOIS do override.
+ */
+export function pileTopExtendsTeamMeld(pile: Card[], teamGames: Card[][], gameMode: GameMode): boolean {
+  if (pile.length === 0) return false;
+  const top = pile[pile.length - 1];
+  for (const g of teamGames) {
+    const combined = [...g, top];
+    if (!validateSequence(combined, gameMode)) continue;
+    if (isMeldClean(g) && !isMeldClean(combined)) continue; // não degrada limpa
+    const advancing = (g.length >= 5 && g.length < 7)
+      || canastaBonusValue(combined) > canastaBonusValue(g);
+    if (advancing) return true;
+  }
+  return false;
+}
+
+/**
  * Escolhe qual coringa gastar: prefere coringa físico (🃏) ao invés de 2-curinga,
  * pois o 2-curinga pode ser carta natural num jogo de seu naipe.
  */
@@ -485,6 +512,40 @@ export function opponentDangerScore(card: Card, opponentGames: Card[][], gameMod
   return danger;
 }
 
+/** VETOS DUROS de descarte — jogadas que estragam a partida (reports do usuário):
+ *  (a) descartar carta que COMPLETA/UPGRADA uma canastra do próprio time (a adição
+ *      sobe canastaBonusValue: 6→7, 12→13, 13→14). No expert o meldHold pode
+ *      SEGURAR os melds e pular o addToGames; aí o descarte era o único filtro e
+ *      o bot entregava a 7ª da canastra real ao lixo.
+ *  (b) com lixo GRANDE (≥ BIG_PILE_FEED_THRESHOLD), descartar carta que encaixa
+ *      DIRETO numa meld visível do oponente — entrega garantida do lixo inteiro
+ *      (report: lixo de ~20 cartas alimentado e capturado).
+ *  Diferente do selfFitPenalties (experimento descartado por hoarding, −6.1pp),
+ *  estes vetos são raros e cada disparo evita ≥100 pts. Aplicar sempre com
+ *  FALLBACK: se TODAS as candidatas forem vetadas, relaxa o veto. */
+export const BIG_PILE_FEED_THRESHOLD = 5;
+
+export function discardCompletesTeamCanasta(card: Card, teamGames: Card[][], gameMode: GameMode): boolean {
+  if (card.isJoker) return false;
+  for (const g of teamGames) {
+    if (!validateSequence([...g, card], gameMode)) continue;
+    if (canastaBonusValue([...g, card]) > canastaBonusValue(g)) return true;
+  }
+  return false;
+}
+
+export function discardFeedsBigPile(card: Card, opponentGames: Card[][], pileSize: number, gameMode: GameMode): boolean {
+  if (pileSize < BIG_PILE_FEED_THRESHOLD || card.isJoker) return false;
+  return opponentGames.some(g => validateSequence([...g, card], gameMode));
+}
+
+export function isVetoedDiscard(
+  card: Card, teamGames: Card[][], opponentGames: Card[][], pileSize: number, gameMode: GameMode
+): boolean {
+  return discardCompletesTeamCanasta(card, teamGames, gameMode)
+    || discardFeedsBigPile(card, opponentGames, pileSize, gameMode);
+}
+
 export function opponentRecentlyTookPile(gameLog: { type: string; playerId: string }[], opponentIds: string[]): boolean {
   const recent = gameLog.slice(-10);
   return recent.some(ev => ev.type === 'draw_pile' && opponentIds.includes(ev.playerId));
@@ -499,7 +560,9 @@ export function chooseBestDiscard(
   teamGames: Card[][] = [],
   pileTopId: string | null = null,
   opponentGames: Card[][] = [],
-  opponentTookPileRecently: boolean = false
+  opponentTookPileRecently: boolean = false,
+  pileSize: number = 0,
+  hardVetoes: boolean = true
 ): Card {
   let nonJokers = hand.filter(c => !c.isJoker);
   if (nonJokers.length === 0) return hand[0];
@@ -513,6 +576,13 @@ export function chooseBestDiscard(
 
   if (difficulty === 'easy') {
     return [...nonJokers].sort((a, b) => getCardPoints(a) - getCardPoints(b))[0];
+  }
+
+  // VETOS DUROS (com fallback se todas forem vetadas): nunca entregar canastra
+  // do próprio time nem alimentar lixo grande com encaixe direto no oponente.
+  if (hardVetoes) {
+    const unvetoed = nonJokers.filter(c => !isVetoedDiscard(c, teamGames, opponentGames, pileSize, gameMode));
+    if (unvetoed.length > 0) nonJokers = unvetoed;
   }
 
   const discardedSuitValues = new Set(

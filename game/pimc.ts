@@ -11,9 +11,9 @@
  */
 import { Card, generateDeck, shuffle } from './deck';
 import { GameState, PlayerId, TeamId, getNextPlayer } from './engine';
-import { checkCanasta } from './rules';
-import { getCardPoints, canastaBonusValue, opponentDangerScore, canTeamBater } from './botHelpers';
-import { botTurn, discard, endRound, playerOf, teamOf, addToGamesPhase, playSequencesPhase, applyMeldPlan, MeldPlan } from './headlessEngine';
+import { checkCanasta, validateSequence } from './rules';
+import { getCardPoints, canastaBonusValue, opponentDangerScore, canTeamBater, isVetoedDiscard } from './botHelpers';
+import { botTurn, discard, endRound, playerOf, teamOf, addToGamesPhase, playSequencesPhase, applyMeldPlan, checkBater, MeldPlan } from './headlessEngine';
 
 // ── fastClone: copia TODA a estrutura de containers, COMPARTILHA os Card
 //    (imutáveis — o motor só os MOVE entre arrays, nunca muta um Card).
@@ -90,7 +90,7 @@ export function horizonEval(state: GameState, myTeam: TeamId, cleanEval: boolean
  *  do PIMC, medir baseline antes de refinar). */
 export function determinize(real: GameState, selfId: PlayerId, infer: boolean = false): GameState {
   const s = fastClone(real);
-  const allCards = generateDeck(real.gameMode === 'classic');
+  const allCards = generateDeck();
   const known = new Set<string>();
   for (const c of s.players.find(p => p.id === selfId)!.hand) known.add(c.id);
   for (const t of ['team-1', 'team-2'] as TeamId[]) {
@@ -196,6 +196,8 @@ export function pimcDecideSync(
 /** Peso default da correção de perigo no descarte PIMC (ver dangerPenalties).
  *  Calibrado no harness — ver scripts/botSim.ts swap test. */
 export const DEFAULT_DISCARD_DANGER_WEIGHT = 1.0;
+/** Peso da penalidade de auto-encaixe no descarte (ver selfFitPenalties). */
+export const DEFAULT_DISCARD_SELFFIT_WEIGHT = 1.0;
 
 export interface PimcOpts {
   determinizations?: number;
@@ -215,6 +217,18 @@ export interface PimcOpts {
   /** inferência no determinize: enviesa mãos ocultas pra longe dos conflitos com
    *  descartes recentes do jogador (default OFF até validar no harness) */
   infer?: boolean;
+  /** penaliza descartar carta que encaixa num jogo do próprio time. EXPERIMENTO
+   *  DESCARTADO (default OFF): conserta o bug "segura melds e descarta a extensão"
+   *  (varredura 8→0/600), mas A/B full-budget n=132/sentido deu −6,1pp simétrico
+   *  (sempre negativo nos 3 pools) — a penalidade calibrada faz hoarding. Preservado
+   *  gated-OFF (toggle SELFFIT no botSim) p/ retomar com peso menor. */
+  selfFit?: boolean;
+  /** peso da penalidade de auto-encaixe (default DEFAULT_DISCARD_SELFFIT_WEIGHT) */
+  selfFitWeight?: number;
+  /** VETOS DUROS de descarte (botHelpers.isVetoedDiscard): nunca entregar
+   *  canastra do próprio time nem alimentar lixo grande com encaixe direto no
+   *  oponente. Default ON (produção); gated p/ swap test (DISCVETO no botSim). */
+  hardVetoes?: boolean;
 }
 
 /**
@@ -274,6 +288,28 @@ export function meldsAvailable(real: GameState, selfId: PlayerId): boolean {
   playSequencesPhase(c, selfId);
   addToGamesPhase(c, selfId);
   return playerOf(c, selfId).hand.length !== before;
+}
+
+/** true se BAIXAR TUDO agora permite BATER neste turno: a mão zera nas fases de
+ *  meld (engine valida morto/canastra), ou sobra exatamente 1 carta descartável
+ *  com bater legal. Curto-circuita o meldHold: quando dá pra bater, segurar não
+ *  faz sentido — no rollout as DUAS branches acabam batendo (a política de
+ *  rollout baixa tudo no turno seguinte), então a diferença vira ruído e o hold
+ *  ganhava ~50% (report: parceiro com o Ás que fechava a canastra de 1000 podia
+ *  bater e segurou; pré-veto, ainda descartava o Ás). */
+export function canBaterNow(real: GameState, selfId: PlayerId): boolean {
+  const c = fastClone(real);
+  c.turnPhase = 'play';
+  c.mustPlayPileTopId = null;
+  addToGamesPhase(c, selfId);
+  playSequencesPhase(c, selfId);
+  addToGamesPhase(c, selfId);
+  if (checkBater(c, selfId)) return true; // melou a mão inteira e bateu
+  const p = playerOf(c, selfId);
+  if (p.hand.length !== 1) return false;
+  const team = teamOf(c, selfId);
+  if (!team.hasGottenDead && c.deads.length > 0) return false; // descartar pega o morto, não bate
+  return canTeamBater(team.games, c.gameMode, team.hasGottenDead);
 }
 
 /** Avalia 1 determinização: roda "baixa" vs "segura" e devolve os valores. */
@@ -483,6 +519,17 @@ function discardCandidates(hand: Card[]): Card[] {
   return out;
 }
 
+/** Aplica os VETOS DUROS de descarte (botHelpers.isVetoedDiscard) às candidatas
+ *  do PIMC, com fallback: se todas forem vetadas, mantém a lista original. */
+function applyDiscardVetoes(real: GameState, selfId: PlayerId, cands: Card[]): Card[] {
+  const myTeam = real.players.find(p => p.id === selfId)!.teamId;
+  const oppTeam: TeamId = myTeam === 'team-1' ? 'team-2' : 'team-1';
+  const ok = cands.filter(c => !isVetoedDiscard(
+    c, real.teams[myTeam].games, real.teams[oppTeam].games, real.pile.length, real.gameMode
+  ));
+  return ok.length > 0 ? ok : cands;
+}
+
 /** Roda o estado `depth` plies à frente com a política heurística e avalia. */
 function rolloutFromState(c: GameState, myTeam: TeamId, depth: number, cleanEval: boolean): number {
   let plies = 0;
@@ -550,6 +597,41 @@ function dangerPenalties(
   return cands.map(c => weight * mult * opponentDangerScore(c, oppGames, real.gameMode));
 }
 
+/** Penalidade de AUTO-ENCAIXE: desincentiva descartar uma carta que encaixa num
+ *  jogo do PRÓPRIO time. O rollout truncado (8 plies) às vezes NÃO enxerga que
+ *  manter a carta a faria entrar numa meld em turno futuro — então despeja uma
+ *  extensão da própria mesa (report do usuário: meld 2♣6♣7♣, bot descartou o 5
+ *  que estendia, quando estava SEGURANDO melds e o addToGames não rodou). O
+ *  descarte heurístico já tem esse sinal (cardUtility.gameBonus); o PIMC era
+ *  rollout puro + perigo do oponente e não tinha. Reinjetamos aqui.
+ *
+ *  Só penaliza quando manter a carta GANHA algo: meld ainda < 7 (rumo a canastra)
+ *  ou a adição sobe o bônus de canastra (delta > 0). NÃO penaliza despejar numa
+ *  canastra COMPLETA estagnada (delta 0) — aí dumpar a carta é legítimo. Coringa
+ *  nunca é candidata (discardCandidates já pula), então não tratamos aqui. */
+function selfFitPenalties(
+  real: GameState, selfId: PlayerId, cands: Card[], weight: number
+): number[] {
+  if (weight <= 0) return cands.map(() => 0);
+  const myTeam = real.players.find(p => p.id === selfId)!.teamId;
+  const games = real.teams[myTeam].games;
+  return cands.map(c => {
+    let best = 0;
+    for (const g of games) {
+      if (!validateSequence([...g, c], real.gameMode)) continue;
+      const delta = canastaBonusValue([...g, c]) - canastaBonusValue(g);
+      if (g.length >= 7 && delta <= 0) continue; // canastra pronta estagnada → dump ok
+      // Espelha cardUtility.gameBonus do descarte heurístico: bônus de encaixe que
+      // cresce com o tamanho da meld (mais perto da canastra) + pontos + delta de
+      // bônus de canastra. Calibra a penalidade pra escala do rollout (dezenas de
+      // pts), não pro mísero face value (~5) que não flipava o descarte.
+      const fitBonus = 20 + g.length * 4 + getCardPoints(c) + Math.max(0, delta);
+      best = Math.max(best, fitBonus);
+    }
+    return weight * best;
+  });
+}
+
 /** Escolhe a candidata de maior (média de rollout − penalidade de perigo). */
 function bestDiscard(cands: Card[], sums: number[], valid: number[], penalty: number[]): string | null {
   let bestIdx = -1, bestScore = -Infinity;
@@ -565,7 +647,7 @@ function bestDiscard(cands: Card[], sums: number[], valid: number[], penalty: nu
  *  da carta a descartar, ou null se não houver candidata (cai na heurística). */
 export function pimcChooseDiscardSync(
   real: GameState, selfId: PlayerId,
-  opts: { determinizations?: number; depth?: number; dangerWeight?: number; cleanEval?: boolean; dangerProximity?: boolean; infer?: boolean } = {}
+  opts: { determinizations?: number; depth?: number; dangerWeight?: number; cleanEval?: boolean; dangerProximity?: boolean; infer?: boolean; selfFit?: boolean; selfFitWeight?: number; hardVetoes?: boolean } = {}
 ): string | null {
   const D = opts.determinizations ?? 20;
   const DEPTH = opts.depth ?? 8;
@@ -573,9 +655,11 @@ export function pimcChooseDiscardSync(
   const cleanEval = opts.cleanEval ?? true;
   const dangerProx = opts.dangerProximity ?? true;
   const infer = opts.infer ?? false;
+  const sfW = (opts.selfFit ?? false) ? (opts.selfFitWeight ?? DEFAULT_DISCARD_SELFFIT_WEIGHT) : 0;
   const self = real.players.find(p => p.id === selfId)!;
   const myTeam = self.teamId;
-  const cands = discardCandidates(self.hand);
+  let cands = discardCandidates(self.hand);
+  if (opts.hardVetoes ?? true) cands = applyDiscardVetoes(real, selfId, cands);
   if (cands.length === 0) return null;
   if (cands.length === 1) return cands[0].id;
   const sums = new Array(cands.length).fill(0);
@@ -584,7 +668,9 @@ export function pimcChooseDiscardSync(
     const det = determinize(real, selfId, infer);
     scoreDiscardDet(det, selfId, myTeam, cands, DEPTH, sums, valid, cleanEval);
   }
-  return bestDiscard(cands, sums, valid, dangerPenalties(real, selfId, cands, W, dangerProx));
+  const danger = dangerPenalties(real, selfId, cands, W, dangerProx);
+  const selfFit = selfFitPenalties(real, selfId, cands, sfW);
+  return bestDiscard(cands, sums, valid, danger.map((d, i) => d + selfFit[i]));
 }
 
 /** Decisão PIMC de descarte. ASYNC e fatiada (cede o frame) — não trava a UI.
@@ -598,12 +684,14 @@ export async function pimcChooseDiscard(
   const cleanEval = opts.cleanEval ?? true;
   const dangerProx = opts.dangerProximity ?? true;
   const infer = opts.infer ?? false;
+  const sfW = (opts.selfFit ?? false) ? (opts.selfFitWeight ?? DEFAULT_DISCARD_SELFFIT_WEIGHT) : 0;
   const deadline = Date.now() + (opts.deadlineMs ?? 1200);
   const yieldEvery = opts.yieldEveryMs ?? 50;
   const doYield = opts.onYield ?? (() => new Promise<void>(r => setTimeout(r, 0)));
   const self = real.players.find(p => p.id === selfId)!;
   const myTeam = self.teamId;
-  const cands = discardCandidates(self.hand);
+  let cands = discardCandidates(self.hand);
+  if (opts.hardVetoes ?? true) cands = applyDiscardVetoes(real, selfId, cands);
   if (cands.length === 0) return null;
   if (cands.length === 1) return cands[0].id;
   const sums = new Array(cands.length).fill(0);
@@ -617,5 +705,8 @@ export async function pimcChooseDiscard(
     if (Date.now() - lastYield >= yieldEvery) { await doYield(); lastYield = Date.now(); }
     if (Date.now() >= deadline) break; // anytime
   }
-  return done === 0 ? null : bestDiscard(cands, sums, valid, dangerPenalties(real, selfId, cands, W, dangerProx));
+  if (done === 0) return null;
+  const danger = dangerPenalties(real, selfId, cands, W, dangerProx);
+  const selfFit = selfFitPenalties(real, selfId, cands, sfW);
+  return bestDiscard(cands, sums, valid, danger.map((d, i) => d + selfFit[i]));
 }

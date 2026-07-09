@@ -17,9 +17,10 @@ import {
   longestNaturalRun,
   wouldLockRedeemableWild,
   wildTopTakeVeto,
+  pileTopExtendsTeamMeld,
 } from '../game/botHelpers';
 import { useGameStore } from '../store/gameStore';
-import { pimcShouldTakePile, pimcChooseDiscard, pimcShouldHoldMelds, meldsAvailable } from '../game/pimc';
+import { pimcShouldTakePile, pimcChooseDiscard, pimcShouldHoldMelds, meldsAvailable, canBaterNow } from '../game/pimc';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -150,11 +151,10 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
     try {
       // ── FASE DRAW ──
       if (s.turnPhase === 'draw') {
-        // Expert: pré-delay curto (o PIMC computa em seguida); piso de tempo
-        // total ~1.5s aplicado depois, pra o bot difícil não agir MAIS RÁPIDO
-        // que o normal (seria um "tell" da dificuldade + estranho na UX).
-        const turnStart = Date.now();
-        await delay(isExpert ? 300 : 1500);
+        // Expert: pré-delay curto (o PIMC computa em seguida — esse cômputo já é
+        // o "tempo de pensar"). Sem piso artificial: ele joga assim que termina,
+        // pra não empilhar com o cômputo e deixar o turno lento.
+        await delay(isExpert ? 150 : 1500);
 
         // Re-valida com estado fresco (pode ter mudado durante o delay via applyRemoteState)
         const fresh = useGameStore.getState();
@@ -179,9 +179,13 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
           // Re-valida: o cômputo é async (~1.2s); estado pode ter mudado.
           const f2 = useGameStore.getState();
           if (f2.currentTurnPlayerId !== botId || f2.turnPhase !== 'draw' || f2.roundOver) return;
-          // Piso de UX: garante ~1.5s de "pensar" mesmo se o PIMC for rápido.
-          const elapsed = Date.now() - turnStart;
-          if (elapsed < 1500) await delay(1500 - elapsed);
+          // OVERRIDE positivo: topo estende direto um jogo do time rumo à canastra
+          // (5-6 cartas, ou upgrade de bônus) sem degradar limpa → pega mesmo que o
+          // rollout recuse (recusava 27-37% dessas extensões; report "descartei a
+          // 6ª do jogo de 5 deles e ele não pegou"). Vetos abaixo seguem valendo.
+          if (!takePile && pileTopExtendsTeamMeld(f2.pile, f2.teams[freshBot.teamId].games, f2.gameMode)) {
+            takePile = true;
+          }
         } else {
           takePile = shouldTakePileSmart(pile, freshBot.hand, difficulty, teamGames, fresh.gameMode, aggressiveness);
         }
@@ -299,13 +303,19 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       const fresh = useGameStore.getState();
       if (fresh.currentTurnPlayerId === botId && fresh.turnPhase === 'play' && !fresh.roundOver
           && meldsAvailable(fresh, botId)) {
-        holdMelds = await pimcShouldHoldMelds(fresh, botId, {
-          determinizations: 60, // 2× default (ver D-sweep +4.7pp)
-          onYield: async () => { await delay(0); },
-        });
-        // Re-valida: o cômputo é async; estado pode ter mudado.
-        const f2 = useGameStore.getState();
-        if (f2.currentTurnPlayerId !== botId || f2.turnPhase !== 'play' || f2.roundOver) return;
+        // Curto-circuito: se baixar tudo permite BATER agora, nunca segura. No
+        // rollout do meldHold as duas branches acabam batendo (diferença = ruído)
+        // e o hold ganhava ~50% — report: parceiro com o Ás que fechava a
+        // canastra de 1000 podia bater e preferiu segurar/descartar.
+        if (!canBaterNow(fresh, botId)) {
+          holdMelds = await pimcShouldHoldMelds(fresh, botId, {
+            determinizations: 60, // 2× default (ver D-sweep +4.7pp)
+            onYield: async () => { await delay(0); },
+          });
+          // Re-valida: o cômputo é async; estado pode ter mudado.
+          const f2 = useGameStore.getState();
+          if (f2.currentTurnPlayerId !== botId || f2.turnPhase !== 'play' || f2.roundOver) return;
+        }
       }
     }
 
@@ -988,7 +998,8 @@ export function useBotAI(options: { disabled?: boolean; humanPlayerIds?: string[
       teamGames,
       pileTopId,
       opponentGames,
-      tookPileRecently
+      tookPileRecently,
+      fresh.pile.length
     );
     let cardId = heurCard.id;
 

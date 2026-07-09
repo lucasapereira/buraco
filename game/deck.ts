@@ -18,7 +18,7 @@ export interface Card {
 const SUITS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
 const VALUES: CardValue[] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 2];
 
-export function generateDeck(withPhysicalJokers: boolean = false): Card[] {
+export function generateDeck(): Card[] {
   const cards: Card[] = [];
 
   for (let d = 1; d <= 2; d++) {
@@ -33,18 +33,14 @@ export function generateDeck(withPhysicalJokers: boolean = false): Card[] {
         });
       }
     }
-    // 2 jokers físicos por baralho = 4 no total
-    if (withPhysicalJokers) {
-      for (let j = 1; j <= 2; j++) {
-        cards.push({
-          id: `${d}-joker-${j}`,
-          deck: d as 1 | 2,
-          suit: 'joker',
-          value: 2,
-          isJoker: true,
-        });
-      }
-    }
+    // 1 joker físico por baralho = 2 no total (padrão em todos os modos)
+    cards.push({
+      id: `${d}-joker-1`,
+      deck: d as 1 | 2,
+      suit: 'joker',
+      value: 2,
+      isJoker: true,
+    });
   }
 
   return cards;

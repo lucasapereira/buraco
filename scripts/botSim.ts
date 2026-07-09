@@ -29,10 +29,11 @@ import {
   wouldLockRedeemableWild,
   pileTakeForcesDirtyingCleanPath,
   wildTopTakeVeto,
+  pileTopExtendsTeamMeld,
 } from '../game/botHelpers';
 import { proxyAdjustTakePile, proxyChooseDiscard } from './proxyBot';
 import { horizonEval, determinize, _evalSelfCheck } from './pimcBot';
-import { pimcDecideSync, pimcChooseDiscardSync, pimcShouldHoldMeldsSync, meldsAvailable, pimcChooseMeldPlanSync } from '../game/pimc';
+import { pimcDecideSync, pimcChooseDiscardSync, pimcShouldHoldMeldsSync, meldsAvailable, canBaterNow, pimcChooseMeldPlanSync } from '../game/pimc';
 import { getCardPoints, opponentDangerScore } from '../game/botHelpers';
 
 // ─── Config ───────────────────────────────────────────────
@@ -142,7 +143,7 @@ const TEAM_PIMC: Record<TeamId, boolean> = {
   'team-1': process.env.PIMC_BOTH === '1' || process.env.PIMCT1 === '1',
   'team-2': process.env.PIMC_BOTH === '1' || process.env.PIMCT2 === '1',
 };
-const PIMC_DETERMINIZATIONS = 30;
+const PIMC_DETERMINIZATIONS = process.env.PIMC_D ? parseInt(process.env.PIMC_D, 10) : 30;
 const PIMC_DEPTH = 8;
 
 // PIMC DESCARTE (Stage 2) — busca na escolha de QUAL carta descartar (game/pimc.ts
@@ -207,6 +208,44 @@ const TEAM_DANGERPROX: Record<TeamId, boolean> = {
   'team-1': DANGERPROX === undefined ? true : DANGERPROX.includes('1'),
   'team-2': DANGERPROX === undefined ? true : DANGERPROX.includes('2'),
 };
+// SELFFIT = penalidade de auto-encaixe no descarte PIMC (não despeja carta que
+// encaixa num jogo do próprio time — report do usuário: bot segurando melds
+// descartou o 5 que estendia o 2♣6♣7♣). Default OFF nos 2 (baseline = produção
+// ATUAL, sem o termo); SELFFIT=1|2|12 liga por time pra swap test.
+const SELFFIT = process.env.SELFFIT;
+const TEAM_SELFFIT: Record<TeamId, boolean> = {
+  'team-1': !!SELFFIT?.includes('1'),
+  'team-2': !!SELFFIT?.includes('2'),
+};
+// BATERNOW = curto-circuito do meldHold quando baixar tudo permite BATER agora
+// (pimc.canBaterNow). Fix do report "podia bater fechando a canastra de 1000 e
+// preferiu segurar". unset = ON ambos (produção); '0' = OFF ambos; '1'|'2'|'12'.
+const BATERNOW = process.env.BATERNOW;
+const TEAM_BATERNOW: Record<TeamId, boolean> = {
+  'team-1': BATERNOW === undefined ? true : BATERNOW.includes('1'),
+  'team-2': BATERNOW === undefined ? true : BATERNOW.includes('2'),
+};
+const baterNowStats = { fired: 0 };
+// PILEFIT = OVERRIDE positivo de pegar-lixo (botHelpers.pileTopExtendsTeamMeld):
+// topo estende direto um jogo do time rumo à canastra → pega mesmo se o PIMC
+// recusar. Fix do report "descartei a 6ª do jogo de 5 e o bot não pegou".
+// unset = ON ambos (produção); '0' = OFF ambos; '1'|'2'|'12'.
+const PILEFIT = process.env.PILEFIT;
+const TEAM_PILEFIT: Record<TeamId, boolean> = {
+  'team-1': PILEFIT === undefined ? true : PILEFIT.includes('1'),
+  'team-2': PILEFIT === undefined ? true : PILEFIT.includes('2'),
+};
+const pileFitStats = { fired: 0 };
+// DISCVETO = VETOS DUROS de descarte (botHelpers.isVetoedDiscard): (a) nunca
+// descartar carta que completa/upgrada canastra do próprio time; (b) com lixo
+// grande (≥5), nunca descartar encaixe direto em meld visível do oponente.
+// Fix dos reports "parceiro descartou a 7ª da canastra real" e "alimentou lixo
+// de 20 cartas". unset = ON ambos (produção); '0' = OFF ambos; '1'|'2'|'12'.
+const DISCVETO = process.env.DISCVETO;
+const TEAM_DISCVETO: Record<TeamId, boolean> = {
+  'team-1': DISCVETO === undefined ? true : DISCVETO.includes('1'),
+  'team-2': DISCVETO === undefined ? true : DISCVETO.includes('2'),
+};
 const PIMC_DISCARD_D = process.env.PIMCDISC_D ? parseInt(process.env.PIMCDISC_D, 10) : 20;
 const PIMC_DISCARD_DEPTH = process.env.PIMCDISC_DEPTH ? parseInt(process.env.PIMCDISC_DEPTH, 10) : 8;
 const PIMC_DISCARD_W = process.env.PIMCDISC_W ? parseFloat(process.env.PIMCDISC_W) : 1.0;
@@ -244,7 +283,7 @@ const USES_POISON_DISCARD: Record<PlayerId, boolean> = {
 
 // ─── Inicialização ────────────────────────────────────────
 export function freshState(gameMode: GameMode): GameState {
-  const allCards = shuffle(generateDeck(gameMode === 'classic'));
+  const allCards = shuffle(generateDeck());
   const deads: Card[][] = [allCards.splice(0, 11), allCards.splice(0, 11)];
   const players: Player[] = [
     { id: 'user',  teamId: 'team-1', name: 'user',  hand: sortCardsBySuitAndValue(allCards.splice(0, 11)), hasGottenDead: false },
@@ -665,6 +704,13 @@ function chooseTakePile(s: GameState, playerId: PlayerId): boolean {
     let pimcDecision = process.env.PROD_PIMC
       ? pimcDecideSync(s, playerId, { determinizations: teamPileD(team.id), depth: PIMC_DEPTH, cleanEval: TEAM_PIMC_CLEANEV[team.id], infer: TEAM_INFER[team.id] })
       : pimcTakePile(s, playerId);
+    // OVERRIDE positivo (gated PILEFIT): topo estende direto jogo do time rumo à
+    // canastra (5-6, ou upgrade de bônus) sem degradar limpa → pega mesmo que o
+    // rollout recuse (recusava 27-37%; report "descartei a 6ª e ele não pegou").
+    if (!pimcDecision && TEAM_PILEFIT[team.id] && pileTopExtendsTeamMeld(s.pile, team.games, s.gameMode)) {
+      pileFitStats.fired += 1;
+      pimcDecision = true;
+    }
     // Espelha o veto pós-PIMC de produção (useBotAI): não pega se cumprir a
     // obrigação do topo forçar sujar meld limpa protegida.
     if (pimcDecision && pileTakeForcesDirtyingCleanPath(p.hand, s.pile, team.games, s.gameMode)) {
@@ -1049,12 +1095,19 @@ export function runBotTurn(s: GameState, playerId: PlayerId): void {
   } else {
     let holdMelds = false;
     if (TEAM_MELDHOLD[holdTeam.id] && canSearchMeld) {
-      meldHoldStats.decisions += 1;
-      holdMelds = pimcShouldHoldMeldsSync(s, playerId, {
-        determinizations: teamPileD(holdTeam.id), depth: PIMC_DEPTH,
-        cleanEval: TEAM_PIMC_CLEANEV[holdTeam.id], infer: TEAM_INFER[holdTeam.id],
-      });
-      if (holdMelds) meldHoldStats.held += 1;
+      // Curto-circuito (gated BATERNOW, espelha useBotAI): se baixar tudo
+      // permite BATER agora, nunca segura — no rollout as duas branches acabam
+      // batendo e a diferença vira ruído (report do Ás da canastra de 1000).
+      if (TEAM_BATERNOW[holdTeam.id] && canBaterNow(s, playerId)) {
+        baterNowStats.fired += 1;
+      } else {
+        meldHoldStats.decisions += 1;
+        holdMelds = pimcShouldHoldMeldsSync(s, playerId, {
+          determinizations: teamPileD(holdTeam.id), depth: PIMC_DEPTH,
+          cleanEval: TEAM_PIMC_CLEANEV[holdTeam.id], infer: TEAM_INFER[holdTeam.id],
+        });
+        if (holdMelds) meldHoldStats.held += 1;
+      }
     }
     if (!holdMelds) {
       addToGamesPhase(s, playerId);
@@ -1116,7 +1169,7 @@ export function runBotTurn(s: GameState, playerId: PlayerId): void {
       // Discriminador: compara com a escolha do baseline no mesmo estado
       const baselineCard = chooseBestDiscard(
         p.hand, s.discardedCardHistory, DIFFICULTY, s.lastDrawnCardId, s.gameMode,
-        team.games, null, oppGames, tookPile
+        team.games, null, oppGames, tookPile, s.pile.length, TEAM_DISCVETO[team.id]
       );
       discardDiff.total++;
       if (smartCard.id !== baselineCard.id) discardDiff.diff++;
@@ -1124,14 +1177,14 @@ export function runBotTurn(s: GameState, playerId: PlayerId): void {
     } else {
       card = chooseBestDiscard(
         p.hand, s.discardedCardHistory, DIFFICULTY, s.lastDrawnCardId, s.gameMode,
-        team.games, null, oppGames, tookPile
+        team.games, null, oppGames, tookPile, s.pile.length, TEAM_DISCVETO[team.id]
       );
     }
     // PIMC DESCARTE (Stage 2): sobrepõe a escolha heurística por busca. Só na
     // decisão real (nunca dentro de rollout PIMC → sem recursão/custo explosivo).
     if (TEAM_PIMC_DISCARD[team.id] && !pimcRollout) {
       const heurCard = card;
-      const pimcId = pimcChooseDiscardSync(s, playerId, { determinizations: teamDiscD(team.id), depth: PIMC_DISCARD_DEPTH, dangerWeight: PIMC_DISCARD_W, cleanEval: TEAM_PIMC_CLEANEV[team.id], dangerProximity: TEAM_DANGERPROX[team.id], infer: TEAM_INFER[team.id] });
+      const pimcId = pimcChooseDiscardSync(s, playerId, { determinizations: teamDiscD(team.id), depth: PIMC_DISCARD_DEPTH, dangerWeight: PIMC_DISCARD_W, cleanEval: TEAM_PIMC_CLEANEV[team.id], dangerProximity: TEAM_DANGERPROX[team.id], infer: TEAM_INFER[team.id], selfFit: TEAM_SELFFIT[team.id], hardVetoes: TEAM_DISCVETO[team.id] });
       const pc = pimcId ? p.hand.find(c => c.id === pimcId) : undefined;
       if (pc) {
         pimcDiscardStats.decisions++;
@@ -1406,7 +1459,9 @@ function main() {
   // Sumário machine-readable p/ agregação de shards paralelos (1 processo/core).
   console.log(`SUMMARY_JSON ${JSON.stringify({
     n: N_GAMES, t1Wins, t2Wins, rounds: totalRounds, bater: teamBater, canasta: canastaTally,
-    wildVetoFired: wildVetoStats.fired, meldHold: meldHoldStats, meldPlan: meldPlanStats,
+    wildVetoFired: wildVetoStats.fired, pileFitFired: pileFitStats.fired,
+    baterNowFired: baterNowStats.fired,
+    meldHold: meldHoldStats, meldPlan: meldPlanStats,
   })}`);
   if (meldPlanStats.decisions > 0) {
     console.log(`meldPlan decisões=${meldPlanStats.decisions}  playAll=${meldPlanStats.playAll}  extendOnly=${meldPlanStats.extendOnly}  holdAll=${meldPlanStats.holdAll}`);

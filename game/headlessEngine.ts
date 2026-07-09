@@ -596,7 +596,7 @@ export function botTurn(s: GameState, playerId: PlayerId, forcedDraw?: boolean, 
     const tookPile = opponentRecentlyTookPile(s.gameLog as any, oppIds);
     const card = chooseBestDiscard(
       p.hand, s.discardedCardHistory, DIFFICULTY, s.lastDrawnCardId, s.gameMode,
-      team.games, null, oppGames, tookPile
+      team.games, null, oppGames, tookPile, s.pile.length
     );
     if (!discard(s, playerId, card.id)) {
       let discarded = false;

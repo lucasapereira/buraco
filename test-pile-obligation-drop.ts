@@ -53,7 +53,7 @@ function legalFulfillmentExists(s: GameState, pid: PlayerId, topId: string): boo
 }
 
 function freshState(seedTag: number): GameState {
-  const allCards = shuffle(generateDeck(true)); // classic deck
+  const allCards = shuffle(generateDeck());
   const deads: Card[][] = [allCards.splice(0, 11), allCards.splice(0, 11)];
   const players: Player[] = [
     { id: 'user',  teamId: 'team-1', name: 'user',  hand: sortCardsBySuitAndValue(allCards.splice(0, 11)), hasGottenDead: false },
